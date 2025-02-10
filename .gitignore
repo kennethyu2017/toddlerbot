@@ -1,3 +1,28 @@
+#Pycharm project
+.idea/
+
+#robot assets
+*.STL
+*.stl
+*.pdf
+
+#robot assets
+*.STL
+*.stl
+
+
+#dataset
+*.hdf5
+*.mp4
+data/
+
+#ckpt
+*.pt
+*.ckpt
+*.png
+*.pkl
+
+
 ### Project ###
 .vscode/
 datasets/
