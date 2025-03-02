@@ -34,6 +34,7 @@ scripts/run_*_remote.py
 wandb/
 tests/images/
 toddlerbot/policies/checkpoints/*dp.pth
+.idea/
 
 ### Python ###
 
