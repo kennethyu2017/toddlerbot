@@ -1,6 +1,8 @@
 #Pycharm project
 .idea/
 
+#Clion project.
+
 #robot assets
 *.STL
 *.stl
