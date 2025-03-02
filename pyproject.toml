@@ -36,7 +36,7 @@ dependencies = [
     "opencv-python==4.9.0.80",
     "optuna",
     "optuna-dashboard",
-    "psycopg2",
+    "psycopg2-binary",
     "pupil_apriltags",
     "pygame",
     "pymunk",
