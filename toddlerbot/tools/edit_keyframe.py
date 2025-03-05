@@ -784,7 +784,9 @@ class MuJoCoApp(QMainWindow):
         vbox_layout.addWidget(keyframe_label)
 
         self.keyframe_listbox = QListWidget()
-        self.keyframe_listbox.setSelectionMode(QListWidget.ExtendedSelection)  # Allow multi-selection using cmd/ctrl and shift
+        self.keyframe_listbox.setSelectionMode(
+            QListWidget.ExtendedSelection
+        )  # Allow multi-selection using cmd/ctrl and shift
         self.keyframe_listbox.itemSelectionChanged.connect(self.on_keyframe_select)
         vbox_layout.addWidget(self.keyframe_listbox, stretch=1)
 
@@ -792,7 +794,9 @@ class MuJoCoApp(QMainWindow):
         vbox_layout.addWidget(sequence_label)
 
         self.sequence_listbox = QListWidget()
-        self.sequence_listbox.setSelectionMode(QListWidget.ExtendedSelection)  # Allow multi-selection using cmd/ctrl and shift
+        self.sequence_listbox.setSelectionMode(
+            QListWidget.ExtendedSelection
+        )  # Allow multi-selection using cmd/ctrl and shift
         self.sequence_listbox.itemSelectionChanged.connect(self.on_sequence_select)
         vbox_layout.addWidget(self.sequence_listbox, stretch=1)
 
@@ -810,7 +814,7 @@ class MuJoCoApp(QMainWindow):
 
         self.joint_sliders = {}
         self.joint_labels = {}
-        self.normalized_range = (-500, 500) # Fixed range for all sliders
+        self.normalized_range = (-500, 500)  # Fixed range for all sliders
 
         reordered_list = []
         # Separate left and right joints
@@ -843,7 +847,13 @@ class MuJoCoApp(QMainWindow):
             slider.setMinimum(self.normalized_range[0])
             slider.setMaximum(self.normalized_range[1])
             slider.setValue(
-                int(np.interp(robot.default_joint_angles[joint_name], joint_range, self.normalized_range))
+                int(
+                    np.interp(
+                        robot.default_joint_angles[joint_name],
+                        joint_range,
+                        self.normalized_range,
+                    )
+                )
             )
 
             slider.setTickPosition(QSlider.TicksBelow)
@@ -914,12 +924,12 @@ class MuJoCoApp(QMainWindow):
     def remove_keyframe(self):
         """Removes the currently selected keyframe(s) and their associated sequences from the lists.
 
-        This method retrieves all selected keyframes from the keyframe listbox and removes them from the `keyframes` list. 
-        It also removes any corresponding entries in `sequence_list` where the name follows the pattern "{keyframe.name}_{keyframe.index}". 
-        After removal, it updates the sequence and keyframe listboxes to reflect the changes.        
+        This method retrieves all selected keyframes from the keyframe listbox and removes them from the `keyframes` list.
+        It also removes any corresponding entries in `sequence_list` where the name follows the pattern "{keyframe.name}_{keyframe.index}".
+        After removal, it updates the sequence and keyframe listboxes to reflect the changes.
         """
         selected_items = self.keyframe_listbox.selectedItems()
-        
+
         if not selected_items:
             return  # No keyframes selected
 
@@ -1027,11 +1037,11 @@ class MuJoCoApp(QMainWindow):
     def add_to_sequence(self):
         """Adds the selected keyframe or sequences to the sequence list with proper timing.
 
-        If less than one sequence is selected in the sequence listbox, this method retrieves the selected keyframe's name and index, 
+        If less than one sequence is selected in the sequence listbox, this method retrieves the selected keyframe's name and index,
         constructs a unique keyframe name, and appends it along with the specified arrival time to the sequence list.
 
-        If multiple sequences are selected, instead of adding a keyframe, the selected sequences are appended to the end 
-        of the sequence list while preserving the relative time gaps between them. The arrival time of the first selected 
+        If multiple sequences are selected, instead of adding a keyframe, the selected sequences are appended to the end
+        of the sequence list while preserving the relative time gaps between them. The arrival time of the first selected
         sequence is used as the starting reference, and the subsequent sequences maintain their original spacing.
         """
         selected_sequences = self.sequence_listbox.selectedItems()
@@ -1047,14 +1057,17 @@ class MuJoCoApp(QMainWindow):
             return
 
         # Handle multiple selected sequences
-        selected_indices = sorted([self.sequence_listbox.row(item) for item in selected_sequences])
+        selected_indices = sorted(
+            [self.sequence_listbox.row(item) for item in selected_sequences]
+        )
 
         # Use first selected sequence's arrival time
         arrival_time = float(self.arrival_time_entry.text())
 
         # Calculate time gap between sequences
         time_gaps = [
-            self.sequence_list[selected_indices[i + 1]][1] - self.sequence_list[selected_indices[i]][1]
+            self.sequence_list[selected_indices[i + 1]][1]
+            - self.sequence_list[selected_indices[i]][1]
             for i in range(len(selected_indices) - 1)
         ]
 
@@ -1071,11 +1084,11 @@ class MuJoCoApp(QMainWindow):
     def remove_from_sequence(self):
         """Removes the currently selected sequence(s) from the sequence list and updates the listbox.
 
-        This method retrieves all selected sequences from the sequence listbox and removes them from 
+        This method retrieves all selected sequences from the sequence listbox and removes them from
         `sequence_list`. After removal, it updates the sequence listbox to reflect the changes.
         """
         selected_items = self.sequence_listbox.selectedItems()
-        
+
         if not selected_items:
             return  # No sequences selected
 
@@ -1362,7 +1375,7 @@ class MuJoCoApp(QMainWindow):
             self.load_keyframe()
 
             keyframe = self.keyframes[self.selected_keyframe]
-            
+
             # Block signals temporarily to prevent excessive UI refreshes
             for joint_name in self.robot.joint_ordering:
                 self.joint_sliders[joint_name].blockSignals(True)
@@ -1372,7 +1385,7 @@ class MuJoCoApp(QMainWindow):
                 joint_range = self.robot.joint_limits[joint_name]
 
                 slider_value = int(np.interp(value, joint_range, self.normalized_range))
-                
+
                 # Update UI
                 self.joint_sliders[joint_name].setValue(slider_value)
                 self.joint_labels[joint_name].setText(f"{value:.2f}")
@@ -1478,7 +1491,7 @@ class MuJoCoApp(QMainWindow):
         for name, value in joint_angles_to_update.items():
             if name != joint_name:
                 self.joint_labels[name].setText(f"{value:.2f}")
-        
+
                 joint_range = self.robot.joint_limits[name]
                 self.joint_sliders[name].setValue(
                     int(np.interp(value, joint_range, self.normalized_range))
@@ -1514,9 +1527,7 @@ class MuJoCoApp(QMainWindow):
 
         joint_angles_to_update = self.update_joint_pos(joint_name, text_value)
 
-        slider.setValue(
-           int(np.interp(text_value, joint_range, self.normalized_range))
-        )
+        slider.setValue(int(np.interp(text_value, joint_range, self.normalized_range)))
 
         for name, value in joint_angles_to_update.items():
             if name != joint_name:
