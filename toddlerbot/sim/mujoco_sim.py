@@ -378,13 +378,18 @@ class MuJoCoSim(BaseSim):
     def set_motor_kps(self, motor_kps: Dict[str, float]):
         """Sets the proportional gain (Kp) values for the motors.
 
-        This method updates the Kp values for each motor specified in the `motor_kps` dictionary. If the controller is an instance of `MotorController`, it sets the Kp value directly in the controller. Otherwise, it adjusts the gain and bias parameters of the actuator model.
+        This method updates the Kp values for each motor specified in the `motor_kps` dictionary.
+        If the controller is an instance of `MotorController`, it sets the Kp value directly in the controller.
+         Otherwise, it adjusts the gain and bias parameters of the actuator model.
 
         Args:
             motor_kps (Dict[str, float]): A dictionary where keys are motor names and values are the Kp values to be set.
         """
         for name, kp in motor_kps.items():
             if isinstance(self.controller, MotorController):
+                # <actuator/motor>
+                # kp value is the control TBL value of Dynamixel actuators,
+                # i.e., 128 times the used kp value of PD controller.
                 self.controller.kp[self.model.actuator(name).id] = kp / 128
             else:
                 self.model.actuator(name).gainprm[0] = kp / 128

@@ -288,6 +288,10 @@ def optimize_parameters(
         return error + error_fft * 0.01
 
     sampler: optuna.samplers.BaseSampler | None = None
+
+    # For RandomSampler, MedianPruner is the best.
+    # For TPESampler, HyperbandPruner is the best.
+
     if sampler_name == "TPE":
         sampler = optuna.samplers.TPESampler()
     elif sampler_name == "CMA":
@@ -323,7 +327,7 @@ def optimize_parameters(
 
     study.optimize(
         objective,
-        n_trials=n_iters,
+        n_trials=n_iters,  # after optimize, study.trials will include `enqueued` trials.
         n_jobs=1,
         show_progress_bar=True,
         callbacks=[partial(early_stop_check, early_stopping_rounds=early_stop_rounds)],
