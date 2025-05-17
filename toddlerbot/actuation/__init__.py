@@ -2,11 +2,10 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Dict, List
 
-
 @dataclass
 class JointState:
     """Data class for storing joint state information"""
-
+    # instance variables, mutable. (NamedTuple is immutable)
     time: float
     pos: float
     vel: float = 0.0

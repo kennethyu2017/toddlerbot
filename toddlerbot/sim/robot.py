@@ -51,7 +51,9 @@ class Robot:
     def initialize(self) -> None:
         """Initializes the robot's joint and motor configurations based on the provided configuration data.
 
-        This method sets up the initial and default motor angles, establishes mappings between motors and joints, identifies passive joints, and configures collision detection. It also determines the presence of a gripper and sets joint groups and limits.
+        This method sets up the initial and default motor angles, establishes mappings between motors and joints,
+         identifies passive joints, and configures collision detection. It also determines the presence of
+          a gripper and sets joint groups and limits.
 
         Attributes:
             init_motor_angles (Dict[str, float]): Initial motor angles for active joints.

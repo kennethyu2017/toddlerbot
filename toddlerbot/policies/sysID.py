@@ -59,6 +59,7 @@ class SysIDFixedPolicy(BasePolicy, policy_name="sysID"):
         if "sysID" in robot.name:
             kp_list: List[float] = []
             if "330" in robot.name:
+                # will be divided by 128 in Dynamixel Position PD controller.
                 kp_list = list(range(900, 2400, 300))
             else:
                 kp_list = list(range(1500, 3600, 300))

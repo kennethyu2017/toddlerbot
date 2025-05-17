@@ -11,7 +11,7 @@ from typing import Any, Dict, List
 import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
-from moviepy.editor import ImageSequenceClip
+from moviepy import ImageSequenceClip
 from tqdm import tqdm
 
 from toddlerbot.policies import BasePolicy, get_policy_class, get_policy_names

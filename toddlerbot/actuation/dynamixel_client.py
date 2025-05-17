@@ -489,6 +489,7 @@ class DynamixelClient:
         self.check_connected()
         key = (address, size)
         if key not in self._sync_readers:
+            self.dxl.GroupBulkRead
             self._sync_readers[key] = self.dxl.GroupSyncRead(
                 self.port_handler, self.packet_handler, address, size
             )
