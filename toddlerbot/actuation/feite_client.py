@@ -7,13 +7,14 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import (Any, Dict, List, Optional, Sequence,Type,
                     Set, Tuple, ClassVar,Iterable,NamedTuple,Callable)
+# from itertools import islice
 # from functools import partial
 import numpy as np
 import numpy.typing as npt
 
 from scservo_sdk import (PortHandler, ProtocolPacketHandler, GroupSyncReader, GroupSyncWriter,
                          CommResult, ByteOrder, SMS_STS_SRAM_Table_ReadOnly, SMS_STS_SRAM_Table_RW,
-                         SMS_STS_EEPROM_Table_ReadOnly, SMS_STS_Table_Data_Length)
+                         SMS_STS_EEPROM_Table_ReadOnly, SMS_STS_EEPROM_Table_RW, SMS_STS_Table_Data_Length)
 from ._module_logger import logger
 
 
@@ -179,39 +180,40 @@ def _parse_vin(param: bytes | bytearray)->float:
 
 
 class _ReadSpec(NamedTuple):
-    addr: int
+    start_addr: int
     size: List[int]  # for multi-params read, e.g., `pos,vel,load` together.
     parser: List[ Callable[[bytes|bytearray], float|int] ]
     result_dtype: List[Type]
 
 
 _TableValueReadSpec : Dict[TableValueName, _ReadSpec] = {
-    TableValueName.pos: _ReadSpec(addr=SMS_STS_SRAM_Table_ReadOnly.PRESENT_POSITION_L,
+    TableValueName.pos: _ReadSpec(start_addr=SMS_STS_SRAM_Table_ReadOnly.PRESENT_POSITION_L,
                      size=[SMS_STS_Table_Data_Length.PRESENT_POSITION],
                      parser=[_parse_pos],
                      result_dtype=[np.float32]),
 
-    TableValueName.vel: _ReadSpec(addr=SMS_STS_SRAM_Table_ReadOnly.PRESENT_VELOCITY_L,
+    TableValueName.vel: _ReadSpec(start_addr=SMS_STS_SRAM_Table_ReadOnly.PRESENT_VELOCITY_L,
                      size=[SMS_STS_Table_Data_Length.PRESENT_VELOCITY],
                      parser=[_parse_vel],
                      result_dtype=[np.float32]),
 
-    TableValueName.load: _ReadSpec(addr=SMS_STS_SRAM_Table_ReadOnly.PRESENT_LOAD_L,
+    TableValueName.load: _ReadSpec(start_addr=SMS_STS_SRAM_Table_ReadOnly.PRESENT_LOAD_L,
                       size=[SMS_STS_Table_Data_Length.PRESENT_LOAD],
                       parser=[_parse_load],
                       result_dtype=[np.float32]),
 
-    TableValueName.vin: _ReadSpec(addr=SMS_STS_SRAM_Table_ReadOnly.PRESENT_VOLTAGE,
+    TableValueName.vin: _ReadSpec(start_addr=SMS_STS_SRAM_Table_ReadOnly.PRESENT_VOLTAGE,
                                      size=[SMS_STS_Table_Data_Length.PRESENT_VOLTAGE],
                                      parser=[_parse_vin],
                                      result_dtype=[np.float16]),
 
-    TableValueName.model: _ReadSpec(addr=SMS_STS_EEPROM_Table_ReadOnly.MODEL_L,
+    TableValueName.model: _ReadSpec(start_addr=SMS_STS_EEPROM_Table_ReadOnly.MODEL_L,
                         size=[SMS_STS_Table_Data_Length.MODEL_NUMBER],
                         parser=[_parse_model],
                         result_dtype=[np.uint16]),
 
-    TableValueName.pos_vel_load: _ReadSpec(addr=SMS_STS_SRAM_Table_ReadOnly.PRESENT_POSITION_L,
+    # consecutive-address multiple values read.
+    TableValueName.pos_vel_load: _ReadSpec(start_addr=SMS_STS_SRAM_Table_ReadOnly.PRESENT_POSITION_L,
                         size=[SMS_STS_Table_Data_Length.PRESENT_POSITION,
                               SMS_STS_Table_Data_Length.PRESENT_VELOCITY,
                               SMS_STS_Table_Data_Length.PRESENT_LOAD],
@@ -246,7 +248,7 @@ class FeiteGroupClient:
         Args:
         """
 
-        # NOTE: motor_ids is not guaranteed to be consecutive, i.e, could be [44, 1, 230,...]. so we
+        # NOTE: _motor_ids is not guaranteed to be consecutive, i.e, could be [44, 1, 230,...]. so we
         # could not use id as array index directly.
         self._motor_ids = list(motor_ids)  # not changed after instantiating a FeiteClient instance.
         self.port_name = port_name
@@ -336,60 +338,6 @@ class FeiteGroupClient:
             FeiteGroupClient.OPEN_CLIENTS.remove(self)
 
 
-    def write_desired_pos( self, *, motor_ids: Sequence[int], positions: npt.NDArray[np.float32] ):
-        """Writes the given desired positions.
-
-        Args:
-            motor_ids: The motor IDs to write to.
-            positions: The joint angles in radians to write. in rad of single turn.signed value, to represent rotor direction.
-        """
-        assert len(motor_ids) == len(positions)
-        # TODO: only allow -2Pi ~ 2Pi.
-        assert np.all( np.abs(positions) < 2*np.pi )
-
-        # ->steps, ->int, signed->unsigned, to_bytes.
-        # Convert to Feite position steps:
-        steps = (positions / POS_RESOLUTION).astype(dtype=np.int16)
-
-        self.sync_write_2_bytes(motor_ids=motor_ids,
-                                params=[_signed_to_proto_param_bytes_v2(value=_v, size=2) for _v in steps],  # addr 42, 43,
-                                address=SMS_STS_SRAM_Table_RW.GOAL_POSITION_L)  # addr 42, 43
-
-    def _write_1_byte_impl(
-        self,*,
-        motor_ids: Sequence[int],
-        value: int,
-        address: int,
-    ) -> List[int]:
-        """Writes a value to the motors.
-           vs. sync_write:  we need the individual feedback of corresponding ID here, but sync_write has no feedback pkt.
-
-        Args:
-            _motor_ids: The motor IDs to write to.
-            value: The value to write to the control table.
-            address: The control table address to write to.
-
-        Returns:
-            A list of IDs that were unsuccessful.
-        """
-        self.check_connected()
-        errored_ids: List[int] = []
-        data = bytearray(1)
-        for _id in motor_ids:
-            # TODO: handle value < 0.
-            assert 0 <=value<= 0xff
-            data[0]=value
-            comm_result,error = self.packet_handler.write1ByteTxRx(_id, address, data)
-            success = self.handle_packet_result(
-                comm_result.value,
-                error,
-                _id,
-                context="_write_1_byte_impl",
-            )
-            if not success:
-                errored_ids.append(_id)
-        return errored_ids
-
 
     def _sync_read_impl(
         self, *, address:int, size: int,
@@ -398,7 +346,7 @@ class FeiteGroupClient:
         """Reads values from a group of motors.
 
         Args:
-            motor_ids: The motor IDs to read from.
+            _motor_ids: The motor IDs to read from.
             address: The control table address to read from.
             size: The size of the control table value being read.
 
@@ -466,50 +414,6 @@ class FeiteGroupClient:
 
         return comm_time, param_list
 
-    def _sync_write_impl(
-        self,*,
-        motor_ids: Sequence[int],
-        params: Iterable[bytes|bytearray],
-        address: int,
-        size: int,
-    ):
-        """Writes values to a group of motors.
-
-        Args:
-            motor_ids: The motor IDs to write to.
-            params: The values to write.
-            address: The control table address to write to.
-            size: The size(in bytes) of the control table value being written to.
-        """
-        self.check_connected()
-        key = (address, size)
-        if key not in self._sync_writers:
-            self._sync_writers[key] = GroupSyncWriter(
-                packet_handler = self.packet_handler,
-                start_address=address,
-                data_length=size)
-
-        sync_writer = self._sync_writers[key]
-
-        errored_ids: List[int] = []
-        for _id, _bytes in zip(motor_ids, params):
-            assert len(_bytes)==size
-            # BIT15 is direction.
-            # param = signed_to_proto_param(int(_v), size=size)
-            # little endian.
-            # param_bytes = param.to_bytes(size, byteorder="little")
-            success = sync_writer.addParam(_id, _bytes)
-            if not success:
-                errored_ids.append(_id)
-
-        if errored_ids:
-            logger.error( f"Sync write failed for: {str(errored_ids)}"    )
-
-        comm_result = sync_writer.txPacket()
-        self.handle_packet_result(comm_result.value, context="sync_write")
-
-        # write_data_dict,param are set/cleared at every sync_write.
-        sync_writer.clearParam()
 
     def check_connected(self):
         """Ensures the robot is connected."""
@@ -545,7 +449,7 @@ class FeiteGroupClient:
         return True
 
     def set_torque_enabled(
-        self,
+        self, *,
         motor_ids: Sequence[int],
         enabled: bool,
         retries: int = -1,
@@ -574,21 +478,23 @@ class FeiteGroupClient:
             retries -= 1
 
     def _sync_read_helper(self,read_spec:_ReadSpec )\
-            ->Tuple[float, npt.NDArray[Any]]:
+            ->Tuple[float, List[npt.NDArray[Any]] ]:
         param_list: List[bytearray]
-        value_arr: npt.NDArray[Any]
+        value_arr_list: List[npt.NDArray[Any]] = []
 
         assert len(read_spec.size) ==  len(read_spec.parser) == len(read_spec.result_dtype)
 
-        if read_spec.result_dtype in [np.uint8, np.int8, np.uint16, np.int16, np.uint32, np.int32]:
-            fill_value = 0
-        elif read_spec.result_dtype in [np.float16, np.float32, np.float64]:
-            fill_value = np.nan
-        else:
-            raise TypeError(f'read_spec result dtype error: {read_spec.result_dtype}')
+        for _dtype in read_spec.result_dtype:
+            if _dtype in [np.uint8, np.int8, np.uint16, np.int16, np.uint32, np.int32]:
+                fill_value = 0
+            elif _dtype in [np.float16, np.float32, np.float64]:
+                fill_value = np.nan
+            else:
+                raise TypeError(f'read_spec result dtype error: {_dtype}')
+            value_arr_list.append(np.full(shape=len(self._motor_ids), fill_value=fill_value, dtype=_dtype))
 
-        value_arr = np.full(shape=len(self._motor_ids), fill_value=fill_value,  dtype=read_spec.result_dtype)
-        comm_time, param_list = self._sync_read_impl(address=read_spec.addr, size=read_spec.size)
+        comm_time, param_list = self._sync_read_impl(address=read_spec.start_addr,
+                                                     size=sum(read_spec.size))
         assert len(param_list) == len(self._motor_ids)
         # TODO: corresponding data of error id in param_list keeps as `None`. check the valid value ?
         for _x, _bytes in enumerate(param_list):
@@ -596,11 +502,14 @@ class FeiteGroupClient:
                 # TODO: propagate nan to up layer caller. _value is `fill_value`, 0 or np.nan.
                 raise ValueError(f'the read data of ID:{self._motor_ids[_x]} is None.')
             else:
-                assert len(_bytes) == read_spec.size
-                value_arr[_x] = read_spec.parser(_bytes)
+                assert len(_bytes) == sum(read_spec.size)
+                for _s, _psr, _arr in zip(read_spec.size, read_spec.parser, value_arr_list):
+                    # bytearray(_bytes.pop(0) for _ in range(_s))
+                    _arr[_x] = _psr(_bytes[0:_s])
+                    del _bytes[0:_s]
 
         # NOTE: if the ID does not return pkt, the corresponding value is `0`.
-        return comm_time, value_arr
+        return comm_time, value_arr_list
 
     # def read_model_number(self, retries: int = 0) -> npt.NDArray[np.uint16]:
     #     """Returns the model number of the motors."""
@@ -625,21 +534,33 @@ class FeiteGroupClient:
     #     # NOTE: if the ID does not return version, the corresponding version value is `0`.
     #     return model_numbers
 
-    def _read_table_value_helper(self,*, name: TableValueName, into_cache: bool, retries: int = 0) -> Tuple[float,npt.NDArray[Any]]:
-        comm_time, value = self._sync_read_helper(_TableValueReadSpec[name])
+    def _read_table_single_value_helper(self,*, name: TableValueName, into_cache: bool, retries: int = 0) -> Tuple[float,npt.NDArray[Any]]:
+        comm_time, value_arr_list = self._sync_read_helper(_TableValueReadSpec[name])
+        assert len(value_arr_list)==1 and len(value_arr_list)==len(_TableValueReadSpec[name].result_dtype)
         if into_cache:
             assert self._cached_read_data_dict[name].dtype == _TableValueReadSpec[name].result_dtype
-            self._cached_read_data_dict[name] = value.copy()
+            self._cached_read_data_dict[name] = value_arr_list[0].copy()
 
         # NOTE: if the ID does not return pkt, the corresponding value is `np.nan`.
-        return comm_time, value
+        return comm_time, value_arr_list[0]
+
+    def _read_table_multiple_values_helper(self,*, name: TableValueName, retries: int = 0) -> Tuple[float,List[npt.NDArray[Any]] ]:
+        comm_time, value_arr_list = self._sync_read_helper(_TableValueReadSpec[name])
+        assert len(value_arr_list) > 1 and len(value_arr_list) == len(_TableValueReadSpec[name].result_dtype)
+        # if into_cache:
+        #     assert self._cached_read_data_dict[name].dtype == _TableValueReadSpec[name].result_dtype
+        #     self._cached_read_data_dict[name] = value.copy()
+
+        # NOTE: if the ID does not return pkt, the corresponding value is `np.nan`.
+        return comm_time, value_arr_list
+
 
     def read_model_number(self, retries: int = 0) -> npt.NDArray[np.uint16]:
-        _, ret = self._read_table_value_helper(name=TableValueName.model, into_cache=False)
+        _, ret = self._read_table_single_value_helper(name=TableValueName.model, into_cache=False)
         return ret
 
     def read_pos(self, retries: int = 0) -> Tuple[float,npt.NDArray[np.float32]]:
-        return self._read_table_value_helper(name=TableValueName.pos, into_cache=True)
+        return self._read_table_single_value_helper(name=TableValueName.pos, into_cache=True)
 
     # def read_pos(self, retries: int = 0) -> Tuple[float,npt.NDArray[np.float32]]:
     #     """Returns the current positions."""
@@ -650,7 +571,7 @@ class FeiteGroupClient:
     #     return comm_time, self._cached_read_data_dict[value_name].copy()
 
     def read_vel(self, retries: int = 0) -> Tuple[float, npt.NDArray[np.float32]]:
-        return self._read_table_value_helper(name=TableValueName.vel, into_cache=True)
+        return self._read_table_single_value_helper(name=TableValueName.vel, into_cache=True)
 
     # def read_vel(self, retries: int = 0) -> Tuple[float,npt.NDArray[np.float32]]:
     #     """Returns the current velocities."""
@@ -663,7 +584,7 @@ class FeiteGroupClient:
     #     return comm_time, self._cached_read_data_dict[attr].copy()
 
     def read_vin(self, retries: int = 0) -> Tuple[float, npt.NDArray[np.float16]]:
-        return self._read_table_value_helper(name=TableValueName.vin, into_cache=True)
+        return self._read_table_single_value_helper(name=TableValueName.vin, into_cache=True)
 
     #
     # def read_vin(self, retries: int = 0) -> Tuple[float, npt.NDArray[np.float32]]:
@@ -679,7 +600,19 @@ class FeiteGroupClient:
     def read_pos_vel_load(
         self, retries: int = 0
     ) -> PosVelLoadRecord:
-        self._read_table_value_helper(name=)
+        comm_time, value_arr_list = self._read_table_multiple_values_helper(name=TableValueName.pos_vel_load)
+
+        # TODO: the necessary of saving into cached data dict?
+        self._cached_read_data_dict[TableValueName.pos]=value_arr_list[0]
+        self._cached_read_data_dict[TableValueName.vel]=value_arr_list[1]
+        self._cached_read_data_dict[TableValueName.load]=value_arr_list[2]  # load in percentage of stall torque.
+
+        return PosVelLoadRecord(
+            comm_time,
+            pos=self._cached_read_data_dict[TableValueName.pos].copy(),
+            vel=self._cached_read_data_dict[TableValueName.vel].copy(),
+            load=self._cached_read_data_dict[TableValueName.load].copy(),
+        )
 
     # def read_pos_vel_load(
     #     self, retries: int = 0
@@ -712,6 +645,211 @@ class FeiteGroupClient:
     #         load=self._cached_read_data_dict["load"].copy(),
     #     )
 
+
+    def _sync_write_impl(
+        self,*,
+        param: List[bytes|bytearray] | bytes| bytearray,
+        address: int,
+        # size: int,
+        write_ids: Optional[Sequence[int]] = None,
+    ):
+        """Writes values to a group of motors.
+
+        Args:
+            write_ids: The motor IDs to write to.
+            param: The values to write. single bytes/bytearray value means same value for all ID, a list(bytes|bytearray) contains
+                   individual value for every ID.
+            address: The control table address to write to.
+            #size: The size(in bytes) of the control table value being written to. can cover multiple registers.
+        """
+        size: int
+        errored_ids: List[int] = []
+
+        if isinstance(param,list):
+            size = len(param[0])  # should be same for all elements in params.
+        elif isinstance(param, (bytes, bytearray)):
+            size = len(param)
+        else:
+            raise TypeError(f'param type error: {type(param)} ')
+
+        self.check_connected()
+        key = (address, size)
+        if key not in self._sync_writers:
+            self._sync_writers[key] = GroupSyncWriter(
+                packet_handler = self.packet_handler,
+                start_address=address,
+                data_length=size)
+
+        sync_writer = self._sync_writers[key]
+
+        if write_ids is None:
+            write_ids = self._motor_ids
+
+        if isinstance(param,list):
+            assert len(write_ids) == len(param)
+
+        # Clear before addParam.
+        sync_writer.clearParam()
+
+        if isinstance(param,list):
+            for _id, _bytes in zip(write_ids, param):
+                assert len(_bytes)==size # should be same for all elements in params.
+                success = sync_writer.addParam(_id, _bytes)
+                if not success:
+                    errored_ids.append(_id)
+        else:
+            for _id in write_ids:
+                # add same value for all ID.
+                success = sync_writer.addParam(_id, param)
+                if not success:
+                    errored_ids.append(_id)
+
+        if errored_ids:
+            logger.error( f"Sync write failed for: {str(errored_ids)}"    )
+
+        comm_result = sync_writer.txPacket()
+        self.handle_packet_result(comm_result.value, context="sync_write")
+
+        # write_data_dict,param are set/cleared at every sync_write.
+        # sync_writer.clearParam()
+
+
+    def _write_and_recv_answer_impl(
+        self,*,
+        param_list: List[bytes|bytearray], # each element is for corresponding id.
+        address: int,    # same for all ids.
+        write_ids: Optional[Sequence[int]] = None,
+    ) -> List[int]:
+        """Writes a value to the motors.
+           vs. sync_write:  we need the individual feedback of corresponding ID here, but sync_write has no feedback pkt.
+
+        Args:
+            write_ids: The motor IDs to write to.
+            param_list: The value to write to the control table.
+            address: The control table address to write to. same for all id.
+
+        Returns:
+            A list of IDs that were unsuccessful.
+        """
+        errored_ids: List[int] = []
+        size: int = len(param_list[0])  # should be same for all elements in params.
+
+        self.check_connected()
+
+        if write_ids is None:
+            write_ids = self._motor_ids
+
+        assert len(write_ids) == len(param_list)
+
+        for _id, _bytes in zip(write_ids, param_list):
+            assert len(_bytes) == size  # should be same for all elements in params.
+            comm_result,error = self.packet_handler.writeTxRx(
+                scs_id = _id,
+                address = address,
+                length = len(_bytes) ,
+                data = _bytes)
+            success = self.handle_packet_result(
+                comm_result.value,
+                error,
+                _id,
+                context="_write_and_recv_answer_impl",
+            )
+            if not success:
+                errored_ids.append(_id)
+        return errored_ids
+
+
+    def _set_1_byte_param_helper(self, *, address:int, value:int|List[int]):
+        param: bytes | List[bytes]
+
+        if isinstance(value, list):
+            for _v in value:
+                assert 0 <= _v <= 0xff
+
+            param = [_v.to_bytes(length=1) for _v in value]
+        else:
+            assert 0 <= value <= 0xff
+            param = value.to_bytes(length=1)
+
+        self._sync_write_impl(param=param,
+                              address=address)
+
+
+    def _set_multiple_bytes_param_helper(self,*, address:int, value: Tuple[int,...] | Sequence[Tuple[int,...]]):
+        param: bytes| List[bytes]
+
+        # if isinstance(value, list) and isinstance(value[0], tuple):
+        if isinstance(value[0], tuple):
+            for _tpl in value:
+                assert isinstance(_tpl, Iterable)
+                for _v in _tpl:
+                    assert 0 <= _v <= 0xff
+
+            param = [bytes(_tpl) for _tpl in value]
+
+        elif isinstance(value, tuple):
+            for _v in value:
+                assert 0 <= _v <= 0xff
+
+            param = bytes(value)
+
+        else:
+            raise TypeError(f'value type must be tuple(int) or list( tuple(int) ). got:{type(value)}')
+
+        self._sync_write_impl(param=param,
+                              address=address)
+
+    def set_desired_pos( self, *, motor_ids: Sequence[int], positions: npt.NDArray[np.float32] ):
+        """Writes the given desired positions.
+
+        Args:
+            motor_ids: The motor IDs to write to.
+            positions: The joint angles in radians to write. in rad of single turn.signed value, to represent rotor direction.
+        """
+        assert len(motor_ids) == len(positions)
+        # TODO: only allow -2Pi ~ 2Pi.
+        assert np.all( np.abs(positions) < 2*np.pi )
+
+        # ->steps, ->int, signed->unsigned, to_bytes.
+        # Convert to Feite position steps:
+        steps = (positions / POS_RESOLUTION).astype(dtype=np.int16)
+        size = steps.dtype.itemsize
+        assert size==2
+
+        self._sync_write_impl(param=[_signed_to_proto_param_bytes_v2(value=_v, size=size)
+                                          for _v in steps],  # addr 42, 43,
+                              address=SMS_STS_SRAM_Table_RW.GOAL_POSITION_L,
+                              write_ids=motor_ids)
+
+        # self.sync_write_2_bytes(_motor_ids=_motor_ids,
+        #                         params=[_signed_to_proto_param_bytes_v2(value=_v, size=2) for _v in steps],  # addr 42, 43,
+        #                         address=SMS_STS_SRAM_Table_RW.GOAL_POSITION_L)  # addr 42, 43
+
+
+    def set_return_delay_time(self, value: int|List[int]):
+        # TODO: value >= 1.
+        self._set_1_byte_param_helper(address=SMS_STS_EEPROM_Table_RW.RETURN_DELAY_TIME, value=value)
+
+    def set_control_mode(self, value: int|List[int]):
+        # TODO: only allow 0,1,2,3
+        self._set_1_byte_param_helper(address=SMS_STS_EEPROM_Table_RW.CONTROL_MODE,value=value)
+
+    def set_kp(self, value: int | List[int]):
+        #TODO: not allow 0 value for kp....
+        self._set_1_byte_param_helper(address=SMS_STS_EEPROM_Table_RW.KP, value=value)
+
+    # def set_kp_kd(self, *, kp: int | List[int], kd: int|List[int]):
+    #     assert 0 < kp < 0xff
+    #     assert 0 < kd < 0xff
+    #
+    #     # kp:21, kd:22 consecutive address.
+    #     self._sync_write_impl(param=bytes([kp, kd]),
+    #                           address=SMS_STS_EEPROM_Table_RW.KP)
+
+    def set_kp_kd_ki(self, *, kp: List[int], kd: List[int], ki: List[int]):
+        # kp:21, kd:22 , ki:23 consecutive address.
+        self._set_multiple_bytes_param_helper(address=SMS_STS_EEPROM_Table_RW.KP,
+                                              value=list(zip(kp, kd, ki)) )
 
     # TODO: SMS/STS has no reboot function
     # def reboot(self, _motor_ids: Sequence[int]):

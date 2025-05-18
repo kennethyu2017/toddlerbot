@@ -1,13 +1,56 @@
 import platform
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, Future
 from typing import Any, Dict, List
 
 import numpy as np
 
-from toddlerbot.actuation import JointState
-from toddlerbot.sim import BaseSim, Obs
-from toddlerbot.sim.robot import Robot
-from toddlerbot.utils.file_utils import find_ports
+from ..actuation import JointState
+from ..sim import BaseSim, Obs
+from ..sim.robot import Robot
+from ..sensing.IMU import IMU
+from ..utils.file_utils import find_ports
+from ..actuation.dynamixel_control import (
+    DynamixelConfig,
+    DynamixelController,
+)
+
+def _init_dynamixel_actuators(*, robot:Robot, executor: ThreadPoolExecutor)->Future:
+    # from ..actuation.dynamixel_control import (
+    #     DynamixelConfig,
+    #     DynamixelController,
+    # )
+
+    os_type = platform.system()
+
+    description = (
+        "USB Serial Port"
+        if os_type == "Windows"
+        else "USB <-> Serial Converter"
+    )
+
+    dynamixel_ports: List[str] = find_ports(description)
+    dynamixel_ids = robot.get_joint_attrs("type", "dynamixel", "id")
+
+    dynamixel_config = DynamixelConfig(
+        port=dynamixel_ports[0],
+        baudrate=robot.config["general"]["dynamixel_baudrate"],
+        control_mode=robot.get_joint_attrs(
+            "type", "dynamixel", "control_mode"
+        ),
+        kP=robot.get_joint_attrs("type", "dynamixel", "kp_real"),
+        kI=robot.get_joint_attrs("type", "dynamixel", "ki_real"),
+        kD=robot.get_joint_attrs("type", "dynamixel", "kd_real"),
+        kFF2=robot.get_joint_attrs("type", "dynamixel", "kff2_real"),
+        kFF1=robot.get_joint_attrs("type", "dynamixel", "kff1_real"),
+        init_pos=robot.get_joint_attrs("type", "dynamixel", "init_pos"),
+    )
+
+    return executor.submit(
+        DynamixelController, dynamixel_config, dynamixel_ids
+    )
+
+
+def _init_feite_actuators():...
 
 
 class RealWorld(BaseSim):
@@ -24,11 +67,16 @@ class RealWorld(BaseSim):
             has_dynamixel (bool): Indicates if the robot uses Dynamixel motors.
             negated_motor_names (List[str]): A list of motor names that require direction negation due to URDF configuration issues.
         """
+        executor: ThreadPoolExecutor
+        dynamixel_controller: DynamixelController|None
+        imu: IMU|None
+
         super().__init__("real_world")
         self.robot = robot
 
         self.has_imu = self.robot.config["general"]["has_imu"]
         self.has_dynamixel = self.robot.config["general"]["has_dynamixel"]
+        self.has_feite = self.robot.config["general"]["has_feite"]
 
         # TODO: Fix the mate directions in the URDF and remove the negated_motor_names
         self.negated_motor_names: List[str] = [
@@ -43,58 +91,34 @@ class RealWorld(BaseSim):
             "right_gripper_rack",
         ]
 
+        self.executor = ThreadPoolExecutor()
+        self.dynamixel_controller = None
+        self.imu = None
+
         self.initialize()
+
 
     def initialize(self) -> None:
         """Initializes the robot's components, including IMU and Dynamixel controllers, if available.
 
         This method sets up a thread pool executor to initialize the IMU and Dynamixel controllers asynchronously. It checks the operating system type to determine the appropriate port description for Dynamixel communication. If the robot is configured with an IMU, it initializes the IMU in a separate thread. Similarly, if the robot has Dynamixel actuators, it configures and initializes the Dynamixel controller using the specified port, baud rate, and control parameters. After initialization, it retrieves the results of the asynchronous operations and assigns them to the respective attributes. Finally, it performs a series of observations to ensure the components are functioning correctly.
         """
-        self.executor = ThreadPoolExecutor()
-
-        os_type = platform.system()
 
         future_imu = None
         if self.has_imu:
-            from toddlerbot.sensing.IMU import IMU
-
+            # from toddlerbot.sensing.IMU import IMU
             future_imu = self.executor.submit(IMU)
 
         future_dynamixel = None
         if self.has_dynamixel:
-            from toddlerbot.actuation.dynamixel_control import (
-                DynamixelConfig,
-                DynamixelController,
-            )
+            future_dynamixel = _init_dynamixel_actuators(robot=self.robot, executor=self.executor)
 
-            description = (
-                "USB Serial Port"
-                if os_type == "Windows"
-                else "USB <-> Serial Converter"
-            )
-
-            dynamixel_ports: List[str] = find_ports(description)
-
-            dynamixel_ids = self.robot.get_joint_attrs("type", "dynamixel", "id")
-            dynamixel_config = DynamixelConfig(
-                port=dynamixel_ports[0],
-                baudrate=self.robot.config["general"]["dynamixel_baudrate"],
-                control_mode=self.robot.get_joint_attrs(
-                    "type", "dynamixel", "control_mode"
-                ),
-                kP=self.robot.get_joint_attrs("type", "dynamixel", "kp_real"),
-                kI=self.robot.get_joint_attrs("type", "dynamixel", "ki_real"),
-                kD=self.robot.get_joint_attrs("type", "dynamixel", "kd_real"),
-                kFF2=self.robot.get_joint_attrs("type", "dynamixel", "kff2_real"),
-                kFF1=self.robot.get_joint_attrs("type", "dynamixel", "kff1_real"),
-                init_pos=self.robot.get_joint_attrs("type", "dynamixel", "init_pos"),
-            )
-            future_dynamixel = self.executor.submit(
-                DynamixelController, dynamixel_config, dynamixel_ids
-            )
 
         if future_dynamixel is not None:
             self.dynamixel_controller = future_dynamixel.result()
+            
+
+
         if future_imu is not None:
             try:
                 self.imu = future_imu.result()
