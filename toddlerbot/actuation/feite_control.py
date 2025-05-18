@@ -5,7 +5,7 @@ by kenneth yu.
 
 import time
 from threading import Lock
-from typing import Dict, List, NamedTuple, Sequence
+from typing import Dict, List, NamedTuple, Sequence,FrozenSet
 
 import numpy as np
 import numpy.typing as npt
@@ -128,18 +128,22 @@ class FeiteController(BaseController):
             init_pos (np.ndarray): An array of initial positions for the motors, initialized to zeros if not provided in the config.
         """
         client: FeiteGroupClient
-        motor_ids: List[int]
+        _motor_ids: FrozenSet[int]
 
         self.config = config
-        self.motor_ids: List[int] = motor_ids
+        self._motor_ids = frozenset(motor_ids)
+        if len(self._motor_ids) != len(motor_ids):
+            raise ValueError(f'motor_id include duplicated values: {motor_ids}')
+
         self.lock = Lock()
 
         self.client =self.connect_to_client()
         self.initialize_motors()
 
         if len(self.config.init_pos) == 0:
-            self.init_pos = np.zeros(len(motor_ids), dtype=np.float32)
+            self.init_pos = np.zeros(len(self._motor_ids), dtype=np.float32)
         else:
+            assert len(config.init_pos) == len(self._motor_ids)
             self.init_pos = np.array(config.init_pos, dtype=np.float32)
             self.update_init_pos()
 
@@ -193,7 +197,7 @@ class FeiteController(BaseController):
 
         try:
             client = FeiteGroupClient(
-                motor_ids = self.motor_ids,
+                motor_ids = self._motor_ids,
                 port_name = self.config.port,
                 baud_rate= self.config.baudrate,)
             client.connect()
@@ -217,11 +221,11 @@ class FeiteController(BaseController):
         """
         logger.info("Initializing motors...")
         #TODO: Feite has no reboot function.
-        # self.client.reboot(self.motor_ids)
+        # self.client.reboot(self._motor_ids)
         time.sleep(0.2)
 
         _, v_in = self.client.read_vin()
-        assert len(v_in)==len(self.motor_ids)
+        assert len(v_in)==len(self._motor_ids)
         logger.info(f"Voltage (V): {v_in}")
         if np.any(v_in < 10):
             raise ValueError(
@@ -233,45 +237,50 @@ class FeiteController(BaseController):
 
         # This sync writing section has to go after the voltage reading to make sure the motors are powered up
         # Set the return delay time to 1*2=2us
-        self.client.sync_write_1_byte(motor_ids=self.motor_ids,
-                                     params= [bytes([self.config.return_delay_time])] * len(self.motor_ids),
-                                     address=SMS_STS_EEPROM_Table_RW.RETURN_DELAY_TIME)
+        self.client.set_return_delay_time(self.config.return_delay_time)
 
-        self.client.sync_write_1_byte(motor_ids=self.motor_ids,
-                                     params= [bytes([CONTROL_MODE_DICT[m]]) for m in self.config.control_mode ],
-                                     address=SMS_STS_EEPROM_Table_RW.MODE)
+        # self.client.sync_write_1_byte(_motor_ids=self._motor_ids,
+        #                              params= [bytes([self.config.return_delay_time])] * len(self._motor_ids),
+        #                              address=SMS_STS_EEPROM_Table_RW.RETURN_DELAY_TIME)
+
+        self.client.set_control_mode(value= [ CONTROL_MODE_DICT[_m] for _m in self.config.control_mode] )
+
+        # self.client.sync_write_1_byte(_motor_ids=self._motor_ids,
+        #                              params= [bytes([CONTROL_MODE_DICT[m]]) for m in self.config.control_mode ],
+        #                              address=SMS_STS_EEPROM_Table_RW.MODE)
 
         # write kP,kD,kI together
-        assert np.all(np.array(self.config.kP) < 0xff) and np.all(0 <= np.array(self.config.kP))
-        assert np.all(np.array(self.config.kD) < 0xff) and np.all(0 <= np.array(self.config.kD))
-        assert np.all(np.array(self.config.kI) < 0xff) and np.all(0 <= np.array(self.config.kI))
+        assert np.all(np.array(self.config.kP) <= 0xff) and np.all(0 < np.array(self.config.kP))
+        assert np.all(np.array(self.config.kD) <= 0xff) and np.all(0 < np.array(self.config.kD))
+        assert np.all(np.array(self.config.kI) <= 0xff) and np.all(0 <= np.array(self.config.kI))
 
-        self.client.sync_write_kP_kD_kI.....
+        self.client.set_kp_kd_ki(kp=self.config.kP, kd=self.config.kD, ki=self.config.kI)
 
-        self.client.sync_write_3_bytes(motor_ids=self.motor_ids,
-                                     params=[ bytes([_p, _d, _i]) for _p, _d, _i in
-                                        zip(self.config.kP, self.config.kD, self.config.kI) ],
-                                     address=SMS_STS_EEPROM_Table_RW.KP)
+        #
+        # self.client.sync_write_3_bytes(_motor_ids=self._motor_ids,
+        #                              params=[ bytes([_p, _d, _i]) for _p, _d, _i in
+        #                                 zip(self.config.kP, self.config.kD, self.config.kI) ],
+        #                              address=SMS_STS_EEPROM_Table_RW.KP)
 
-        # self.client.sync_write(motor_ids=self.motor_ids,
+        # self.client.sync_write(_motor_ids=self._motor_ids,
         #                        params=(bytes([_v]) for _v in self.config.kP),
         #                        address=SMS_STS_EEPROM_Table_RW.KP,
         #                        size=1)
-        # self.client.sync_write(motor_ids=self.motor_ids,
+        # self.client.sync_write(_motor_ids=self._motor_ids,
         #                        params=(bytes([_v]) for _v in self.config.kD),
         #                        address=SMS_STS_EEPROM_Table_RW.KD,
         #                        size=1)
-        # self.client.sync_write(motor_ids=self.motor_ids,
+        # self.client.sync_write(_motor_ids=self._motor_ids,
         #                        params=(bytes([_v]) for _v in self.config.kI),
         #                        address=SMS_STS_EEPROM_Table_RW.KI,
         #                        size=1)
 
         # TODO: no feedforward of Feite actuator.
-        # self.client.sync_write(self.motor_ids, self.config.kFF2, 88, 2)
-        # self.client.sync_write(self.motor_ids, self.config.kFF1, 90, 2)
-        # self.client.sync_write(self.motor_ids, self.config.current_limit, 102, 2)
+        # self.client.sync_write(self._motor_ids, self.config.kFF2, 88, 2)
+        # self.client.sync_write(self._motor_ids, self.config.kFF1, 90, 2)
+        # self.client.sync_write(self._motor_ids, self.config.current_limit, 102, 2)
 
-        self.client.set_torque_enabled(self.motor_ids, True)
+        self.client.set_torque_enabled(motor_ids=self._motor_ids, enabled=True)
 
         time.sleep(0.2)
 
@@ -312,14 +321,14 @@ class FeiteController(BaseController):
         open_clients: Set[DynamixelClient] = FeiteGroupClient.OPEN_CLIENTS # type: ignore
         for _client in open_clients:
             if ids is not None:
-                # get the intersecting list between ids and motor_ids
-                set_ids = set(_client.motor_ids) & set(ids)
+                # get the intersecting list between ids and _motor_ids
+                set_ids = set(_client._motor_ids) & set(ids)
                 logger.info(f"set motor id: {set_ids}")
             else:
-                set_ids = _client.motor_ids
+                set_ids = _client._motor_ids
                 logger.info(f"set all the motors in client with ids: {set_ids}")
 
-            _client.set_torque_enabled(set_ids, enabled, retries=0)
+            _client.set_torque_enabled(motor_ids=set_ids, enabled=enabled, retries=0)
 
 
     # def enable_motors(self, ids:Sequence[int]=None):
@@ -331,13 +340,13 @@ class FeiteController(BaseController):
     #     open_clients: Set[DynamixelClient] = FeiteGroupClient.OPEN_CLIENTS  # type: ignore
     #     for _client in open_clients:
     #         if ids is not None:
-    #             # get the intersecting list between ids and motor_ids
-    #             ids_to_enable = list(set(open_client.motor_ids) & set(ids))
+    #             # get the intersecting list between ids and _motor_ids
+    #             ids_to_enable = list(set(open_client._motor_ids) & set(ids))
     #             print(f"\nEnabling motor id {ids_to_enable}\n")
     #             open_client.set_torque_enabled(ids_to_enable, True)
     #         else:
     #             print("\nEnabling all the motors\n")
-    #             open_client.set_torque_enabled(open_client.motor_ids, True)
+    #             open_client.set_torque_enabled(open_client._motor_ids, True)
 
     def set_kp_list(self, kp: List[int]):
         """Set the proportional gain (Kp) for the motors.
@@ -347,34 +356,36 @@ class FeiteController(BaseController):
         Args:
             kp (List[int]): A list of proportional gain values to be set for the motors.
         """
-        assert np.all(np.array(kp) < 0xff) and np.all(0 <= np.array(kp))
+        assert np.all(np.array(kp) <= 0xff) and np.all(0 < np.array(kp))
         with self.lock:
-            # self.client.sync_write(motor_ids=self.motor_ids,
+            # self.client.sync_write(_motor_ids=self._motor_ids,
             #                        params=[bytes([_p]) for _p in kp],
             #                        address=SMS_STS_EEPROM_Table_RW.KP,
             #                        size=1)
-            self.client.sync_write_1_byte(motor_ids=self.motor_ids,
-                                   params=[bytes([_p]) for _p in kp],
-                                   address=SMS_STS_EEPROM_Table_RW.KP)
+            # self.client.sync_write_1_byte(_motor_ids=self._motor_ids,
+            #                        params=[bytes([_p]) for _p in kp],
+            #                        address=SMS_STS_EEPROM_Table_RW.KP)
+            self.client.set_kp(kp)
 
 
-    def set_same_kp_kd(self, kp: int, kd: int):
-        """Set same proportional (kp) and derivative (kd) gains for all motor under client.
-
-        This function updates the motor's control parameters by writing the specified
-        proportional and derivative gains to the motor's registers. The operation is
-        thread-safe.
-
-        Args:
-            kp (int): The proportional gain to be set for the motor.
-            kd (int): The derivative gain to be set for the motor.
-        """
-        assert 0 <= kp < 0xff and 0 <= kd < 0xff
-        logger.info(f"Setting motor kp={kp} kd={kd}")
-        with self.lock:
-            self.client.sync_write_2_bytes(motor_ids=self.motor_ids,
-                                         params=[bytes([kp, kd])] * len(self.motor_ids),
-                                         address=SMS_STS_EEPROM_Table_RW.KP) # kp, kd
+    # def set_kp_kd_list(self, kp: int, kd: int):
+    #     """Set same proportional (kp) and derivative (kd) gains for all motor under client.
+    #
+    #     This function updates the motor's control parameters by writing the specified
+    #     proportional and derivative gains to the motor's registers. The operation is
+    #     thread-safe.
+    #
+    #     Args:
+    #         kp (int): The proportional gain to be set for the motor.
+    #         kd (int): The derivative gain to be set for the motor.
+    #     """
+    #     assert 0 <= kp < 0xff and 0 <= kd < 0xff
+    #     logger.info(f"Setting motor kp={kp} kd={kd}")
+    #     with self.lock:
+    #         self.client.set_kp_kd_ki()
+    #         # self.client.sync_write_2_bytes(_motor_ids=self._motor_ids,
+    #         #                              params=[bytes([kp, kd])] * len(self._motor_ids),
+    #         #                              address=SMS_STS_EEPROM_Table_RW.KP) # kp, kd
 
 
     # def set_parameters(self, kp=None, kd=None, ki=None, kff1=None, kff2=None, ids=None):
@@ -414,7 +425,7 @@ class FeiteController(BaseController):
         pos_arr: npt.NDArray[np.float32] = np.array(pos)
         pos_arr_drive = self.init_pos + pos_arr
         with self.lock:
-            self.client.write_desired_pos(motor_ids=self.motor_ids,positions=pos_arr_drive)
+            self.client.set_desired_pos(motor_ids=self._motor_ids, positions=pos_arr_drive)
 
     # @profile()
     def get_motor_state(self, retries: int = 0) -> Dict[int, JointState]:
@@ -429,28 +440,28 @@ class FeiteController(BaseController):
 
         # log(f"Start... {time.time()}", header="Feite", level="warning")
         state_dict: Dict[int, JointState] = {}
-        record: PosVelLoadRecord = None
+        record: PosVelLoadRecord | None = None
         with self.lock:
-            # time, pos_arr = self.client.read_pos(retries=retries)
-            # time, pos_arr, vel_arr = self.client.read_pos_vel(retries=retries)
-
-            record = self.client.read_pos_vel_load(
-                retries=retries
-            )
+            record = self.client.read_pos_vel_load(retries=retries)
 
         # log(f"Pos: {np.round(pos_arr, 4)}", header="Feite", level="debug")
         # log(f"Vel: {np.round(vel_arr, 4)}", header="Feite", level="debug")
         # log(f"Cur: {np.round(cur_arr, 4)}", header="Feite", level="debug")
 
+        assert len(self._motor_ids) == len(record.pos) == len(record.vel) == len(record.load)
+
         # relative to init pos.
         relative_pos = record.pos - self.init_pos
 
-        for _id in self.motor_ids:
+        for _id, _pos, _vel, _load in zip(self._motor_ids,
+                                          relative_pos,
+                                          record.vel,
+                                          record.load) :
             state_dict[_id] = JointState(
                 time=record.comm_time,
-                pos=relative_pos[i]
-                vel=vel_arr[i], tor=load_arr[i]
-            )
+                pos= _pos,
+                vel= _vel,
+                tor= _load)
 
         # log(f"End... {time.time()}", header="Feite", level="warning")
 

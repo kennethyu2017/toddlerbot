@@ -189,7 +189,7 @@ class DynamixelClient:
             )
 
         # Start with all motors enabled.  NO, I want to set settings before enabled
-        # self.set_torque_enabled(self.motor_ids, True)
+        # self.set_torque_enabled(self._motor_ids, True)
 
     def disconnect(self):
         """Disconnects from the Dynamixel device."""
@@ -387,7 +387,7 @@ class DynamixelClient:
         """Reads values from a group of motors.
 
         Args:
-            motor_ids: The motor IDs to read from.
+            _motor_ids: The motor IDs to read from.
             address: The control table address to read from.
             size: The size of the control table value being read.
 
@@ -479,7 +479,7 @@ class DynamixelClient:
         """Reads values from a group of motors.
 
         Args:
-            motor_ids: The motor IDs to read from.
+            _motor_ids: The motor IDs to read from.
             address: The control table address to read from.
             size: The size of the control table value being read.
 

@@ -236,7 +236,7 @@ class DynamixelController(BaseController):
         self.client.sync_write(self.motor_ids, self.config.kP, 84, 2)
         self.client.sync_write(self.motor_ids, self.config.kFF2, 88, 2)
         self.client.sync_write(self.motor_ids, self.config.kFF1, 90, 2)
-        # self.client.sync_write(self.motor_ids, self.config.current_limit, 102, 2)
+        # self.client.sync_write(self._motor_ids, self.config.current_limit, 102, 2)
 
         self.client.set_torque_enabled(self.motor_ids, True)
 
@@ -277,7 +277,7 @@ class DynamixelController(BaseController):
         open_clients: List[DynamixelClient] = list(DynamixelClient.OPEN_CLIENTS)  # type: ignore
         for open_client in open_clients:
             if ids is not None:
-                # get the intersecting list between ids and motor_ids
+                # get the intersecting list between ids and _motor_ids
                 ids_to_disable = list(set(open_client.motor_ids) & set(ids))
                 print(f"\nDisabling motor id {ids_to_disable}\n")
                 open_client.set_torque_enabled(ids_to_disable, False, retries=0)
@@ -294,7 +294,7 @@ class DynamixelController(BaseController):
         open_clients: List[DynamixelClient] = list(DynamixelClient.OPEN_CLIENTS)  # type: ignore
         for open_client in open_clients:
             if ids is not None:
-                # get the intersecting list between ids and motor_ids
+                # get the intersecting list between ids and _motor_ids
                 ids_to_enable = list(set(open_client.motor_ids) & set(ids))
                 print(f"\nEnabling motor id {ids_to_enable}\n")
                 open_client.set_torque_enabled(ids_to_enable, True)
@@ -371,7 +371,7 @@ class DynamixelController(BaseController):
     def set_cur(self, cur: List[float]):
         """Sets the desired current for the motors.
 
-        This method writes the specified current values to the motors identified by `motor_ids`. The operation is thread-safe, ensuring that the current values are set without interference from other threads.
+        This method writes the specified current values to the motors identified by `_motor_ids`. The operation is thread-safe, ensuring that the current values are set without interference from other threads.
 
         Args:
             cur (List[float]): A list of current values to be set for the motors.
