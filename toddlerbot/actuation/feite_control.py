@@ -5,12 +5,12 @@ by kenneth yu.
 
 import time
 from threading import Lock
-from typing import Dict, List, NamedTuple, Sequence,FrozenSet
+from typing import Dict, NamedTuple, Sequence, Tuple
 
 import numpy as np
 import numpy.typing as npt
 
-from scservo_sdk import (SMS_STS_DEFAULT_BAUD_RATE, SMS_STS_EEPROM_Table_RW)
+from scservo_sdk import SMS_STS_DEFAULT_BAUD_RATE
 from . import BaseController, JointState
 from .feite_client import FeiteGroupClient, PosVelLoadRecord
 
@@ -99,13 +99,13 @@ class FeiteConfig(NamedTuple):
 
     port: str = ''
     baudrate: int = SMS_STS_DEFAULT_BAUD_RATE
-    control_mode: List[str] = []
-    kP: List[int] = []    # only 1 byte for Feite KP, KD, KI.
-    kI: List[int] = []
-    kD: List[int] = []
-    # kFF2: List[float]
-    # kFF1: List[float]
-    init_pos: List[float] = []
+    control_mode: Sequence[str] = []
+    kP: Sequence[int] = []    # only 1 byte for Feite KP, KD, KI.
+    kI: Sequence[int] = []
+    kD: Sequence[int] = []
+    # kFF2: Seq[float]
+    # kFF1: Seq[float]
+    init_pos: Sequence[float] = []
     default_vel: float = np.pi
     # interp_method: str = "cubic"
     return_delay_time: int = 1
@@ -114,7 +114,7 @@ class FeiteConfig(NamedTuple):
 class FeiteController(BaseController):
     """Class for controlling Feite SM40BL motors."""
 
-    def __init__(self, config: FeiteConfig, motor_ids: List[int]):
+    def __init__(self, config: FeiteConfig, motor_ids: Sequence[int]):
         """Initializes the motor controller with the given configuration and motor IDs.
 
         Args:
@@ -128,12 +128,14 @@ class FeiteController(BaseController):
             init_pos (np.ndarray): An array of initial positions for the motors, initialized to zeros if not provided in the config.
         """
         client: FeiteGroupClient
-        _motor_ids: FrozenSet[int]
+        _motor_ids: Tuple[int]
 
         self.config = config
-        self._motor_ids = frozenset(motor_ids)
+        # NOTE: the index in self._motor_ids is used for read data array index, like pos,vel,etc.
+        # we use immutable tuple instead of set/list.
+        self._motor_ids = tuple( set(motor_ids) )
         if len(self._motor_ids) != len(motor_ids):
-            raise ValueError(f'motor_id include duplicated values: {motor_ids}')
+            raise ValueError(f'input motor_id include duplicated values: {motor_ids}')
 
         self.lock = Lock()
 
@@ -348,7 +350,7 @@ class FeiteController(BaseController):
     #             print("\nEnabling all the motors\n")
     #             open_client.set_torque_enabled(open_client._motor_ids, True)
 
-    def set_kp_list(self, kp: List[int]):
+    def set_kp_list(self, kp: Sequence[int]):
         """Set the proportional gain (Kp) for the motors.
 
         This method updates the proportional gain values for the specified motors by writing to their control table.
@@ -416,11 +418,11 @@ class FeiteController(BaseController):
     #             self.client.sync_write(ids, [kff2], 88, 2)
 
     # @profile()
-    def set_pos(self, pos: List[float]):
+    def set_pos(self, pos: Sequence[float]):
         """Sets the position of the motors by updating the desired position.
 
         Args:
-            pos (List[float]): A list of position values to set for the motors.
+            pos (Sequence): A list of position values to set for the motors.
         """
         pos_arr: npt.NDArray[np.float32] = np.array(pos)
         pos_arr_drive = self.init_pos + pos_arr
