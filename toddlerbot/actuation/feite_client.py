@@ -126,7 +126,6 @@ def _proto_param_bytes_to_signed_v2(*, param: bytes | bytearray) -> int:
 
     Args:
         param (bytes): The unsigned integer to convert. the highest bit, e.g., BIT15, representing sign.
-        size (int): The byte size of the integer.
 
     Returns:
         int: The signed integer representation of the input value.
@@ -181,9 +180,9 @@ def _parse_vin(param: bytes | bytearray)->float:
 
 class _ReadSpec(NamedTuple):
     start_addr: int
-    size: List[int]  # for multi-params read, e.g., `pos,vel,load` together.
-    parser: List[ Callable[[bytes|bytearray], float|int] ]
-    result_dtype: List[Type]
+    size: Sequence[int]  # for multi-params read, e.g., `pos,vel,load` together.
+    parser: Sequence[ Callable[[bytes|bytearray], float|int] ]
+    result_dtype: Sequence[Type]
 
 
 _TableValueReadSpec : Dict[TableValueName, _ReadSpec] = {
@@ -250,7 +249,7 @@ class FeiteGroupClient:
 
         # NOTE: _motor_ids is not guaranteed to be consecutive, i.e, could be [44, 1, 230,...]. so we
         # could not use id as array index directly.
-        self._motor_ids = list(motor_ids)  # not changed after instantiating a FeiteClient instance.
+        self._motor_ids = motor_ids  # not changed after instantiating a FeiteClient instance.
         self.port_name = port_name
         self.baud_rate = baud_rate
         self.lazy_connect = lazy_connect
@@ -268,11 +267,15 @@ class FeiteGroupClient:
 
         # NOTE: data array is indexed by idx of self._motor_ids, not by the id value.
         cached_value_names = [ TableValueName.pos, TableValueName.vel, TableValueName.load, TableValueName.vin] # ['pos', 'vel', 'load', 'vin']
-        # self._cached_read_data_dict: Dict[TableValueName, npt.NDArray[Any]] =  {_name : None for _name in cached_value_names}
-        self._cached_read_data_dict: Dict[TableValueName, npt.NDArray[Any]] =  {
-            _name : np.full(shape=len(self._motor_ids), fill_value=np.nan, dtype=_TableValueReadSpec[_name].result_dtype)
-            for _name in cached_value_names
-        }
+        self._cached_read_data_dict: Dict[TableValueName, npt.NDArray[Any]] = {}
+
+        for _name in cached_value_names:
+            if len(_TableValueReadSpec[_name].result_dtype) != 1:
+                assert TypeError(f'cached value array dtype error: {_TableValueReadSpec[_name].result_dtype}')
+
+            self._cached_read_data_dict[_name] = np.full(shape=len(self._motor_ids),
+                                                         fill_value=np.nan,
+                                                         dtype=_TableValueReadSpec[_name].result_dtype[0])
 
         # self._cur_scale_arr: Optional[npt.NDArray[np.float32]] = None
 
@@ -316,9 +319,9 @@ class FeiteGroupClient:
         else:
             raise OSError(
                 (
-                    "Failed to set the baudrate to {} (Ensure that the device was "
-                    "configured for this baudrate)."
-                ).format(self.baudrate)
+                    "Failed to set the baud_rate to {} (Ensure that the device was "
+                    "configured for this baud_rate)."
+                ).format(self.baud_rate)
             )
 
         # Start with all motors enabled.  NO, I want to set settings before enabled
@@ -332,7 +335,7 @@ class FeiteGroupClient:
             logger.error("Port handler in use; cannot disconnect.")
             return
         # Ensure motors are disabled at the end.
-        self.set_torque_enabled(self._motor_ids, False)
+        self.set_torque_enabled(motor_ids=self._motor_ids, enabled=False)
         self.port_handler.closePort()
         if self in FeiteGroupClient.OPEN_CLIENTS:
             FeiteGroupClient.OPEN_CLIENTS.remove(self)
@@ -342,11 +345,10 @@ class FeiteGroupClient:
     def _sync_read_impl(
         self, *, address:int, size: int,
             #, scale: float
-    ) -> Tuple[float,List[bytearray|None]]:
+    ) -> Tuple[float,Sequence[bytearray|None]]:
         """Reads values from a group of motors.
 
         Args:
-            _motor_ids: The motor IDs to read from.
             address: The control table address to read from.
             size: The size of the control table value being read.
 
@@ -464,11 +466,11 @@ class FeiteGroupClient:
                 forever.
             retry_interval: The number of seconds to wait between retries.
         """
-        remaining_ids = list(motor_ids)
+        remaining_ids = motor_ids #list(motor_ids)
         while remaining_ids:
-            remaining_ids = self._write_1_byte_impl(motor_ids=remaining_ids,
-                                                    value=int(enabled),
-                                                    address=SMS_STS_SRAM_Table_RW.TORQUE_ENABLE)
+            remaining_ids = self._write_and_recv_answer_impl(param=int(enabled).to_bytes(length=1),
+                                                             address=SMS_STS_SRAM_Table_RW.TORQUE_ENABLE,
+                                                             write_ids=remaining_ids )
 
             if remaining_ids:
                 logger.error(f"Could not set torque {'enabled' if enabled else 'disabled'} for IDs: {str(remaining_ids)}")
@@ -478,7 +480,7 @@ class FeiteGroupClient:
             retries -= 1
 
     def _sync_read_helper(self,read_spec:_ReadSpec )\
-            ->Tuple[float, List[npt.NDArray[Any]] ]:
+            ->Tuple[float, Sequence[npt.NDArray[Any]] ]:
         param_list: List[bytearray]
         value_arr_list: List[npt.NDArray[Any]] = []
 
@@ -534,7 +536,8 @@ class FeiteGroupClient:
     #     # NOTE: if the ID does not return version, the corresponding version value is `0`.
     #     return model_numbers
 
-    def _read_table_single_value_helper(self,*, name: TableValueName, into_cache: bool, retries: int = 0) -> Tuple[float,npt.NDArray[Any]]:
+    def _read_table_single_value_helper(self,*, name: TableValueName, into_cache: bool, retries: int = 0) \
+            -> Tuple[float,npt.NDArray[Any]]:
         comm_time, value_arr_list = self._sync_read_helper(_TableValueReadSpec[name])
         assert len(value_arr_list)==1 and len(value_arr_list)==len(_TableValueReadSpec[name].result_dtype)
         if into_cache:
@@ -544,7 +547,8 @@ class FeiteGroupClient:
         # NOTE: if the ID does not return pkt, the corresponding value is `np.nan`.
         return comm_time, value_arr_list[0]
 
-    def _read_table_multiple_values_helper(self,*, name: TableValueName, retries: int = 0) -> Tuple[float,List[npt.NDArray[Any]] ]:
+    def _read_table_multiple_values_helper(self,*, name: TableValueName, retries: int = 0)\
+            -> Tuple[float,Sequence[npt.NDArray[Any]] ]:
         comm_time, value_arr_list = self._sync_read_helper(_TableValueReadSpec[name])
         assert len(value_arr_list) > 1 and len(value_arr_list) == len(_TableValueReadSpec[name].result_dtype)
         # if into_cache:
@@ -648,12 +652,12 @@ class FeiteGroupClient:
 
     def _sync_write_impl(
         self,*,
-        param: List[bytes|bytearray] | bytes| bytearray,
+        param: Sequence[bytes|bytearray] | bytes| bytearray,
         address: int,
         # size: int,
         write_ids: Optional[Sequence[int]] = None,
     ):
-        """Writes values to a group of motors.
+        """Writes values to a group of motors. no answer pkt.
 
         Args:
             write_ids: The motor IDs to write to.
@@ -665,7 +669,7 @@ class FeiteGroupClient:
         size: int
         errored_ids: List[int] = []
 
-        if isinstance(param,list):
+        if isinstance(param,(list, tuple)):
             size = len(param[0])  # should be same for all elements in params.
         elif isinstance(param, (bytes, bytearray)):
             size = len(param)
@@ -685,13 +689,13 @@ class FeiteGroupClient:
         if write_ids is None:
             write_ids = self._motor_ids
 
-        if isinstance(param,list):
+        if isinstance(param, (list,tuple)):
             assert len(write_ids) == len(param)
 
         # Clear before addParam.
         sync_writer.clearParam()
 
-        if isinstance(param,list):
+        if isinstance(param,(list, tuple)):
             for _id, _bytes in zip(write_ids, param):
                 assert len(_bytes)==size # should be same for all elements in params.
                 success = sync_writer.addParam(_id, _bytes)
@@ -716,32 +720,44 @@ class FeiteGroupClient:
 
     def _write_and_recv_answer_impl(
         self,*,
-        param_list: List[bytes|bytearray], # each element is for corresponding id.
+        param: Sequence[bytes|bytearray] | bytes | bytearray, # each element is for corresponding id.
         address: int,    # same for all ids.
         write_ids: Optional[Sequence[int]] = None,
-    ) -> List[int]:
+    ) -> Sequence[int]:
         """Writes a value to the motors.
            vs. sync_write:  we need the individual feedback of corresponding ID here, but sync_write has no feedback pkt.
 
         Args:
             write_ids: The motor IDs to write to.
-            param_list: The value to write to the control table.
+            param: The value to write to the control table.
             address: The control table address to write to. same for all id.
 
         Returns:
             A list of IDs that were unsuccessful.
         """
+        size: int
         errored_ids: List[int] = []
-        size: int = len(param_list[0])  # should be same for all elements in params.
+
+        if isinstance(param, (list, tuple)):
+            size = len(param[0])  # should be same for all elements in params.
+        elif isinstance(param, (bytes, bytearray)):
+            size = len(param)
+        else:
+            raise TypeError(f'param type error: {type(param)} ')
 
         self.check_connected()
 
         if write_ids is None:
             write_ids = self._motor_ids
 
-        assert len(write_ids) == len(param_list)
+        write_data: List[bytes | bytearray]
+        if isinstance(param, (list,tuple)):
+            assert len(write_ids) == len(param)
+            write_data = param
+        else:
+            write_data = [param] * len(write_ids)
 
-        for _id, _bytes in zip(write_ids, param_list):
+        for _id, _bytes in zip(write_ids, write_data):
             assert len(_bytes) == size  # should be same for all elements in params.
             comm_result,error = self.packet_handler.writeTxRx(
                 scs_id = _id,
@@ -756,26 +772,33 @@ class FeiteGroupClient:
             )
             if not success:
                 errored_ids.append(_id)
+
+
         return errored_ids
 
 
-    def _set_1_byte_param_helper(self, *, address:int, value:int|List[int]):
+    def _set_1_byte_param_helper(self, *, address:int, value:int|Sequence[int]):
         param: bytes | List[bytes]
 
-        if isinstance(value, list):
+        if isinstance(value, (list, tuple)):
             for _v in value:
                 assert 0 <= _v <= 0xff
 
             param = [_v.to_bytes(length=1) for _v in value]
-        else:
+        elif isinstance(value, int):
             assert 0 <= value <= 0xff
             param = value.to_bytes(length=1)
+        else:
+            raise TypeError(f'value type error: {type(value)} ')
 
         self._sync_write_impl(param=param,
                               address=address)
 
 
     def _set_multiple_bytes_param_helper(self,*, address:int, value: Tuple[int,...] | Sequence[Tuple[int,...]]):
+        """
+        value: each `int` represent one `byte` in memory tbl of actuator.
+        """
         param: bytes| List[bytes]
 
         # if isinstance(value, list) and isinstance(value[0], tuple):
@@ -826,19 +849,19 @@ class FeiteGroupClient:
         #                         address=SMS_STS_SRAM_Table_RW.GOAL_POSITION_L)  # addr 42, 43
 
 
-    def set_return_delay_time(self, value: int|List[int]):
+    def set_return_delay_time(self, value: int|Sequence[int]):
         # TODO: value >= 1.
         self._set_1_byte_param_helper(address=SMS_STS_EEPROM_Table_RW.RETURN_DELAY_TIME, value=value)
 
-    def set_control_mode(self, value: int|List[int]):
+    def set_control_mode(self, value: int|Sequence[int]):
         # TODO: only allow 0,1,2,3
         self._set_1_byte_param_helper(address=SMS_STS_EEPROM_Table_RW.CONTROL_MODE,value=value)
 
-    def set_kp(self, value: int | List[int]):
+    def set_kp(self, value: int | Sequence[int]):
         #TODO: not allow 0 value for kp....
         self._set_1_byte_param_helper(address=SMS_STS_EEPROM_Table_RW.KP, value=value)
 
-    # def set_kp_kd(self, *, kp: int | List[int], kd: int|List[int]):
+    # def set_kp_kd(self, *, kp: int | Seq[int], kd: int|List[int]):
     #     assert 0 < kp < 0xff
     #     assert 0 < kd < 0xff
     #
@@ -846,7 +869,7 @@ class FeiteGroupClient:
     #     self._sync_write_impl(param=bytes([kp, kd]),
     #                           address=SMS_STS_EEPROM_Table_RW.KP)
 
-    def set_kp_kd_ki(self, *, kp: List[int], kd: List[int], ki: List[int]):
+    def set_kp_kd_ki(self, *, kp: Sequence[int], kd: Sequence[int], ki: Sequence[int]):
         # kp:21, kd:22 , ki:23 consecutive address.
         self._set_multiple_bytes_param_helper(address=SMS_STS_EEPROM_Table_RW.KP,
                                               value=list(zip(kp, kd, ki)) )

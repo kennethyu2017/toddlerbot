@@ -1,10 +1,55 @@
 import json
 import os
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Mapping, Tuple
+from dataclasses import dataclass, field
 
 
+@dataclass(init=False)
 class Robot:
     """This class defines some data strucutres, FK, IK of ToddlerBot."""
+    """    
+    init_motor_angles (Dict[str, float]): Initial motor angles for active joints.
+    init_joint_angles (Dict[str, float]): Initial joint angles derived from motor angles.
+    motor_ordering (List[str]): Order of motors based on initial configuration.
+    joint_ordering (List[str]): Order of joints based on initial configuration.
+    default_motor_angles (Dict[str, float]): Default motor angles for active joints.
+    default_joint_angles (Dict[str, float]): Default joint angles derived from motor angles.
+    motor_to_joint_name (Dict[str, List[str]]): Mapping from motor names to joint names.
+    joint_to_motor_name (Dict[str, List[str]]): Mapping from joint names to motor names.
+    passive_joint_names (List[str]): Names of passive joints.
+    foot_name (str): Name of the foot, if specified in the configuration.
+    has_gripper (bool): Indicates if the robot has a gripper.
+    collider_names (List[str]): Names of links with collision enabled.
+    nu (int): Number of active motors.
+    joint_groups (Dict[str, str]): Group classification for each joint.
+    joint_limits (Dict[str, List[float]]): Lower and upper limits for each joint.
+    """
+    # id: int
+    name: str = ''
+    # nu: int
+    # foot_name: str
+    has_gripper: bool = False
+    collider_names: List[str] = field(default_factory=list)
+    joint_groups: Dict[str, List[float]] = field(default_factory=dict)
+    joint_limits: Dict[str, List[float]] = field(default_factory=dict)
+    passive_joint_names:List[str] = field(default_factory=list)
+    joint_to_motor_name:Dict[str, List[str]] = field(default_factory=dict)
+    motor_to_joint_name:Dict[str, List[str]] = field(default_factory=dict)
+
+    # for actuators. not passive.
+    motor_name_to_id: Dict[str, int] = field(default_factory=dict)
+    id_to_motor_name: Dict[int,str] = field(default_factory=dict)
+
+    default_motor_angles :Dict[str, float] = field(default_factory=dict)
+    default_joint_angles :Dict[str, float] = field(default_factory=dict)
+
+    motor_ordering: Tuple[str,...] = field(default_factory=tuple)
+    joint_ordering: Tuple[str,...] = field(default_factory=tuple)
+
+    init_joint_angles: Dict[str,float] = field(default_factory=dict)
+    init_motor_angles: Dict[str,float] = field(default_factory=dict)
+    config: Mapping[str, Any] = None
+    collision_config: Mapping[str, Any] = None
 
     def __init__(self, robot_name: str):
         """Initializes a robot with specified configurations and paths.
@@ -12,9 +57,7 @@ class Robot:
         Args:
             robot_name (str): The name of the robot, used to set up directory paths and configurations.
         """
-        self.id = 0
         self.name = robot_name
-
         self.root_path = os.path.join("toddlerbot", "descriptions", self.name)
         self.config_path = os.path.join(self.root_path, "config.json")
         self.collision_config_path = os.path.join(
@@ -33,14 +76,14 @@ class Robot:
             FileNotFoundError: If the main configuration file or the collision configuration file does not exist at the specified paths.
         """
         if os.path.exists(self.config_path):
-            with open(self.config_path, "r") as f:
+            with open(self.config_path, "rt") as f:
                 self.config = json.load(f)
 
         else:
             raise FileNotFoundError(f"No config file found for robot '{self.name}'.")
 
         if os.path.exists(self.collision_config_path):
-            with open(self.collision_config_path, "r") as f:
+            with open(self.collision_config_path, "rt") as f:
                 self.collision_config = json.load(f)
 
         else:
@@ -72,30 +115,54 @@ class Robot:
             joint_groups (Dict[str, str]): Group classification for each joint.
             joint_limits (Dict[str, List[float]]): Lower and upper limits for each joint.
         """
-        self.init_motor_angles: Dict[str, float] = {}
+        # self.init_motor_angles = {}
         for joint_name, joint_config in self.config["joints"].items():
+            self.joint_groups[joint_name] = joint_config["group"]
+            self.joint_limits[joint_name] = [
+                joint_config["lower_limit"],
+                joint_config["upper_limit"],
+            ]
             if not joint_config["is_passive"]:
                 self.init_motor_angles[joint_name] = 0.0
-
-        self.init_joint_angles = self.motor_to_joint_angles(self.init_motor_angles)
-
-        self.motor_ordering = list(self.init_motor_angles.keys())
-        self.joint_ordering = list(self.init_joint_angles.keys())
-
-        self.default_motor_angles: Dict[str, float] = {}
-        for joint_name, joint_config in self.config["joints"].items():
-            if not joint_config["is_passive"]:
                 self.default_motor_angles[joint_name] = joint_config["default_pos"]
 
-        self.default_joint_angles = self.motor_to_joint_angles(
-            self.default_motor_angles
-        )
+                # check duplicated:
+                if joint_name in self.motor_name_to_id:
+                    raise ValueError(f'joint name duplicated: {joint_name}')
 
-        joints_config = self.config["joints"]
-        self.motor_to_joint_name: Dict[str, List[str]] = {}
-        self.joint_to_motor_name: Dict[str, List[str]] = {}
+                jnt_id = joint_config['id']
+                if  jnt_id in self.id_to_motor_name:
+                    raise ValueError(f'joint id duplicated: {jnt_id}')
+
+                self.motor_name_to_id[joint_name] = jnt_id
+                self.id_to_motor_name[jnt_id] = joint_name
+
+
+        self.init_joint_angles = self.motor_to_joint_angles(self.init_motor_angles)
+        self.default_joint_angles = self.motor_to_joint_angles(self.default_motor_angles)
+
+        #NOTE: len(self.motor_ordering) != len(self.joint_ordering)
+        # immutable.
+        self.motor_ordering = tuple(self.init_motor_angles)  #  list(self.init_motor_angles) #.keys())
+        self.joint_ordering = tuple(self.init_joint_angles)  #  list(self.init_joint_angles) #.keys())
+
+        # self.nu = len(self.motor_ordering)
+
+        # self.default_motor_angles = {}
+        # for joint_name, joint_config in self.config["joints"].items():
+        #     if not joint_config["is_passive"]:
+        #         self.default_motor_angles[joint_name] = joint_config["default_pos"]
+        #
+        # self.default_joint_angles = self.motor_to_joint_angles(
+        #     self.default_motor_angles
+        # )
+
+        # joints_config = self.config["joints"]
+        # self.motor_to_joint_name = {}
+        # self.joint_to_motor_name = {}
+
         for motor_name, joint_name in zip(self.motor_ordering, self.joint_ordering):
-            transmission = joints_config[motor_name]["transmission"]
+            transmission = self.config['joints'][motor_name]["transmission"]
             if transmission == "ankle":
                 if "left" in motor_name:
                     self.motor_to_joint_name[motor_name] = [
@@ -122,9 +189,9 @@ class Robot:
                 self.motor_to_joint_name[motor_name] = [joint_name]
                 self.joint_to_motor_name[joint_name] = [motor_name]
 
-        self.passive_joint_names = []
+        # self.passive_joint_names = []
         for joint_name in self.joint_ordering:
-            transmission = joints_config[joint_name]["transmission"]
+            transmission = self.config['joints'][joint_name]["transmission"]
             if transmission == "linkage":
                 for suffix in [
                     "_front_rev_1",
@@ -136,31 +203,32 @@ class Robot:
             elif transmission == "rack_and_pinion":
                 self.passive_joint_names.append(joint_name + "_mirror")
 
-        if "foot_name" in self.config["general"]:
-            self.foot_name = self.config["general"]["foot_name"]
+        # if "foot_name" in self.config["general"]:
+        #     self.foot_name = self.config["general"]["foot_name"]
 
-        self.has_gripper = False
+        # self.has_gripper = False
         for motor_name in self.motor_ordering:
             if "gripper" in motor_name:
                 self.has_gripper = True
 
-        self.collider_names: List[str] = []
+        # self.collider_names = []
         for link_name, link_config in self.collision_config.items():
             if link_config["has_collision"]:
                 self.collider_names.append(link_name)
 
-        self.nu = len(self.motor_ordering)
-        self.joint_groups: Dict[str, str] = {}
-        for joint_name, joint_config in self.config["joints"].items():
-            self.joint_groups[joint_name] = joint_config["group"]
+        # self.nu = len(self.motor_ordering)
+        # self.joint_groups = {}
+        # for joint_name, joint_config in self.config["joints"].items():
+        #     self.joint_groups[joint_name] = joint_config["group"]
 
-        self.joint_limits: Dict[str, List[float]] = {}
-        for joint_name, joint_config in self.config["joints"].items():
-            self.joint_limits[joint_name] = [
-                joint_config["lower_limit"],
-                joint_config["upper_limit"],
-            ]
+        # self.joint_limits = {}
+        # for joint_name, joint_config in self.config["joints"].items():
+        #     self.joint_limits[joint_name] = [
+        #         joint_config["lower_limit"],
+        #         joint_config["upper_limit"],
+        #     ]
 
+    # get attrs from all the joints in group.
     def get_joint_attrs(
         self,
         key_name: str,
@@ -193,6 +261,8 @@ class Robot:
 
         return attrs
 
+    # set attrs for all the joints in group.
+    # NOTE: support dynamically modify joint attrs, but modify ID and Name of motor is not allowed.
     def set_joint_attrs(
         self,
         key_name: str,
@@ -210,7 +280,12 @@ class Robot:
             attr_values (Any): The values to assign to the attribute. Can be a dictionary or a list.
             group (str, optional): The group to which the joint must belong to be modified. Defaults to "all".
         """
-        i = 0
+
+        # TODO: add more attrs allowed for dynamically change.
+        if attr_name not in {'init_pos',}:
+            raise ValueError(f'not allowed to set joint attr: {attr_name} dynamically.')
+
+        _index = 0
         for joint_name, joint_config in self.config["joints"].items():
             if (
                 key_name in joint_config
@@ -218,11 +293,11 @@ class Robot:
                 and (joint_config["group"] == group or group == "all")
             ):
                 if isinstance(attr_values, dict):
-                    id = joint_config["id"]
-                    self.config["joints"][joint_name][attr_name] = attr_values[id]
+                    # _id = joint_config["id"]
+                    self.config["joints"][joint_name][attr_name] = attr_values[joint_config["id"]]
                 else:
-                    self.config["joints"][joint_name][attr_name] = attr_values[i]
-                    i += 1
+                    self.config["joints"][joint_name][attr_name] = attr_values[_index]
+                    _index += 1
 
     def waist_fk(self, motor_pos: List[float]) -> List[float]:
         """Calculates the forward kinematics for the waist joint based on motor positions.
@@ -250,8 +325,8 @@ class Robot:
         offsets = self.config["general"]["offsets"]
         roll = waist_pos[0] / offsets["waist_roll_coef"]
         yaw = waist_pos[1] / offsets["waist_yaw_coef"]
-        waist_act_1 = (-roll + yaw) / 2
-        waist_act_2 = (roll + yaw) / 2
+        waist_act_1 = (-roll + yaw) / 2.
+        waist_act_2 = (roll + yaw) / 2.
         return [waist_act_1, waist_act_2]
 
     # @profile()
@@ -267,8 +342,10 @@ class Robot:
         joint_angles: Dict[str, float] = {}
         joints_config = self.config["joints"]
         waist_act_pos: List[float] = []
+        # TODO: no use of ank ?
         left_ank_act_pos: List[float] = []
         right_ank_act_pos: List[float] = []
+
         for motor_name, motor_pos in motor_angles.items():
             transmission = joints_config[motor_name]["transmission"]
             if transmission == "gear":
@@ -319,8 +396,11 @@ class Robot:
         motor_angles: Dict[str, float] = {}
         joints_config = self.config["joints"]
         waist_pos: List[float] = []
+
+        # TODO: no use of ank ?
         left_ankle_pos: List[float] = []
         right_ankle_pos: List[float] = []
+
         for joint_name, joint_pos in joint_angles.items():
             transmission = joints_config[joint_name]["transmission"]
             if transmission == "gear":
@@ -389,3 +469,16 @@ class Robot:
                 passive_angles[joint_name + "_mirror"] = joint_pos
 
         return passive_angles
+
+    @property
+    def nu(self)->int:
+        # read only.
+        return len(self.motor_ordering)
+
+    @property
+    def foot_name(self)->str:
+        name = ''
+        if "foot_name" in self.config["general"]:
+            name = self.config["general"]["foot_name"]
+        return name
+
