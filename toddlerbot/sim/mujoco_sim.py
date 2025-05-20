@@ -75,7 +75,7 @@ class MuJoCoSim(BaseSim):
         self.model.opt.ls_iterations = 4
         # self.model.opt.gravity[2] = -1.0
 
-        # Assume imu is the first site
+        # Assume _imu is the first site
         self.torso_euler_prev = np.zeros(3, dtype=np.float32)
         self.motor_vel_prev = np.zeros(self.model.nu, dtype=np.float32)
 
@@ -250,7 +250,7 @@ class MuJoCoSim(BaseSim):
         else:
             return joint_angles
 
-    def get_observation(self) -> Obs:
+    def get_observation(self, retries:int = 0) -> Obs:
         """Retrieves the current observation of the robot's state, including motor and joint states, and torso dynamics.
 
         Returns:

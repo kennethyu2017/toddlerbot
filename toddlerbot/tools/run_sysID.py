@@ -253,7 +253,7 @@ def optimize_parameters(
             sim.set_motor_kps(dict(zip(motor_names, [kp] * len(motor_names))))
 
             for a in action:
-                obs = sim.get_observation()
+                obs = sim.get_observation(1)
                 sim.set_motor_target(a)
                 sim.step()
 
@@ -510,7 +510,7 @@ def evaluate(
         for action, kp in zip(action_list, kp_list):
             sim.set_motor_kps(dict(zip(motor_names, [kp] * len(motor_names))))
             for a in action:
-                obs = sim.get_observation()
+                obs = sim.get_observation(1)
                 sim.set_motor_target(a)
                 sim.step()
 

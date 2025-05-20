@@ -129,9 +129,8 @@ class IMU:
         obs_euler = self.convert_matrix @ filtered_euler
         obs_ang_vel = filtered_ang_vel
 
-        state = {"euler": obs_euler, "ang_vel": obs_ang_vel}
-
-        return state
+        return {"euler": obs_euler,
+                "ang_vel": obs_ang_vel}
 
     def close(self):
         pass
@@ -145,11 +144,11 @@ if __name__ == "__main__":
     step = 0
     while step < 1000000:  # True:
         step_start = time.time()
-        # acceleration = imu.get_acceleration()
+        # acceleration = _imu.get_acceleration()
         state = imu.get_state()
         # print(
         #     np.array(
-        #         [imu.sensor.quaternion[3], *imu.sensor.quaternion[:3]],
+        #         [_imu.sensor.quaternion[3], *_imu.sensor.quaternion[:3]],
         #         dtype=np.float32,
         #         copy=True,
         #     )

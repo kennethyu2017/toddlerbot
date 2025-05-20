@@ -89,7 +89,7 @@ def main(robot: Robot, parts: List[str]):
 
         print("Please answer 'yes' or 'no'.")
 
-    executor = ThreadPoolExecutor()
+    executor = ThreadPoolExecutor(max_workers=5)
 
     has_dynamixel = robot.config["general"]["has_dynamixel"]
 

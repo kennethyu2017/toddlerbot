@@ -6,14 +6,14 @@ import numpy as np
 import numpy.typing as npt
 
 
-@dataclass
+@dataclass(init=False)
 class Obs:
     """Observation data structure"""
 
-    time: float
-    motor_pos: npt.NDArray[np.float32]
-    motor_vel: npt.NDArray[np.float32]
-    motor_tor: npt.NDArray[np.float32]
+    time: float = np.inf
+    motor_pos: Optional[npt.NDArray[np.float32]] = None
+    motor_vel: Optional[npt.NDArray[np.float32]] = None
+    motor_tor: Optional[npt.NDArray[np.float32]] = None
     lin_vel: npt.NDArray[np.float32] = field(
         default_factory=lambda: np.zeros(3, dtype=np.float32)
     )
@@ -28,6 +28,12 @@ class Obs:
     )
     joint_pos: Optional[npt.NDArray[np.float32]] = None
     joint_vel: Optional[npt.NDArray[np.float32]] = None
+
+    # def __init__(self, nu:int):
+    #     self.time = np.inf
+    #     self.motor_pos = np.full(shape=nu, fill_value=np.inf,dtype=np.float32)
+    #     self.motor_vel = self.motor_pos.copy()
+    #     self.motor_tor = self.motor_pos.copy()
 
 
 class BaseSim(ABC):
@@ -50,7 +56,7 @@ class BaseSim(ABC):
         pass
 
     @abstractmethod
-    def get_observation(self) -> Obs:
+    def get_observation(self, retries:int=0) -> Obs:
         pass
 
     @abstractmethod

@@ -278,7 +278,7 @@ def main() -> None:
     #     imu_config_path = os.path.join(robot_dir, "config_imu.json")
     #     if os.path.exists(imu_config_path):
     #         with open(imu_config_path, "r") as f:
-    #             general_config["imu"] = json.load(f)
+    #             general_config["_imu"] = json.load(f)
     #     else:
     #         raise ValueError(f"{imu_config_path} not found!")
 
