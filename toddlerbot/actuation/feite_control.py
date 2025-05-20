@@ -325,10 +325,10 @@ class FeiteController(BaseController):
             if ids is not None:
                 # get the intersecting list between ids and _motor_ids
                 set_ids = set(_client._motor_ids) & set(ids)
-                logger.info(f"set motor id: {set_ids}")
+                logger.info(f"set motor id: {set_ids} toque {enabled=:}")
             else:
                 set_ids = _client._motor_ids
-                logger.info(f"set all the motors in client with ids: {set_ids}")
+                logger.info(f"set all the motors in client with ids: {set_ids} toque {enabled=:}")
 
             _client.set_torque_enabled(motor_ids=set_ids, enabled=enabled, retries=0)
 
@@ -350,7 +350,7 @@ class FeiteController(BaseController):
     #             print("\nEnabling all the motors\n")
     #             open_client.set_torque_enabled(open_client._motor_ids, True)
 
-    def set_kp_list(self, kp: Sequence[int]):
+    def set_kp(self, kp: Sequence[int]):
         """Set the proportional gain (Kp) for the motors.
 
         This method updates the proportional gain values for the specified motors by writing to their control table.

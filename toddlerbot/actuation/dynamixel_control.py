@@ -5,7 +5,7 @@ import sys
 import time
 from dataclasses import dataclass
 from threading import Lock
-from typing import Dict, List
+from typing import Dict, List, Sequence
 
 import numpy as np
 import numpy.typing as npt
@@ -114,7 +114,7 @@ class DynamixelConfig:
 class DynamixelController(BaseController):
     """Class for controlling Dynamixel motors."""
 
-    def __init__(self, config: DynamixelConfig, motor_ids: List[int]):
+    def __init__(self, config: DynamixelConfig, motor_ids: Sequence[int]):
         """Initializes the motor controller with the given configuration and motor IDs.
 
         Args:
@@ -123,12 +123,12 @@ class DynamixelController(BaseController):
 
         Attributes:
             config (DynamixelConfig): Stores the configuration settings.
-            motor_ids (List[int]): Stores the list of motor IDs.
+            motor_ids (Sequence[int]): Stores the list of motor IDs.
             lock (Lock): A threading lock to ensure thread-safe operations.
             init_pos (np.ndarray): An array of initial positions for the motors, initialized to zeros if not provided in the config.
         """
         self.config = config
-        self.motor_ids: List[int] = motor_ids
+        self.motor_ids: Sequence[int] = motor_ids
         self.lock = Lock()
 
         self.connect_to_client()
@@ -268,7 +268,8 @@ class DynamixelController(BaseController):
             open_client.disconnect()
 
     # Only disable the torque, but stay connected through comm. If no id is provided, disable all motors
-    def disable_motors(self, ids=None):
+    @staticmethod
+    def disable_motors(ids=None):
         """Disables the torque for specified motors or all motors if no IDs are provided.
 
         Args:
@@ -285,7 +286,8 @@ class DynamixelController(BaseController):
                 print("\nDisabling all the motors\n")
                 open_client.set_torque_enabled(open_client.motor_ids, False, retries=0)
 
-    def enable_motors(self, ids=None):
+    @staticmethod
+    def enable_motors(ids=None):
         """Enables torque for specified motors or all motors if no IDs are provided.
 
         Args:
@@ -302,7 +304,7 @@ class DynamixelController(BaseController):
                 print("\nEnabling all the motors\n")
                 open_client.set_torque_enabled(open_client.motor_ids, True)
 
-    def set_kp(self, kp: List[float]):
+    def set_kp(self, kp: Sequence[float]):
         """Set the proportional gain (Kp) for the motors.
 
         This method updates the proportional gain values for the specified motors by writing to their control table.
@@ -407,7 +409,7 @@ class DynamixelController(BaseController):
 
         for i, motor_id in enumerate(self.motor_ids):
             state_dict[motor_id] = JointState(
-                time=time, pos=pos_arr[i], vel=vel_arr[i], tor=cur_arr[i]
+                time=time, pos=float(pos_arr[i]), vel=float(vel_arr[i]), tor=float(cur_arr[i]),
             )
 
         # log(f"End... {time.time()}", header="Dynamixel", level="warning")

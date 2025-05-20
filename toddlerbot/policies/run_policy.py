@@ -299,7 +299,7 @@ def run_policy(
             step_start = time.time()
 
             # Get the latest state from the queue
-            obs = sim.get_observation()
+            obs = sim.get_observation(1)
             obs.time -= start_time
 
             if "real" not in sim.name and vis_type != "view":
@@ -584,11 +584,11 @@ def main(args=None):
     sim: BaseSim | None = None
     if args.sim == "mujoco":
         sim = MuJoCoSim(robot, vis_type=args.vis, fixed_base="fixed" in args.policy)
-        init_motor_pos = sim.get_observation().motor_pos
+        init_motor_pos = sim.get_observation(1).motor_pos
 
     elif args.sim == "real":
         sim = RealWorld(robot)
-        init_motor_pos = sim.get_observation(retries=-1).motor_pos
+        init_motor_pos = sim.get_observation(1).motor_pos
 
     else:
         raise ValueError("Unknown simulator")

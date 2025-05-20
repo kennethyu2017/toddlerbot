@@ -131,7 +131,7 @@ def add_imu_sensor(root: ET.Element, general_config: Dict[str, Any]):
 
     offsets = general_config["offsets"]
     site_attributes = {
-        "name": "imu",
+        "name": "_imu",
         "type": "box",
         "size": "0.0128 0.0128 0.0008",
         "pos": f"{offsets['imu_x']} {offsets['imu_y']} {offsets['imu_z']}",
@@ -154,7 +154,7 @@ def add_imu_sensor(root: ET.Element, general_config: Dict[str, Any]):
     #         "name": "orientation",
     #         "objtype": "site",
     #         "noise": "0.001",
-    #         "objname": "imu",
+    #         "objname": "_imu",
     #     },
     # )
 
@@ -166,7 +166,7 @@ def add_imu_sensor(root: ET.Element, general_config: Dict[str, Any]):
     #         "name": "position",
     #         "objtype": "site",
     #         "noise": "0.001",
-    #         "objname": "imu",
+    #         "objname": "_imu",
     #     },
     # )
 
@@ -176,7 +176,7 @@ def add_imu_sensor(root: ET.Element, general_config: Dict[str, Any]):
     #     "gyro",
     #     attrib={
     #         "name": "angular_velocity",
-    #         "site": "imu",
+    #         "site": "_imu",
     #         "noise": "0.005",
     #         "cutoff": "34.9",
     #     },
@@ -188,7 +188,7 @@ def add_imu_sensor(root: ET.Element, general_config: Dict[str, Any]):
     #     "velocimeter",
     #     attrib={
     #         "name": "linear_velocity",
-    #         "site": "imu",
+    #         "site": "_imu",
     #         "noise": "0.001",
     #         "cutoff": "30",
     #     },
@@ -200,7 +200,7 @@ def add_imu_sensor(root: ET.Element, general_config: Dict[str, Any]):
     #     "accelerometer",
     #     attrib={
     #         "name": "linear_acceleration",
-    #         "site": "imu",
+    #         "site": "_imu",
     #         "noise": "0.005",
     #         "cutoff": "157",
     #     },
@@ -208,7 +208,7 @@ def add_imu_sensor(root: ET.Element, general_config: Dict[str, Any]):
 
     # # Adding magnetometer sub-element
     # ET.SubElement(
-    #     sensor, "magnetometer", attrib={"name": "magnetometer", "site": "imu"}
+    #     sensor, "magnetometer", attrib={"name": "magnetometer", "site": "_imu"}
     # )
 
 

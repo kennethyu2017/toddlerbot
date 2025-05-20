@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Dict, List
+from typing import Dict, List, Sequence
 
 @dataclass
 class JointState:
@@ -32,9 +32,13 @@ class BaseController(ABC):
         pass
 
     @abstractmethod
-    def get_motor_state(self) -> Dict[int, JointState]:
+    def get_motor_state(self, retries: int=0) -> Dict[int, JointState]:
         pass
 
     @abstractmethod
     def close_motors(self):
         pass
+
+    @abstractmethod
+    def set_kp(self, kp: Sequence[int|float]):...
+
