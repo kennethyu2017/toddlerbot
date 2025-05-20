@@ -74,7 +74,7 @@ def load_datasets(robot: Robot, sim_data_path: str, real_data_path: str):
             "ang_vel": np.array([obs.ang_vel for obs in obs_list[:idx]]),
             "euler": np.array([obs.euler for obs in obs_list[:idx]]),
         }
-        for motor_name in robot.motor_ordering:
+        for motor_name in robot.motor_name_ordering:
             data_dict[motor_name] = {}
             data_dict[motor_name]["time"] = np.array(
                 [obs.time for obs in obs_list[:idx]]
@@ -127,7 +127,7 @@ def evaluate(
         if motor_name == "imu":
             continue
 
-        motor_idx = robot.motor_ordering.index(motor_name)
+        motor_idx = robot.motor_name_ordering.index(motor_name)
 
         motor_pos_sim = sim_data[motor_name]["pos"][:, motor_idx]
         motor_pos_real = real_data[motor_name]["pos"][:, motor_idx]
@@ -202,7 +202,7 @@ def evaluate(
         time_seq_real_dict,
         motor_pos_sim_dict,
         motor_pos_real_dict,
-        robot.joint_limits,
+        robot.joint_cfg_limits,
         save_path=exp_folder_path,
         file_name="sim2real_motor_pos",
         line_suffix=["_sim", "_real"],
@@ -223,7 +223,7 @@ def evaluate(
         time_seq_real_dict,
         motor_vel_sim_dict,
         motor_vel_real_dict,
-        robot.joint_limits,
+        robot.joint_cfg_limits,
         save_path=exp_folder_path,
         file_name="sim2real_motor_vel",
         set_ylim=False,
@@ -235,7 +235,7 @@ def evaluate(
         time_seq_real_dict,
         action_sim_dict,
         action_real_dict,
-        robot.joint_limits,
+        robot.joint_cfg_limits,
         save_path=exp_folder_path,
         file_name="sim2real_action",
         set_ylim=False,
@@ -247,7 +247,7 @@ def evaluate(
         time_seq_sim_dict,
         motor_pos_sim_dict,
         action_sim_dict,
-        robot.joint_limits,
+        robot.joint_cfg_limits,
         save_path=exp_folder_path,
         file_name="sim_motor_pos_tracking",
     )
@@ -257,7 +257,7 @@ def evaluate(
         time_seq_real_dict,
         motor_pos_real_dict,
         action_real_dict,
-        robot.joint_limits,
+        robot.joint_cfg_limits,
         save_path=exp_folder_path,
         file_name="real_motor_pos_tracking",
     )

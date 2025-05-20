@@ -292,7 +292,7 @@ def add_keyframes(root: ET.Element, robot: Robot, is_fixed: bool):
     has_lower_body = "arms" not in robot.name
     has_upper_body = "legs" not in robot.name
     has_gripper = False
-    for motor_name in robot.motor_ordering:
+    for motor_name in robot.motor_name_ordering:
         if "gripper" in motor_name:
             has_gripper = True
 

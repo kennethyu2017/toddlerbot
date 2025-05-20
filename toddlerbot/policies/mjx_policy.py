@@ -76,20 +76,20 @@ class MJXPolicy(BasePolicy, policy_name="mjx"):
             list(robot.default_motor_angles.values()), dtype=np.float32
         )
         self.default_joint_pos = np.array(
-            list(robot.default_joint_angles.values()), dtype=np.float32
+            list(robot.default_active_joint_angles.values()), dtype=np.float32
         )
 
         self.action_scale = cfg.action.action_scale
         self.n_steps_delay = cfg.action.n_steps_delay
         self.action_parts = cfg.action.action_parts
         self.motor_limits = np.array(
-            [robot.joint_limits[name] for name in robot.motor_ordering]
+            [robot.joint_cfg_limits[name] for name in robot.motor_name_ordering]
         )
 
         motor_groups = np.array(
-            [self.robot.joint_groups[name] for name in self.robot.motor_ordering]
+            [self.robot.joint_cfg_groups[name] for name in self.robot.motor_name_ordering]
         )
-        actuator_indices = np.arange(len(self.robot.motor_ordering))
+        actuator_indices = np.arange(len(self.robot.motor_name_ordering))
         action_mask: List[npt.NDArray[np.float32]] = []
         default_action: List[npt.NDArray[np.float32]] = []
         for part_name in self.action_parts:

@@ -26,7 +26,7 @@ def process_raw_dataset(
         dt (float, optional): The time interval for resampling the data. Defaults to 0.1.
         time_offset (float, optional): The time offset applied during resampling. Defaults to 0.2.
     """
-    # motor_limits = np.array([robot.joint_limits[name] for name in robot.motor_ordering])
+    # motor_limits = np.array([robot.joint_cfg_limits[name] for name in robot.motor_name_ordering])
     # find all files in the path named "toddlerbot_x.lz4"
     dataset_path = os.path.join(
         "results", f"{args.robot}_teleop_follower_pd_real_world_{time_str}"

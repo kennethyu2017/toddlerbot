@@ -1,6 +1,7 @@
 import json
 import os
-from typing import Any, Dict, List, Mapping, Tuple
+from typing import Any, List, Mapping, Tuple, OrderedDict
+from collections import OrderedDict as OrdDictCls
 from dataclasses import dataclass, field
 
 
@@ -8,46 +9,52 @@ from dataclasses import dataclass, field
 class Robot:
     """This class defines some data strucutres, FK, IK of ToddlerBot."""
     """    
-    init_motor_angles (Dict[str, float]): Initial motor angles for active joints.
-    init_joint_angles (Dict[str, float]): Initial joint angles derived from motor angles.
-    motor_ordering (List[str]): Order of motors based on initial configuration.
-    joint_ordering (List[str]): Order of joints based on initial configuration.
-    default_motor_angles (Dict[str, float]): Default motor angles for active joints.
-    default_joint_angles (Dict[str, float]): Default joint angles derived from motor angles.
-    motor_to_joint_name (Dict[str, List[str]]): Mapping from motor names to joint names.
-    joint_to_motor_name (Dict[str, List[str]]): Mapping from joint names to motor names.
+    init_motor_angles (OrderedDict[str, float]): Initial motor angles for active joints.
+    init_active_joint_angles (OrderedDict[str, float]): Initial joint angles derived from motor angles.
+    motor_name_ordering (List[str]): Order of motors name based on initial configuration.
+    motor_id_ordering (List[str]): Order of motors id based on initial configuration.
+    active_joint_name_ordering (List[str]): Order of joints based on initial configuration.
+    default_motor_angles (OrderedDict[str, float]): Default motor angles for active joints.
+    default_active_joint_angles (OrderedDict[str, float]): Default joint angles derived from motor angles.
+    motor_to_active_joint_name (OrderedDict[str, List[str]]): Mapping from motor names to joint names.
+    active_joint_to_motor_name (OrderedDict[str, List[str]]): Mapping from joint names to motor names.
     passive_joint_names (List[str]): Names of passive joints.
     foot_name (str): Name of the foot, if specified in the configuration.
     has_gripper (bool): Indicates if the robot has a gripper.
     collider_names (List[str]): Names of links with collision enabled.
     nu (int): Number of active motors.
-    joint_groups (Dict[str, str]): Group classification for each joint.
-    joint_limits (Dict[str, List[float]]): Lower and upper limits for each joint.
+    joint_cfg_groups (OrderedDict[str, str]): Group classification for each joint.
+    joint_cfg_limits (OrderedDict[str, List[float]]): Lower and upper limits for each joint.
     """
     # id: int
     name: str = ''
     # nu: int
-    # foot_name: str
+    # foot_name: strget_joint_attrs
     has_gripper: bool = False
     collider_names: List[str] = field(default_factory=list)
-    joint_groups: Dict[str, List[float]] = field(default_factory=dict)
-    joint_limits: Dict[str, List[float]] = field(default_factory=dict)
+
+    joint_cfg_groups: OrderedDict[str, List[float]] = field(default_factory=OrdDictCls)
+    joint_cfg_limits: OrderedDict[str, List[float]] = field(default_factory=OrdDictCls)
+
     passive_joint_names:List[str] = field(default_factory=list)
-    joint_to_motor_name:Dict[str, List[str]] = field(default_factory=dict)
-    motor_to_joint_name:Dict[str, List[str]] = field(default_factory=dict)
+    active_joint_to_motor_name:OrderedDict[str, List[str]] = field(default_factory=OrdDictCls)
+    motor_to_active_joint_name:OrderedDict[str, List[str]] = field(default_factory=OrdDictCls)
 
     # for actuators. not passive.
-    motor_name_to_id: Dict[str, int] = field(default_factory=dict)
-    id_to_motor_name: Dict[int,str] = field(default_factory=dict)
+    motor_name_to_id: OrderedDict[str,int] = field(default_factory=OrdDictCls)
+    id_to_motor_name: OrderedDict[int,str] = field(default_factory=OrdDictCls)
 
-    default_motor_angles :Dict[str, float] = field(default_factory=dict)
-    default_joint_angles :Dict[str, float] = field(default_factory=dict)
+    default_motor_angles :OrderedDict[str, float] = field(default_factory=OrdDictCls)
+    default_active_joint_angles :OrderedDict[str, float] = field(default_factory=OrdDictCls)
 
-    motor_ordering: Tuple[str,...] = field(default_factory=tuple)
-    joint_ordering: Tuple[str,...] = field(default_factory=tuple)
+    # keep motor_name and motor_id as same order.
+    motor_name_ordering: Tuple[str,...] = field(default_factory=tuple)
+    motor_id_ordering: Tuple[int,...] = field(default_factory=tuple)
 
-    init_joint_angles: Dict[str,float] = field(default_factory=dict)
-    init_motor_angles: Dict[str,float] = field(default_factory=dict)
+    active_joint_name_ordering: Tuple[str,...] = field(default_factory=tuple)
+
+    init_active_joint_angles: OrderedDict[str,float] = field(default_factory=OrdDictCls)
+    init_motor_angles: OrderedDict[str,float] = field(default_factory=OrdDictCls)
     config: Mapping[str, Any] = None
     collision_config: Mapping[str, Any] = None
 
@@ -99,98 +106,112 @@ class Robot:
           a gripper and sets joint groups and limits.
 
         Attributes:
-            init_motor_angles (Dict[str, float]): Initial motor angles for active joints.
-            init_joint_angles (Dict[str, float]): Initial joint angles derived from motor angles.
-            motor_ordering (List[str]): Order of motors based on initial configuration.
-            joint_ordering (List[str]): Order of joints based on initial configuration.
-            default_motor_angles (Dict[str, float]): Default motor angles for active joints.
-            default_joint_angles (Dict[str, float]): Default joint angles derived from motor angles.
-            motor_to_joint_name (Dict[str, List[str]]): Mapping from motor names to joint names.
-            joint_to_motor_name (Dict[str, List[str]]): Mapping from joint names to motor names.
+            init_motor_angles (OrderedDict[str, float]): Initial motor angles for active joints.
+            init_active_joint_angles (OrderedDict[str, float]): Initial joint angles derived from motor angles.
+            motor_name_ordering (List[str]): Order of motors name based on initial configuration.
+            motor_id_ordering (List[int]): Order of motors id based on initial configuration.
+            active_joint_name_ordering (List[str]): Order of joints based on initial configuration.
+            default_motor_angles (OrderedDict[str, float]): Default motor angles for active joints.
+            default_active_joint_angles (OrderedDict[str, float]): Default joint angles derived from motor angles.
+            motor_to_active_joint_name (OrderedDict[str, List[str]]): Mapping from motor names to joint names.
+            active_joint_to_motor_name (OrderedDict[str, List[str]]): Mapping from joint names to motor names.
             passive_joint_names (List[str]): Names of passive joints.
             foot_name (str): Name of the foot, if specified in the configuration.
             has_gripper (bool): Indicates if the robot has a gripper.
             collider_names (List[str]): Names of links with collision enabled.
             nu (int): Number of active motors.
-            joint_groups (Dict[str, str]): Group classification for each joint.
-            joint_limits (Dict[str, List[float]]): Lower and upper limits for each joint.
+            joint_cfg_groups (OrderedDict[str, str]): Group classification for each joint.
+            joint_cfg_limits (OrderedDict[str, List[float]]): Lower and upper limits for each joint.
         """
         # self.init_motor_angles = {}
-        for joint_name, joint_config in self.config["joints"].items():
-            self.joint_groups[joint_name] = joint_config["group"]
-            self.joint_limits[joint_name] = [
-                joint_config["lower_limit"],
-                joint_config["upper_limit"],
+        # parse motors:
+        for _name, _cfg in self.config["joints"].items():
+            self.joint_cfg_groups[_name] = _cfg["group"]
+            self.joint_cfg_limits[_name] = [
+                _cfg["lower_limit"],
+                _cfg["upper_limit"],
             ]
-            if not joint_config["is_passive"]:
-                self.init_motor_angles[joint_name] = 0.0
-                self.default_motor_angles[joint_name] = joint_config["default_pos"]
+            if not _cfg["is_passive"]:
+                # when a config joint is not passive, use it as `motor`.
+                # self.init_motor_angles[joint_name] = 0.0
+                # self.default_motor_angles[joint_name] = joint_config["default_pos"]
 
                 # check duplicated:
-                if joint_name in self.motor_name_to_id:
-                    raise ValueError(f'joint name duplicated: {joint_name}')
+                if _name in self.motor_name_to_id:
+                    raise ValueError(f'joint name duplicated: {_name}')
 
-                jnt_id = joint_config['id']
-                if  jnt_id in self.id_to_motor_name:
-                    raise ValueError(f'joint id duplicated: {jnt_id}')
+                motor_id:int = _cfg['id']
+                if  motor_id in self.id_to_motor_name:
+                    raise ValueError(f'config motor id duplicated: cfg joint name: {_name}, cfg id: {motor_id}')
 
-                self.motor_name_to_id[joint_name] = jnt_id
-                self.id_to_motor_name[jnt_id] = joint_name
+                self.motor_name_to_id[_name] = motor_id
+                self.id_to_motor_name[motor_id] = _name
 
+                self.init_motor_angles[_name] = 0.0
+                self.default_motor_angles[_name] = _cfg["default_pos"]
 
-        self.init_joint_angles = self.motor_to_joint_angles(self.init_motor_angles)
-        self.default_joint_angles = self.motor_to_joint_angles(self.default_motor_angles)
+        # generate joints based on motors.
+        # NOTE: the keys in `init_active_joint_angles` are more than the `joint` in config.
+        # NOTE: here, the `joint` is derived from motor, not same as in config, not including the passive joint.
+        self.init_active_joint_angles = self.motor_to_joint_angles(self.init_motor_angles)
+        self.default_active_joint_angles = self.motor_to_joint_angles(self.default_motor_angles)
 
-        #NOTE: len(self.motor_ordering) != len(self.joint_ordering)
+        #NOTE: len(self.motor_name_ordering) != len(self.active_joint_name_ordering)
         # immutable.
-        self.motor_ordering = tuple(self.init_motor_angles)  #  list(self.init_motor_angles) #.keys())
-        self.joint_ordering = tuple(self.init_joint_angles)  #  list(self.init_joint_angles) #.keys())
+        # self.motor_name_ordering = tuple(self.init_motor_angles)  #  list(self.init_motor_angles) #.keys())
+        # self.active_joint_name_ordering = tuple(self.init_active_joint_angles)  #  list(self.init_active_joint_angles) #.keys())
 
-        # self.nu = len(self.motor_ordering)
+        # NOTE: keep same ordering.
+        self.motor_name_ordering = tuple(self.motor_name_to_id)
+        self.motor_id_ordering = tuple(self.motor_name_to_id.values())
+
+        self.active_joint_name_ordering = tuple(self.init_active_joint_angles)
+
+        # self.nu = len(self.motor_name_ordering)
 
         # self.default_motor_angles = {}
         # for joint_name, joint_config in self.config["joints"].items():
         #     if not joint_config["is_passive"]:
         #         self.default_motor_angles[joint_name] = joint_config["default_pos"]
         #
-        # self.default_joint_angles = self.motor_to_joint_angles(
+        # self.default_active_joint_angles = self.motor_to_joint_angles(
         #     self.default_motor_angles
         # )
 
         # joints_config = self.config["joints"]
-        # self.motor_to_joint_name = {}
-        # self.joint_to_motor_name = {}
+        # self.motor_to_active_joint_name = {}
+        # self.active_joint_to_motor_name = {}
 
-        for motor_name, joint_name in zip(self.motor_ordering, self.joint_ordering):
+        for motor_name, joint_name in zip(self.motor_name_ordering, self.active_joint_name_ordering):
             transmission = self.config['joints'][motor_name]["transmission"]
             if transmission == "ankle":
                 if "left" in motor_name:
-                    self.motor_to_joint_name[motor_name] = [
+                    self.motor_to_active_joint_name[motor_name] = [
                         "left_ank_roll",
                         "left_ank_pitch",
                     ]
-                    self.joint_to_motor_name[joint_name] = [
+                    self.active_joint_to_motor_name[joint_name] = [
                         "left_ank_act_1",
                         "left_ank_act_2",
                     ]
                 elif "right" in motor_name:
-                    self.motor_to_joint_name[motor_name] = [
+                    self.motor_to_active_joint_name[motor_name] = [
                         "right_ank_roll",
                         "right_ank_pitch",
                     ]
-                    self.joint_to_motor_name[joint_name] = [
+                    self.active_joint_to_motor_name[joint_name] = [
                         "right_ank_act_1",
                         "right_ank_act_2",
                     ]
             elif transmission == "waist":
-                self.motor_to_joint_name[motor_name] = ["waist_roll", "waist_yaw"]
-                self.joint_to_motor_name[joint_name] = ["waist_act_1", "waist_act_2"]
+                self.motor_to_active_joint_name[motor_name] = ["waist_roll", "waist_yaw"]
+                self.active_joint_to_motor_name[joint_name] = ["waist_act_1", "waist_act_2"]
             else:
-                self.motor_to_joint_name[motor_name] = [joint_name]
-                self.joint_to_motor_name[joint_name] = [motor_name]
+                self.motor_to_active_joint_name[motor_name] = [joint_name]
+                self.active_joint_to_motor_name[joint_name] = [motor_name]
 
         # self.passive_joint_names = []
-        for joint_name in self.joint_ordering:
+        for joint_name in self.active_joint_name_ordering:
             transmission = self.config['joints'][joint_name]["transmission"]
             if transmission == "linkage":
                 for suffix in [
@@ -207,7 +228,7 @@ class Robot:
         #     self.foot_name = self.config["general"]["foot_name"]
 
         # self.has_gripper = False
-        for motor_name in self.motor_ordering:
+        for motor_name in self.motor_name_ordering:
             if "gripper" in motor_name:
                 self.has_gripper = True
 
@@ -216,20 +237,21 @@ class Robot:
             if link_config["has_collision"]:
                 self.collider_names.append(link_name)
 
-        # self.nu = len(self.motor_ordering)
-        # self.joint_groups = {}
+        # self.nu = len(self.motor_name_ordering)
+        # self.joint_cfg_groups = {}
         # for joint_name, joint_config in self.config["joints"].items():
-        #     self.joint_groups[joint_name] = joint_config["group"]
+        #     self.joint_cfg_groups[joint_name] = joint_config["group"]
 
-        # self.joint_limits = {}
+        # self.joint_cfg_limits = {}
         # for joint_name, joint_config in self.config["joints"].items():
-        #     self.joint_limits[joint_name] = [
+        #     self.joint_cfg_limits[joint_name] = [
         #         joint_config["lower_limit"],
         #         joint_config["upper_limit"],
         #     ]
 
     # get attrs from all the joints in group.
-    def get_joint_attrs(
+    # NOTE: data is read from `config`, which is also dynamical through set_joint_config_attrs.
+    def get_joint_config_attrs(
         self,
         key_name: str,
         key_value: Any,
@@ -263,7 +285,7 @@ class Robot:
 
     # set attrs for all the joints in group.
     # NOTE: support dynamically modify joint attrs, but modify ID and Name of motor is not allowed.
-    def set_joint_attrs(
+    def set_joint_config_attrs(
         self,
         key_name: str,
         key_value: Any,
@@ -292,7 +314,7 @@ class Robot:
                 and joint_config[key_name] == key_value
                 and (joint_config["group"] == group or group == "all")
             ):
-                if isinstance(attr_values, dict):
+                if isinstance(attr_values, Mapping):
                     # _id = joint_config["id"]
                     self.config["joints"][joint_name][attr_name] = attr_values[joint_config["id"]]
                 else:
@@ -330,16 +352,16 @@ class Robot:
         return [waist_act_1, waist_act_2]
 
     # @profile()
-    def motor_to_joint_angles(self, motor_angles: Dict[str, float]) -> Dict[str, float]:
+    def motor_to_joint_angles(self, motor_angles: OrderedDict[str, float]) -> OrderedDict[str, float]:
         """Converts motor angles to joint angles based on the robot's configuration.
 
         Args:
-            motor_angles (Dict[str, float]): A dictionary mapping motor names to their respective angles.
+            motor_angles (OrderedDict[str, float]): A dictionary mapping motor names to their respective angles.
 
         Returns:
-            Dict[str, float]: A dictionary mapping joint names to their calculated angles.
+            OrderedDict[str, float]: A dictionary mapping joint names to their calculated angles.
         """
-        joint_angles: Dict[str, float] = {}
+        joint_angles: OrderedDict[str, float] = {}
         joints_config = self.config["joints"]
         waist_act_pos: List[float] = []
         # TODO: no use of ank ?
@@ -384,16 +406,16 @@ class Robot:
 
         return joint_angles
 
-    def joint_to_motor_angles(self, joint_angles: Dict[str, float]) -> Dict[str, float]:
+    def joint_to_motor_angles(self, joint_angles: OrderedDict[str, float]) -> OrderedDict[str, float]:
         """Converts joint angles to motor angles based on the transmission type specified in the configuration.
 
         Args:
-            joint_angles (Dict[str, float]): A dictionary mapping joint names to their respective angles.
+            joint_angles (OrderedDict[str, float]): A dictionary mapping joint names to their respective angles.
 
         Returns:
-            Dict[str, float]: A dictionary mapping motor names to their calculated angles.
+            OrderedDict[str, float]: A dictionary mapping motor names to their calculated angles.
         """
-        motor_angles: Dict[str, float] = {}
+        motor_angles: OrderedDict[str, float] = {}
         joints_config = self.config["joints"]
         waist_pos: List[float] = []
 
@@ -440,19 +462,19 @@ class Robot:
         return motor_angles
 
     def joint_to_passive_angles(
-        self, joint_angles: Dict[str, float]
-    ) -> Dict[str, float]:
+        self, joint_angles: OrderedDict[str, float]
+    ) -> OrderedDict[str, float]:
         """Converts joint angles to passive angles based on the transmission type.
 
         This function processes a dictionary of joint angles and converts them into passive angles using the transmission configuration specified in the object's configuration. It supports two types of transmissions: 'linkage' and 'rack_and_pinion'. For 'linkage' transmissions, it generates additional passive angles with specific suffixes, applying a sign change for knee joints. For 'rack_and_pinion' transmissions, it mirrors the joint angle.
 
         Args:
-            joint_angles (Dict[str, float]): A dictionary where keys are joint names and values are their respective angles.
+            joint_angles (OrderedDict[str, float]): A dictionary where keys are joint names and values are their respective angles.
 
         Returns:
-            Dict[str, float]: A dictionary of passive angles derived from the input joint angles.
+            OrderedDict[str, float]: A dictionary of passive angles derived from the input joint angles.
         """
-        passive_angles: Dict[str, float] = {}
+        passive_angles: OrderedDict[str, float] = {}
         joints_config = self.config["joints"]
         for joint_name, joint_pos in joint_angles.items():
             transmission = joints_config[joint_name]["transmission"]
@@ -473,7 +495,7 @@ class Robot:
     @property
     def nu(self)->int:
         # read only.
-        return len(self.motor_ordering)
+        return len(self.motor_name_ordering)
 
     @property
     def foot_name(self)->str:

@@ -132,7 +132,7 @@ def plot_results(
         euler_obs_list.append(obs.euler)
         tor_obs_total_list.append(sum(obs.motor_tor))
 
-        for j, motor_name in enumerate(robot.motor_ordering):
+        for j, motor_name in enumerate(robot.motor_name_ordering):
             if motor_name not in time_seq_dict:
                 time_seq_ref_dict[motor_name] = []
                 time_seq_dict[motor_name] = []
@@ -240,7 +240,7 @@ def plot_results(
         time_seq_ref_dict,
         motor_pos_dict,
         action_dict,
-        robot.joint_limits,
+        robot.joint_cfg_limits,
         save_path=exp_folder_path,
     )
     plot_joint_tracking_single(
@@ -315,7 +315,7 @@ def run_policy(
                     motor_kps = policy.ckpt_dict[ckpt_times[ckpt_idx]]
                     motor_kps_updated = {}
                     for joint_name in motor_kps:
-                        for motor_name in robot.joint_to_motor_name[joint_name]:
+                        for motor_name in robot.active_joint_to_motor_name[joint_name]:
                             motor_kps_updated[motor_name] = motor_kps[joint_name]
 
                     if np.any(list(motor_kps_updated.values())):
@@ -344,7 +344,7 @@ def run_policy(
             inference_time = time.time()
 
             motor_angles: Dict[str, float] = {}
-            for motor_name, motor_angle in zip(robot.motor_ordering, motor_target):
+            for motor_name, motor_angle in zip(robot.motor_name_ordering, motor_target):
                 motor_angles[motor_name] = motor_angle
 
             sim.set_motor_target(motor_angles)
@@ -432,9 +432,9 @@ def run_policy(
     if isinstance(policy, CalibratePolicy):
         motor_config_path = os.path.join(robot.root_path, "config_motors.json")
         if os.path.exists(motor_config_path):
-            motor_names = robot.get_joint_attrs("is_passive", False)
+            motor_names = robot.get_joint_config_attrs("is_passive", False)
             motor_pos_init = np.array(
-                robot.get_joint_attrs("is_passive", False, "init_pos")
+                robot.get_joint_config_attrs("is_passive", False, "init_pos")
             )
             motor_pos_delta = (
                 np.array(list(motor_angles_list[-1].values()), dtype=np.float32)
@@ -607,7 +607,7 @@ def main(args=None):
         assert args.sim == "real", (
             "The sim needs to be the real world for the teleop leader policy"
         )
-        for motor_name in robot.motor_ordering:
+        for motor_name in robot.motor_name_ordering:
             for gain_name in ["kp_real", "kd_real", "kff1_real", "kff2_real"]:
                 robot.config["joints"][motor_name][gain_name] = 0.0
 

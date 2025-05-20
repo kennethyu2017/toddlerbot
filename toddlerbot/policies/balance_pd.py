@@ -124,10 +124,10 @@ class BalancePDPolicy(BasePolicy, policy_name="balance_pd"):
         self.last_gripper_pos = np.zeros(2, dtype=np.float32)
         self.gripper_delta_max = 0.5
 
-        self.left_sho_pitch_idx = robot.motor_ordering.index("left_sho_pitch")
-        self.right_sho_pitch_idx = robot.motor_ordering.index("right_sho_pitch")
-        self.left_sho_roll_idx = robot.motor_ordering.index("left_sho_roll")
-        self.right_sho_roll_idx = robot.motor_ordering.index("right_sho_roll")
+        self.left_sho_pitch_idx = robot.motor_name_ordering.index("left_sho_pitch")
+        self.right_sho_pitch_idx = robot.motor_name_ordering.index("right_sho_pitch")
+        self.left_sho_roll_idx = robot.motor_name_ordering.index("left_sho_roll")
+        self.right_sho_roll_idx = robot.motor_name_ordering.index("right_sho_roll")
 
         self.desired_torso_pitch = -0.2  # -0.7 for the payload test
         self.desired_torso_roll = 0.0
@@ -139,22 +139,22 @@ class BalancePDPolicy(BasePolicy, policy_name="balance_pd"):
         self.torso_pitch_kd = 0.01
         self.hip_pitch_indices = np.array(
             [
-                robot.motor_ordering.index("left_hip_pitch"),
-                robot.motor_ordering.index("right_hip_pitch"),
+                robot.motor_name_ordering.index("left_hip_pitch"),
+                robot.motor_name_ordering.index("right_hip_pitch"),
             ]
         )
         self.hip_pitch_signs = np.array([1.0, -1.0], dtype=np.float32)
         self.hip_roll_indices = np.array(
             [
-                robot.motor_ordering.index("left_hip_roll"),
-                robot.motor_ordering.index("right_hip_roll"),
+                robot.motor_name_ordering.index("left_hip_roll"),
+                robot.motor_name_ordering.index("right_hip_roll"),
             ]
         )
         self.hip_roll_signs = np.array([-1.0, 1.0], dtype=np.float32)
         self.ank_roll_indices = np.array(
             [
-                robot.motor_ordering.index("left_ank_roll"),
-                robot.motor_ordering.index("right_ank_roll"),
+                robot.motor_name_ordering.index("left_ank_roll"),
+                robot.motor_name_ordering.index("right_ank_roll"),
             ]
         )
         self.ank_roll_signs = np.array([-1.0, -1.0], dtype=np.float32)
@@ -180,7 +180,7 @@ class BalancePDPolicy(BasePolicy, policy_name="balance_pd"):
             self.state_ref[13 + self.robot.nu : 13 + 2 * self.robot.nu] = np.array(
                 list(
                     self.robot.motor_to_joint_angles(
-                        dict(zip(self.robot.motor_ordering, self.manip_motor_pos))
+                        dict(zip(self.robot.motor_name_ordering, self.manip_motor_pos))
                     ).values()
                 ),
                 dtype=np.float32,
@@ -405,7 +405,7 @@ class BalancePDPolicy(BasePolicy, policy_name="balance_pd"):
             manip_joint_pos = np.array(
                 list(
                     self.robot.motor_to_joint_angles(
-                        dict(zip(self.robot.motor_ordering, self.manip_motor_pos))
+                        dict(zip(self.robot.motor_name_ordering, self.manip_motor_pos))
                     ).values()
                 ),
                 dtype=np.float32,

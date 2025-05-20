@@ -66,7 +66,7 @@ def load_datasets(robot: Robot, data_path: str):
 
         obs_pos_list: List[List[float]] = []
         for obs in obs_list[idx_range]:
-            motor_angles_obs = dict(zip(robot.motor_ordering, obs.motor_pos))
+            motor_angles_obs = dict(zip(robot.motor_name_ordering, obs.motor_pos))
             joint_angles_obs = robot.motor_to_joint_angles(motor_angles_obs)
             obs_pos_list.append(list(joint_angles_obs.values()))
 
@@ -112,10 +112,10 @@ def load_datasets(robot: Robot, data_path: str):
             last_idx = obs_idx
     else:
         start_idx = 300
-        for joint_name in reversed(robot.joint_ordering):
+        for joint_name in reversed(robot.active_joint_name_ordering):
             joints_config = robot.config["joints"]
             if joints_config[joint_name]["group"] == "leg":
-                motor_names = robot.joint_to_motor_name[joint_name]
+                motor_names = robot.active_joint_to_motor_name[joint_name]
                 motor_kps = {joint_name: joints_config[motor_names[0]]["kp_real"]}
                 set_obs_and_action(joint_name, motor_kps, slice(start_idx, None))
 
@@ -181,8 +181,8 @@ def optimize_parameters(
         elif "XM430" in robot.name:
             tau_max_range = (0.0, 3.0, 1e-2)
 
-    motor_names = robot.joint_to_motor_name[joint_name]
-    joint_idx = robot.joint_ordering.index(joint_name)
+    motor_names = robot.active_joint_to_motor_name[joint_name]
+    joint_idx = robot.active_joint_name_ordering.index(joint_name)
     joint_pos_real = np.concatenate([obs[:, joint_idx] for obs in obs_list])
 
     def early_stop_check(
@@ -479,8 +479,8 @@ def evaluate(
         action_list = action_dict[joint_name]
         kp_list = kp_dict[joint_name]
 
-        motor_names = robot.joint_to_motor_name[joint_name]
-        joint_idx = robot.joint_ordering.index(joint_name)
+        motor_names = robot.active_joint_to_motor_name[joint_name]
+        joint_idx = robot.active_joint_name_ordering.index(joint_name)
         joint_pos_real = np.concatenate([obs[:, joint_idx] for obs in obs_list])
 
         if sim_name == "mujoco":
@@ -550,7 +550,7 @@ def evaluate(
         time_seq_real_dict,
         joint_pos_sim_dict,
         joint_pos_real_dict,
-        robot.joint_limits,
+        robot.joint_cfg_limits,
         save_path=exp_folder_path,
         file_name="sim2real_joint_pos",
         line_suffix=["_sim", "_real"],
@@ -569,7 +569,7 @@ def evaluate(
         time_seq_ref_dict,
         joint_pos_sim_dict,
         action_sim_dict,
-        robot.joint_limits,
+        robot.joint_cfg_limits,
         save_path=exp_folder_path,
         file_name="sim_tracking",
     )
@@ -586,7 +586,7 @@ def evaluate(
         time_seq_ref_dict,
         joint_pos_real_dict,
         action_real_dict,
-        robot.joint_limits,
+        robot.joint_cfg_limits,
         save_path=exp_folder_path,
         file_name="real_tracking",
     )

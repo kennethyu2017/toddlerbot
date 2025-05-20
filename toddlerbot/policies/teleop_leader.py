@@ -66,8 +66,8 @@ class TeleopLeaderPolicy(BasePolicy, policy_name="teleop_leader"):
         self.reset_end_time = 1.0
         self.reset_time = None
 
-        self.left_sho_pitch_idx = robot.motor_ordering.index("left_sho_pitch")
-        self.right_sho_pitch_idx = robot.motor_ordering.index("right_sho_pitch")
+        self.left_sho_pitch_idx = robot.motor_name_ordering.index("left_sho_pitch")
+        self.right_sho_pitch_idx = robot.motor_name_ordering.index("right_sho_pitch")
 
         self.is_prepared = False
 

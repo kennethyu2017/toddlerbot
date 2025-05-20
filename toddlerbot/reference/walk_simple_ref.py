@@ -31,7 +31,7 @@ class WalkSimpleReference(MotionReference):
         self.max_knee = max_knee
         self.double_support_phase = double_support_phase
 
-        self.num_joints = len(self.robot.joint_ordering)
+        self.num_joints = len(self.robot.active_joint_name_ordering)
         self.shin_thigh_ratio = (
             self.robot.config["general"]["offsets"]["knee_to_ank_pitch_z"]
             / self.robot.config["general"]["offsets"]["hip_pitch_to_knee_z"]
@@ -39,16 +39,16 @@ class WalkSimpleReference(MotionReference):
 
         self.left_pitch_joint_indices = np.array(
             [
-                self.robot.joint_ordering.index("left_hip_pitch"),
-                self.robot.joint_ordering.index("left_knee"),
-                self.robot.joint_ordering.index("left_ank_pitch"),
+                self.robot.active_joint_name_ordering.index("left_hip_pitch"),
+                self.robot.active_joint_name_ordering.index("left_knee"),
+                self.robot.active_joint_name_ordering.index("left_ank_pitch"),
             ]
         )
         self.right_pitch_joint_indices = np.array(
             [
-                self.robot.joint_ordering.index("right_hip_pitch"),
-                self.robot.joint_ordering.index("right_knee"),
-                self.robot.joint_ordering.index("right_ank_pitch"),
+                self.robot.active_joint_name_ordering.index("right_hip_pitch"),
+                self.robot.active_joint_name_ordering.index("right_knee"),
+                self.robot.active_joint_name_ordering.index("right_ank_pitch"),
             ]
         )
 

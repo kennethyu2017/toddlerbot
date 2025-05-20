@@ -14,14 +14,14 @@ class MotorController:
         Args:
             robot (Robot): An instance of the Robot class from which joint attributes are retrieved.
         """
-        self.kp = np.array(robot.get_joint_attrs("type", "dynamixel", "kp_sim"))
-        self.kd = np.array(robot.get_joint_attrs("type", "dynamixel", "kd_sim"))
-        self.tau_max = np.array(robot.get_joint_attrs("type", "dynamixel", "tau_max"))
+        self.kp = np.array(robot.get_joint_config_attrs("type", "dynamixel", "kp_sim"))
+        self.kd = np.array(robot.get_joint_config_attrs("type", "dynamixel", "kd_sim"))
+        self.tau_max = np.array(robot.get_joint_config_attrs("type", "dynamixel", "tau_max"))
         self.q_dot_tau_max = np.array(
-            robot.get_joint_attrs("type", "dynamixel", "q_dot_tau_max")
+            robot.get_joint_config_attrs("type", "dynamixel", "q_dot_tau_max")
         )
         self.q_dot_max = np.array(
-            robot.get_joint_attrs("type", "dynamixel", "q_dot_max")
+            robot.get_joint_config_attrs("type", "dynamixel", "q_dot_max")
         )
 
     def step(

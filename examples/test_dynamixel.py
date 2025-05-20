@@ -21,9 +21,9 @@ def get_dynamixel_controller(
     if len(id_list) > 0:
         dynamixel_ids = id_list
     elif len(group) > 0:
-        dynamixel_ids = robot.get_joint_attrs("type", "dynamixel", "id", group=group)
+        dynamixel_ids = robot.get_joint_config_attrs("type", "dynamixel", "id", group=group)
     else:
-        dynamixel_ids = robot.get_joint_attrs("type", "dynamixel", "id")
+        dynamixel_ids = robot.get_joint_config_attrs("type", "dynamixel", "id")
 
     control_mode: List[str] = []
     kP: List[float] = []

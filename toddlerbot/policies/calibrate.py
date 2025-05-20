@@ -35,11 +35,16 @@ class CalibratePolicy(BasePolicy, policy_name="calibrate"):
         """
         super().__init__(name, robot, init_motor_pos)
 
+        TODO: use robot.active_joint_name_ordering to index ....
+
         self.default_motor_pos = np.array(
             list(robot.default_motor_angles.values()), dtype=np.float32
         )
+
+        TODO: use        robot.active_joint_name_ordering        to        index....
+
         self.default_joint_pos = np.array(
-            list(robot.default_joint_angles.values()), dtype=np.float32
+            list(robot.default_active_joint_angles.values()), dtype=np.float32
         )
 
         leg_pitch_joint_names = [
@@ -52,7 +57,7 @@ class CalibratePolicy(BasePolicy, policy_name="calibrate"):
         ]
         self.leg_pitch_joint_indicies = np.array(
             [
-                self.robot.joint_ordering.index(joint_name)
+                self.robot.active_joint_name_ordering.index(joint_name)
                 for joint_name in leg_pitch_joint_names
             ]
         )
@@ -104,7 +109,7 @@ class CalibratePolicy(BasePolicy, policy_name="calibrate"):
 
         # Convert joint positions to motor angles
         motor_angles = self.robot.joint_to_motor_angles(
-            dict(zip(self.robot.joint_ordering, joint_pos))
+            dict(zip(self.robot.active_joint_name_ordering, joint_pos))
         )
         motor_target = np.array(list(motor_angles.values()), dtype=np.float32)
 

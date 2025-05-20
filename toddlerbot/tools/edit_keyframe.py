@@ -257,7 +257,7 @@ class UpdateSimThread(QThread):
         self.is_testing = False
 
         self.update_joint_angles_requested = False
-        self.joint_angles_to_update = robot.default_joint_angles.copy()
+        self.joint_angles_to_update = robot.default_active_joint_angles.copy()
 
         self.update_qpos_requested = False
         self.qpos_to_update = sim.model.qpos0.copy()
@@ -818,10 +818,10 @@ class MuJoCoApp(QMainWindow):
 
         reordered_list = []
         # Separate left and right joints
-        for joint in robot.joint_ordering:
+        for joint in robot.active_joint_name_ordering:
             if "left" in joint:
                 right_joint = joint.replace("left", "right")
-                assert right_joint in robot.joint_ordering, f"{right_joint} not found!"
+                assert right_joint in robot.active_joint_name_ordering, f"{right_joint} not found!"
                 reordered_list.append(joint)
                 reordered_list.append(right_joint)
             elif "right" not in joint:
@@ -829,7 +829,7 @@ class MuJoCoApp(QMainWindow):
 
         num_sliders = 0
         for joint_name in reordered_list:
-            joint_range = robot.joint_limits[joint_name]
+            joint_range = robot.joint_cfg_limits[joint_name]
 
             row = num_sliders // slider_columns
             col = num_sliders % slider_columns
@@ -849,7 +849,7 @@ class MuJoCoApp(QMainWindow):
             slider.setValue(
                 int(
                     np.interp(
-                        robot.default_joint_angles[joint_name],
+                        robot.default_active_joint_angles[joint_name],
                         joint_range,
                         self.normalized_range,
                     )
@@ -1377,12 +1377,12 @@ class MuJoCoApp(QMainWindow):
             keyframe = self.keyframes[self.selected_keyframe]
 
             # Block signals temporarily to prevent excessive UI refreshes
-            for joint_name in self.robot.joint_ordering:
+            for joint_name in self.robot.active_joint_name_ordering:
                 self.joint_sliders[joint_name].blockSignals(True)
 
             # Apply the keyframe's joint angles to the UI (sliders & labels)
-            for joint_name, value in zip(self.robot.joint_ordering, keyframe.joint_pos):
-                joint_range = self.robot.joint_limits[joint_name]
+            for joint_name, value in zip(self.robot.active_joint_name_ordering, keyframe.joint_pos):
+                joint_range = self.robot.joint_cfg_limits[joint_name]
 
                 slider_value = int(np.interp(value, joint_range, self.normalized_range))
 
@@ -1391,7 +1391,7 @@ class MuJoCoApp(QMainWindow):
                 self.joint_labels[joint_name].setText(f"{value:.2f}")
 
             # Re-enable signals after bulk update
-            for joint_name in self.robot.joint_ordering:
+            for joint_name in self.robot.active_joint_name_ordering:
                 self.joint_sliders[joint_name].blockSignals(False)
 
             # Force UI to reflect changes instantly
@@ -1480,8 +1480,8 @@ class MuJoCoApp(QMainWindow):
         slider = self.joint_sliders[joint_name]
         value_label = self.joint_labels[joint_name]
 
-        # TODO: self.robot.joint_limits[] or robot.joint_limits[]?
-        joint_range = self.robot.joint_limits[joint_name]
+        # TODO: self.robot.joint_cfg_limits[] or robot.joint_cfg_limits[]?
+        joint_range = self.robot.joint_cfg_limits[joint_name]
         slider_value = np.interp(slider.value(), self.normalized_range, joint_range)
 
         joint_angles_to_update = self.update_joint_pos(joint_name, slider_value)
@@ -1492,7 +1492,7 @@ class MuJoCoApp(QMainWindow):
             if name != joint_name:
                 self.joint_labels[name].setText(f"{value:.2f}")
 
-                joint_range = self.robot.joint_limits[name]
+                joint_range = self.robot.joint_cfg_limits[name]
                 self.joint_sliders[name].setValue(
                     int(np.interp(value, joint_range, self.normalized_range))
                 )
@@ -1517,7 +1517,7 @@ class MuJoCoApp(QMainWindow):
             value_label.setText("0.00")
             return
 
-        joint_range = self.robot.joint_limits[joint_name]  # Get joint range
+        joint_range = self.robot.joint_cfg_limits[joint_name]  # Get joint range
         if not (joint_range[0] <= text_value <= joint_range[1]):
             self.show_warning(
                 f"The input value {text_value} is out of range [{joint_range[0]:.2f}, {joint_range[1]:.2f}]!"
@@ -1533,7 +1533,7 @@ class MuJoCoApp(QMainWindow):
             if name != joint_name:
                 self.joint_labels[name].setText(f"{value:.2f}")
 
-                joint_range = self.robot.joint_limits[name]
+                joint_range = self.robot.joint_cfg_limits[name]
                 self.joint_sliders[name].setValue(
                     int(np.interp(value, joint_range, self.normalized_range))
                 )
