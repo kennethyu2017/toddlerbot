@@ -171,7 +171,7 @@ class MJXEnv(PipelineEnv):
         self.joint_indices = jnp.array(
             [
                 support.name2id(self.sys, mujoco.mjtObj.mjOBJ_JOINT, name)
-                for name in self.robot.joint_ordering
+                for name in self.robot.active_joint_name_ordering
             ]
         )
         if not self.fixed_base:
@@ -179,16 +179,16 @@ class MJXEnv(PipelineEnv):
             self.joint_indices -= 1
 
         joint_groups = np.array(
-            [self.robot.joint_groups[name] for name in self.robot.joint_ordering]
+            [self.robot.joint_cfg_groups[name] for name in self.robot.active_joint_name_ordering]
         )
         self.leg_joint_indices = self.joint_indices[joint_groups == "leg"]
         self.arm_joint_indices = self.joint_indices[joint_groups == "arm"]
         self.neck_joint_indices = self.joint_indices[joint_groups == "neck"]
         self.waist_joint_indices = self.joint_indices[joint_groups == "waist"]
 
-        hip_pitch_joint_mask = np.char.find(self.robot.joint_ordering, "hip_pitch") >= 0
-        knee_joint_mask = np.char.find(self.robot.joint_ordering, "knee") >= 0
-        ank_pitch_joint_mask = np.char.find(self.robot.joint_ordering, "ank_pitch") >= 0
+        hip_pitch_joint_mask = np.char.find(self.robot.active_joint_name_ordering, "hip_pitch") >= 0
+        knee_joint_mask = np.char.find(self.robot.active_joint_name_ordering, "knee") >= 0
+        ank_pitch_joint_mask = np.char.find(self.robot.active_joint_name_ordering, "ank_pitch") >= 0
 
         self.hip_pitch_joint_indices = self.joint_indices[hip_pitch_joint_mask]
         self.knee_joint_indices = self.joint_indices[knee_joint_mask]
@@ -197,7 +197,7 @@ class MJXEnv(PipelineEnv):
         self.motor_indices = jnp.array(
             [
                 support.name2id(self.sys, mujoco.mjtObj.mjOBJ_JOINT, name)
-                for name in self.robot.motor_ordering
+                for name in self.robot.motor_name_ordering
             ]
         )
         if not self.fixed_base:
@@ -205,20 +205,20 @@ class MJXEnv(PipelineEnv):
             self.motor_indices -= 1
 
         motor_groups = np.array(
-            [self.robot.joint_groups[name] for name in self.robot.motor_ordering]
+            [self.robot.joint_cfg_groups[name] for name in self.robot.motor_name_ordering]
         )
         self.leg_motor_indices = self.motor_indices[joint_groups == "leg"]
         self.arm_motor_indices = self.motor_indices[joint_groups == "arm"]
         self.neck_motor_indices = self.motor_indices[joint_groups == "neck"]
         self.waist_motor_indices = self.motor_indices[joint_groups == "waist"]
 
-        hip_motor_mask = np.char.find(self.robot.motor_ordering, "hip") >= 0
+        hip_motor_mask = np.char.find(self.robot.motor_name_ordering, "hip") >= 0
         self.hip_motor_indices = self.motor_indices[hip_motor_mask]
 
         self.actuator_indices = jnp.array(
             [
                 support.name2id(self.sys, mujoco.mjtObj.mjOBJ_ACTUATOR, name)
-                for name in self.robot.motor_ordering
+                for name in self.robot.motor_name_ordering
             ]
         )
         self.leg_actuator_indices = self.actuator_indices[motor_groups == "leg"]
@@ -226,7 +226,7 @@ class MJXEnv(PipelineEnv):
         self.neck_actuator_indices = self.actuator_indices[motor_groups == "neck"]
         self.waist_actuator_indices = self.actuator_indices[motor_groups == "waist"]
 
-        self.joint_ref_indices = jnp.arange(len(self.robot.joint_ordering))
+        self.joint_ref_indices = jnp.arange(len(self.robot.active_joint_name_ordering))
         self.leg_ref_indices = self.joint_ref_indices[joint_groups == "leg"]
         self.arm_ref_indices = self.joint_ref_indices[joint_groups == "arm"]
         self.neck_ref_indices = self.joint_ref_indices[joint_groups == "neck"]
@@ -238,7 +238,7 @@ class MJXEnv(PipelineEnv):
         # action
         self.action_parts = self.cfg.action.action_parts
         self.motor_limits = jnp.array(
-            [self.robot.joint_limits[name] for name in self.robot.motor_ordering]
+            [self.robot.joint_cfg_limits[name] for name in self.robot.motor_name_ordering]
         )
 
         action_mask: List[jax.Array] = []

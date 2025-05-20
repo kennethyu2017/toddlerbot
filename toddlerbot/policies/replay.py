@@ -45,14 +45,14 @@ class ReplayPolicy(BasePolicy, policy_name="replay"):
             self.action_arr = np.array(data_dict["action_traj"], dtype=np.float32)
 
             if robot.has_gripper and self.action_arr.shape[1] < len(
-                robot.motor_ordering
+                robot.motor_name_ordering
             ):
                 self.action_arr = np.concatenate(
                     [self.action_arr, np.zeros((self.action_arr.shape[0], 2))], axis=1
                 )
 
             if not robot.has_gripper and self.action_arr.shape[1] > len(
-                robot.motor_ordering
+                robot.motor_name_ordering
             ):
                 self.action_arr = self.action_arr[:, :-2]
         else:
@@ -135,7 +135,7 @@ class ReplayPolicy(BasePolicy, policy_name="replay"):
                 motor_tor=np.zeros(14, dtype=np.float32),
             )
             motor_angles = dict(
-                zip(self.robot.motor_ordering, data_dict["motor_pos"][i])
+                zip(self.robot.motor_name_ordering, data_dict["motor_pos"][i])
             )
 
             converted_dict["obs_list"].append(obs)

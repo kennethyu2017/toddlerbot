@@ -26,7 +26,7 @@ def process_raw_dataset(
     Processes files in the specified dataset directory, extracting time, action, and motor position data.
     Concatenates and saves the processed data into a new dataset file, and generates plots for visualization.
     """
-    # motor_limits = np.array([robot.joint_limits[name] for name in robot.motor_ordering])
+    # motor_limits = np.array([robot.joint_cfg_limits[name] for name in robot.motor_name_ordering])
     # find all files in the path named "toddlerbot_x.lz4"
     dataset_path = os.path.join(
         "results", f"{args.robot}_teleop_follower_pd_real_world_{time_str}"

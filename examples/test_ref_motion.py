@@ -117,7 +117,7 @@ def test_ref_motion(
                 qpos = motion_ref.get_qpos_ref(state_ref, path_frame=False)
                 qpos[:3] = motion_ref.torso_pos_init + state_ref[:3]
                 # motor_angles = dict(
-                #     zip(robot.motor_ordering, state_ref[13 : 13 + robot.nu])
+                #     zip(robot.motor_name_ordering, state_ref[13 : 13 + robot.nu])
                 # )
                 # sim.set_motor_angles(motor_angles)
                 # sim.step()
@@ -125,7 +125,7 @@ def test_ref_motion(
                 sim.forward()
             else:
                 motor_angles = dict(
-                    zip(robot.motor_ordering, state_ref[13 : 13 + robot.nu])
+                    zip(robot.motor_name_ordering, state_ref[13: 13 + robot.nu])
                 )
                 sim.set_motor_target(motor_angles)
                 sim.step()

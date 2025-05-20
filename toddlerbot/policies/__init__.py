@@ -85,17 +85,17 @@ class BasePolicy(ABC):
             list(robot.default_motor_angles.values()), dtype=np.float32
         )
         self.default_joint_pos = np.array(
-            list(robot.default_joint_angles.values()), dtype=np.float32
+            list(robot.default_active_joint_angles.values()), dtype=np.float32
         )
         self.motor_limits = np.array(
-            [robot.joint_limits[name] for name in robot.motor_ordering]
+            [robot.joint_cfg_limits[name] for name in robot.motor_name_ordering]
         )
         indices = np.arange(robot.nu)
         motor_groups = np.array(
-            [robot.joint_groups[name] for name in robot.motor_ordering]
+            [robot.joint_cfg_groups[name] for name in robot.motor_name_ordering]
         )
         joint_groups = np.array(
-            [robot.joint_groups[name] for name in robot.joint_ordering]
+            [robot.joint_cfg_groups[name] for name in robot.active_joint_name_ordering]
         )
         self.leg_motor_indices = indices[motor_groups == "leg"]
         self.leg_joint_indices = indices[joint_groups == "leg"]

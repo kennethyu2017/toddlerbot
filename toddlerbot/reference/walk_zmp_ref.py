@@ -42,12 +42,12 @@ class WalkZMPReference(MotionReference):
 
         This method sets up the necessary indices for hip joints, calculates the single and double support phase ratios, and initializes the ZMPWalk object. It attempts to load precomputed lookup tables for center of mass (COM) references, stance masks, and leg joint positions from a file. If the file does not exist, it builds the lookup tables and saves them. The lookup tables are then stored as class attributes, and optionally transferred to JAX devices for computation if JAX is enabled.
         """
-        left_hip_yaw_idx = self.robot.joint_ordering.index("left_hip_yaw_driven")
+        left_hip_yaw_idx = self.robot.active_joint_name_ordering.index("left_hip_yaw_driven")
         self.left_hip_roll_rel_idx = (
-            self.robot.joint_ordering.index("left_hip_roll") - left_hip_yaw_idx
+                self.robot.active_joint_name_ordering.index("left_hip_roll") - left_hip_yaw_idx
         )
         self.right_hip_roll_rel_idx = (
-            self.robot.joint_ordering.index("right_hip_roll") - left_hip_yaw_idx
+                self.robot.active_joint_name_ordering.index("right_hip_roll") - left_hip_yaw_idx
         )
 
         single_double_ratio = 2.0

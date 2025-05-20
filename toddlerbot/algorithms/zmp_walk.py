@@ -44,10 +44,10 @@ class ZMPWalk:
         self.control_cost_R = control_cost_R
 
         default_joint_pos = np.array(
-            list(robot.default_joint_angles.values()), dtype=np.float32
+            list(robot.default_active_joint_angles.values()), dtype=np.float32
         )
         joint_groups = numpy.array(
-            [robot.joint_groups[name] for name in robot.joint_ordering]
+            [robot.joint_cfg_groups[name] for name in robot.active_joint_name_ordering]
         )
         self.default_leg_joint_pos = default_joint_pos[joint_groups == "leg"]
 

@@ -28,26 +28,26 @@ def calibrate_dynamixel(port: str, robot: Robot, group: str):
         robot (Robot): The robot instance containing joint and configuration data.
         group (str): The group of joints to be calibrated.
     """
-    dynamixel_ids = robot.get_joint_attrs("type", "dynamixel", "id", group)
+    dynamixel_ids = robot.get_joint_config_attrs("type", "dynamixel", "id", group)
     dynamixel_config = DynamixelConfig(
         port=port,
         baudrate=robot.config["general"]["dynamixel_baudrate"],
-        control_mode=robot.get_joint_attrs("type", "dynamixel", "control_mode", group),
-        kP=robot.get_joint_attrs("type", "dynamixel", "kp_real", group),
-        kI=robot.get_joint_attrs("type", "dynamixel", "ki_real", group),
-        kD=robot.get_joint_attrs("type", "dynamixel", "kd_real", group),
-        kFF2=robot.get_joint_attrs("type", "dynamixel", "kff2_real", group),
-        kFF1=robot.get_joint_attrs("type", "dynamixel", "kff1_real", group),
+        control_mode=robot.get_joint_config_attrs("type", "dynamixel", "control_mode", group),
+        kP=robot.get_joint_config_attrs("type", "dynamixel", "kp_real", group),
+        kI=robot.get_joint_config_attrs("type", "dynamixel", "ki_real", group),
+        kD=robot.get_joint_config_attrs("type", "dynamixel", "kd_real", group),
+        kFF2=robot.get_joint_config_attrs("type", "dynamixel", "kff2_real", group),
+        kFF1=robot.get_joint_config_attrs("type", "dynamixel", "kff1_real", group),
         # gear_ratio=robot.get_joint_attrs("type", "dynamixel", "gear_ratio", group),
         init_pos=[],
     )
 
     controller = DynamixelController(dynamixel_config, dynamixel_ids)
 
-    transmission_list = robot.get_joint_attrs(
+    transmission_list = robot.get_joint_config_attrs(
         "type", "dynamixel", "transmission", group
     )
-    joint_group_list = robot.get_joint_attrs("type", "dynamixel", "group", group)
+    joint_group_list = robot.get_joint_config_attrs("type", "dynamixel", "group", group)
     state_dict = controller.get_motor_state(retries=-1)
     init_pos: Dict[int, float] = {}
     for transmission, joint_group, (id, state) in zip(
@@ -58,7 +58,7 @@ def calibrate_dynamixel(port: str, robot: Robot, group: str):
         else:
             init_pos[id] = state.pos
 
-    robot.set_joint_attrs("type", "dynamixel", "init_pos", init_pos, group)
+    robot.set_joint_config_attrs("type", "dynamixel", "init_pos", init_pos, group)
 
     controller.close_motors()
 
@@ -127,8 +127,8 @@ def main(robot: Robot, parts: List[str]):
 
             motor_mask.extend(all_parts[part])
 
-    motor_names = robot.get_joint_attrs("is_passive", False)
-    motor_pos_init = np.array(robot.get_joint_attrs("is_passive", False, "init_pos"))
+    motor_names = robot.get_joint_config_attrs("is_passive", False)
+    motor_pos_init = np.array(robot.get_joint_config_attrs("is_passive", False, "init_pos"))
     motor_angles = {}
     for i, (name, pos) in enumerate(zip(motor_names, motor_pos_init)):
         if i in motor_mask:

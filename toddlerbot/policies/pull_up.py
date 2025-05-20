@@ -54,11 +54,11 @@ class PullUpPolicy(BasePolicy, policy_name="pull_up"):
         self.root_to_neck_t = np.array([0.016, 0.0, 0.1419], dtype=np.float32)
         self.waist_motor_indices = np.array(
             [
-                robot.motor_ordering.index("waist_act_1"),
-                robot.motor_ordering.index("waist_act_2"),
+                robot.motor_name_ordering.index("waist_act_1"),
+                robot.motor_name_ordering.index("waist_act_2"),
             ]
         )
-        self.neck_pitch_idx = robot.motor_ordering.index("neck_pitch_act")
+        self.neck_pitch_idx = robot.motor_name_ordering.index("neck_pitch_act")
         self.neck_pitch_vel = np.pi / 16
         self.neck_pitch_act_pos = 0.0
         self.tag_pose_avg: Optional[npt.NDArray[np.float32]] = None
@@ -113,8 +113,8 @@ class PullUpPolicy(BasePolicy, policy_name="pull_up"):
         """
         neck_pitch_act_pos = np.clip(
             self.neck_pitch_vel * (obs.time - self.prep_duration),
-            self.robot.joint_limits["neck_pitch"][0],
-            self.robot.joint_limits["neck_pitch"][1],
+            self.robot.joint_cfg_limits["neck_pitch"][0],
+            self.robot.joint_cfg_limits["neck_pitch"][1],
         )
         action = self.prepare_action.copy()
         action[self.neck_pitch_idx] = neck_pitch_act_pos
@@ -125,7 +125,7 @@ class PullUpPolicy(BasePolicy, policy_name="pull_up"):
 
         if len(left_tag_poses) > 0 and len(right_tag_poses) > 0:
             joint_angles = self.robot.motor_to_joint_angles(
-                dict(zip(self.robot.motor_ordering, obs.motor_pos))
+                dict(zip(self.robot.motor_name_ordering, obs.motor_pos))
             )
             neck_yaw_pos = joint_angles["neck_yaw_driven"]
             neck_pitch_pos = joint_angles["neck_pitch"]

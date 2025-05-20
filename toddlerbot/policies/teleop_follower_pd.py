@@ -65,7 +65,7 @@ class TeleopFollowerPDPolicy(BalancePDPolicy, policy_name="teleop_follower_pd"):
         self.task = task
         prep = "kneel" if task == "pick" else "hold"
 
-        self.neck_pitch_idx = robot.motor_ordering.index("neck_pitch_act")
+        self.neck_pitch_idx = robot.motor_name_ordering.index("neck_pitch_act")
         if task == "hug":
             self.neck_pitch_ratio = 1.0
         elif task == "pick":

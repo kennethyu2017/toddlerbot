@@ -85,7 +85,7 @@ class MuJoCoSim(BaseSim):
         self.motor_indices = np.array(
             [
                 mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, name)
-                for name in self.robot.motor_ordering
+                for name in self.robot.motor_name_ordering
             ]
         )
         if not self.fixed_base:
@@ -173,7 +173,7 @@ class MuJoCoSim(BaseSim):
             current state, including position, velocity, and torque.
         """
         motor_state_dict: Dict[str, JointState] = {}
-        for name in self.robot.motor_ordering:
+        for name in self.robot.motor_name_ordering:
             motor_state_dict[name] = JointState(
                 time=time.time(),
                 pos=self.data.joint(name).qpos.item(),
@@ -199,7 +199,7 @@ class MuJoCoSim(BaseSim):
             If "array", returns a NumPy array of motor angles.
         """
         motor_angles: Dict[str, float] = {}
-        for name in self.robot.motor_ordering:
+        for name in self.robot.motor_name_ordering:
             motor_angles[name] = self.data.joint(name).qpos.item()
 
         if type == "array":
@@ -216,7 +216,7 @@ class MuJoCoSim(BaseSim):
             which includes the timestamp, position, and velocity.
         """
         joint_state_dict: Dict[str, JointState] = {}
-        for name in self.robot.joint_ordering:
+        for name in self.robot.active_joint_name_ordering:
             joint_state_dict[name] = JointState(
                 time=time.time(),
                 pos=self.data.joint(name).qpos.item(),
@@ -241,7 +241,7 @@ class MuJoCoSim(BaseSim):
                 `type` is "dict". Returns a NumPy array of joint angles if `type` is "array".
         """
         joint_angles: Dict[str, float] = {}
-        for name in self.robot.joint_ordering:
+        for name in self.robot.active_joint_name_ordering:
             joint_angles[name] = self.data.joint(name).qpos.item()
 
         if type == "array":
@@ -419,7 +419,7 @@ class MuJoCoSim(BaseSim):
             motor_angles (Dict[str, float] | npt.NDArray[np.float32]): A dictionary mapping motor names to angles or an array of motor angles in the order specified by the robot's motor ordering.
         """
         if not isinstance(motor_angles, dict):
-            motor_angles = dict(zip(self.robot.motor_ordering, motor_angles))
+            motor_angles = dict(zip(self.robot.motor_name_ordering, motor_angles))
 
         for name in motor_angles:
             self.data.joint(name).qpos = motor_angles[name]
@@ -443,7 +443,7 @@ class MuJoCoSim(BaseSim):
             joint_angles (Dict[str, float] | npt.NDArray[np.float32]): A dictionary mapping joint names to their respective angles, or a NumPy array of joint angles in the order specified by the robot's joint ordering.
         """
         if not isinstance(joint_angles, dict):
-            joint_angles = dict(zip(self.robot.joint_ordering, joint_angles))
+            joint_angles = dict(zip(self.robot.active_joint_name_ordering, joint_angles))
 
         for name in joint_angles:
             self.data.joint(name).qpos = joint_angles[name]
@@ -562,7 +562,7 @@ class MuJoCoSim(BaseSim):
         joint_state_list: List[Dict[str, JointState]] = []
         for state in state_traj:
             joint_state: Dict[str, JointState] = {}
-            for joint_name in self.robot.joint_ordering:
+            for joint_name in self.robot.active_joint_name_ordering:
                 joint_pos = state[1 + self.model.joint(joint_name).id]
                 joint_state[joint_name] = JointState(time=state[0], pos=joint_pos)
 

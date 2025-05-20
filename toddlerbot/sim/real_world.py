@@ -30,23 +30,20 @@ def _init_dynamixel_actuators(*, robot:Robot, executor: ThreadPoolExecutor)->Fut
     )
 
     dynamixel_ports: List[str] = find_ports(description)
-
-    dynamixel_ids = robot.get_joint_attrs("type", "dynamixel", "id")
-
-    dynamixel_ids = robot.motorordering......
+    dynamixel_ids = robot.get_joint_config_attrs("type", "dynamixel", "id")
 
     dynamixel_config = DynamixelConfig(
         port=dynamixel_ports[0],
         baudrate=robot.config["general"]["dynamixel_baudrate"],
-        control_mode=robot.get_joint_attrs(
+        control_mode=robot.get_joint_config_attrs(
             "type", "dynamixel", "control_mode"
         ),
-        kP=robot.get_joint_attrs("type", "dynamixel", "kp_real"),
-        kI=robot.get_joint_attrs("type", "dynamixel", "ki_real"),
-        kD=robot.get_joint_attrs("type", "dynamixel", "kd_real"),
-        kFF2=robot.get_joint_attrs("type", "dynamixel", "kff2_real"),
-        kFF1=robot.get_joint_attrs("type", "dynamixel", "kff1_real"),
-        init_pos=robot.get_joint_attrs("type", "dynamixel", "init_pos"),
+        kP=robot.get_joint_config_attrs("type", "dynamixel", "kp_real"),
+        kI=robot.get_joint_config_attrs("type", "dynamixel", "ki_real"),
+        kD=robot.get_joint_config_attrs("type", "dynamixel", "kd_real"),
+        kFF2=robot.get_joint_config_attrs("type", "dynamixel", "kff2_real"),
+        kFF1=robot.get_joint_config_attrs("type", "dynamixel", "kff1_real"),
+        init_pos=robot.get_joint_config_attrs("type", "dynamixel", "init_pos"),
     )
     return executor.submit(
         DynamixelController, dynamixel_config, dynamixel_ids
@@ -70,21 +67,24 @@ def _init_feite_actuators(*, robot:Robot, executor: ThreadPoolExecutor)-> Option
             
     if feite_ports is None:
         raise EnvironmentError(f'can not find any com port connecting feite motors. used descriptions: { descriptions }')            
-                    
-    feite_ids = robot.get_joint_attrs("type", "feite", "id")
+
+    # we use motor_name_ordering directly. no need to get ids through iterating over the json config `type` , causing we don't use two
+    # type of motors at same time.
+    # feite_ids = robot.get_joint_attrs("type", "feite", "id")
+    feite_ids = robot.motorordering......
 
     feite_config = FeiteConfig(
         port=feite_ports[0],
         baudrate=robot.config["general"]["feitei_baudrate"],
-        control_mode=robot.get_joint_attrs(
+        control_mode=robot.get_joint_config_attrs(
             "type", "feite", "control_mode"
         ),
-        kP=robot.get_joint_attrs("type", "feite", "kp_real"),
-        kI=robot.get_joint_attrs("type", "feite", "ki_real"),
-        kD=robot.get_joint_attrs("type", "feite", "kd_real"),
+        kP=robot.get_joint_config_attrs("type", "feite", "kp_real"),
+        kI=robot.get_joint_config_attrs("type", "feite", "ki_real"),
+        kD=robot.get_joint_config_attrs("type", "feite", "kd_real"),
         # kFF2=robot.get_joint_attrs("type", "dynamixel", "kff2_real"),
         # kFF1=robot.get_joint_attrs("type", "dynamixel", "kff1_real"),
-        init_pos=robot.get_joint_attrs("type", "feite", "init_pos"),
+        init_pos=robot.get_joint_config_attrs("type", "feite", "init_pos"),
     )
     return executor.submit(FeiteController,feite_config, feite_ids)
 
@@ -195,15 +195,17 @@ class RealWorld(BaseSim):
 
         actuator_state = results["actuator"]
 
-        for motor_name in self.robot.get_joint_attrs("type", "dynamixel"):
+        for motor_name in self.robot.get_joint_config_attrs("type", "dynamixel"):
             motor_id = self.robot.config["joints"][motor_name]["id"]
             motor_state_dict_unordered[motor_name] = actuator_state[motor_id]
 
         time_curr = 0.0
-        motor_pos = np.zeros(len(self.robot.motor_ordering), dtype=np.float32)
-        motor_vel = np.zeros(len(self.robot.motor_ordering), dtype=np.float32)
-        motor_tor = np.zeros(len(self.robot.motor_ordering), dtype=np.float32)
-        for i, motor_name in enumerate(self.robot.motor_ordering):
+        motor_pos = np.zeros(self.robot.nu,dtype=np.float32)    #  len(self.robot.motor_name_ordering), dtype=np.float32)
+        # motor_vel = np.zeros(self.robot.nu,dtype=np.float32)    #   len(self.robot.motor_name_ordering), dtype=np.float32)
+        # motor_tor = np.zeros(self.robot.nu,dtype=np.float32)    #len(self.robot.motor_name_ordering), dtype=np.float32)
+        motor_vel = np.zeros_like(motor_pos)
+        motor_tor = np.zeros_like(motor_pos)
+        for i, motor_name in enumerate(self.robot.motor_name_ordering):
             if i == 0:
                 time_curr = motor_state_dict_unordered[motor_name].time
 
@@ -287,7 +289,7 @@ class RealWorld(BaseSim):
         if self.actuator_controller is not None:
             dynamixel_pos = [
                 motor_angles_updated[k]
-                for k in self.robot.get_joint_attrs("type", "dynamixel")
+                for k in self.robot.get_joint_config_attrs("type", "dynamixel")
             ]
             self._executor.submit(self.actuator_controller.set_pos, dynamixel_pos)
 
@@ -302,7 +304,7 @@ class RealWorld(BaseSim):
 
         if self.actuator_controller is not None:
             dynamixel_kps: List[float] = []
-            for k in self.robot.get_joint_attrs("type", "dynamixel"):
+            for k in self.robot.get_joint_config_attrs("type", "dynamixel"):
                 if k in motor_kps:
                     dynamixel_kps.append(motor_kps[k])
                 else:

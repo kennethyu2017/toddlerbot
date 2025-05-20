@@ -190,19 +190,19 @@ class SysIDFixedPolicy(BasePolicy, policy_name="sysID"):
 
         for symm_joint_name, sysID_specs in joint_sysID_specs.items():
             joint_idx: int | List[int] | None = None
-            if symm_joint_name in robot.joint_ordering:
+            if symm_joint_name in robot.active_joint_name_ordering:
                 joint_names = [symm_joint_name]
-                joint_idx = robot.joint_ordering.index(joint_names[0])
+                joint_idx = robot.active_joint_name_ordering.index(joint_names[0])
             else:
                 joint_names = [f"left_{symm_joint_name}", f"right_{symm_joint_name}"]
                 joint_idx = [
-                    robot.joint_ordering.index(joint_names[0]),
-                    robot.joint_ordering.index(joint_names[1]),
+                    robot.active_joint_name_ordering.index(joint_names[0]),
+                    robot.active_joint_name_ordering.index(joint_names[1]),
                 ]
 
             mean = (
-                robot.joint_limits[joint_names[0]][0]
-                + robot.joint_limits[joint_names[0]][1]
+                robot.joint_cfg_limits[joint_names[0]][0]
+                + robot.joint_cfg_limits[joint_names[0]][1]
             ) / 2
             warm_up_pos = np.zeros_like(init_motor_pos)
 
@@ -214,16 +214,16 @@ class SysIDFixedPolicy(BasePolicy, policy_name="sysID"):
 
             if sysID_specs.warm_up_angles is not None:
                 for name, angle in sysID_specs.warm_up_angles.items():
-                    warm_up_pos[robot.joint_ordering.index(name)] = angle
+                    warm_up_pos[robot.active_joint_name_ordering.index(name)] = angle
 
             warm_up_motor_angles = robot.joint_to_motor_angles(
-                dict(zip(robot.joint_ordering, warm_up_pos))
+                dict(zip(robot.active_joint_name_ordering, warm_up_pos))
             )
             warm_up_act = np.array(
                 list(warm_up_motor_angles.values()), dtype=np.float32
             )
 
-            amplitude_max = robot.joint_limits[joint_names[0]][1] - mean
+            amplitude_max = robot.joint_cfg_limits[joint_names[0]][1] - mean
 
             def build_episode(amplitude_ratio: float, kp: float):
                 if not np.allclose(warm_up_act, action_list[-1][-1], 1e-6):
@@ -262,7 +262,7 @@ class SysIDFixedPolicy(BasePolicy, policy_name="sysID"):
                 rotate_action = np.zeros_like(rotate_pos)
                 for j, pos in enumerate(rotate_pos):
                     rotate_motor_angles = robot.joint_to_motor_angles(
-                        dict(zip(robot.joint_ordering, pos))
+                        dict(zip(robot.active_joint_name_ordering, pos))
                     )
                     signal_action = np.array(
                         list(rotate_motor_angles.values()), dtype=np.float32

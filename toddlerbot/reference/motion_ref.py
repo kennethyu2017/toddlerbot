@@ -42,7 +42,7 @@ class MotionReference(ABC):
         self.use_jax = os.environ.get("USE_JAX", "false") == "true"
 
         self.default_joint_pos = np.array(
-            list(robot.default_joint_angles.values()), dtype=np.float32
+            list(robot.default_active_joint_angles.values()), dtype=np.float32
         )
         self.default_motor_pos = np.array(
             list(robot.default_motor_angles.values()), dtype=np.float32
@@ -50,10 +50,10 @@ class MotionReference(ABC):
 
         indices = np.arange(robot.nu)
         motor_groups = numpy.array(
-            [robot.joint_groups[name] for name in robot.motor_ordering]
+            [robot.joint_cfg_groups[name] for name in robot.motor_name_ordering]
         )
         joint_groups = numpy.array(
-            [robot.joint_groups[name] for name in robot.joint_ordering]
+            [robot.joint_cfg_groups[name] for name in robot.active_joint_name_ordering]
         )
         self.leg_motor_indices = indices[motor_groups == "leg"]
         self.leg_joint_indices = indices[joint_groups == "leg"]
@@ -97,21 +97,21 @@ class MotionReference(ABC):
         ratios, and retrieves the joint limits for neck yaw and pitch.
         """
         neck_motor_names = [
-            self.robot.motor_ordering[i] for i in self.neck_motor_indices
+            self.robot.motor_name_ordering[i] for i in self.neck_motor_indices
         ]
-        self.neck_pitch_idx = self.robot.joint_ordering.index("neck_pitch")
+        self.neck_pitch_idx = self.robot.active_joint_name_ordering.index("neck_pitch")
         self.neck_gear_ratio = self._get_gear_ratios(neck_motor_names)
         self.neck_joint_limits = np.array(
             [
-                self.robot.joint_limits["neck_yaw_driven"],
-                self.robot.joint_limits["neck_pitch"],
+                self.robot.joint_cfg_limits["neck_yaw_driven"],
+                self.robot.joint_cfg_limits["neck_pitch"],
             ],
             dtype=np.float32,
         ).T
 
     def _setup_arm(self):
         """Initializes the arm setup by configuring motor names, calculating gear ratios, and loading reference datasets for arm motion. This includes setting up time and joint position references based on a preloaded dataset, and ensuring compatibility with the expected number of motors."""
-        arm_motor_names = [self.robot.motor_ordering[i] for i in self.arm_motor_indices]
+        arm_motor_names = [self.robot.motor_name_ordering[i] for i in self.arm_motor_indices]
         self.arm_gear_ratio = self._get_gear_ratios(arm_motor_names)
 
         # Load the balance dataset
@@ -149,8 +149,8 @@ class MotionReference(ABC):
         )
         self.waist_joint_limits = np.array(
             [
-                self.robot.joint_limits["waist_roll"],
-                self.robot.joint_limits["waist_yaw"],
+                self.robot.joint_cfg_limits["waist_roll"],
+                self.robot.joint_cfg_limits["waist_yaw"],
             ],
             dtype=np.float32,
         ).T
@@ -160,14 +160,14 @@ class MotionReference(ABC):
 
         This method retrieves the motor names for the leg based on predefined indices, calculates the gear ratios for these motors, and determines the indices of key joints in the robot's joint ordering. These joints include the left and right knee, hip pitch, and hip roll.
         """
-        leg_motor_names = [self.robot.motor_ordering[i] for i in self.leg_motor_indices]
+        leg_motor_names = [self.robot.motor_name_ordering[i] for i in self.leg_motor_indices]
         self.leg_gear_ratio = self._get_gear_ratios(leg_motor_names)
-        self.left_knee_idx = self.robot.joint_ordering.index("left_knee")
-        self.left_hip_pitch_idx = self.robot.joint_ordering.index("left_hip_pitch")
-        self.left_hip_roll_idx = self.robot.joint_ordering.index("left_hip_roll")
-        self.right_knee_idx = self.robot.joint_ordering.index("right_knee")
-        self.right_hip_pitch_idx = self.robot.joint_ordering.index("right_hip_pitch")
-        self.right_hip_roll_idx = self.robot.joint_ordering.index("right_hip_roll")
+        self.left_knee_idx = self.robot.active_joint_name_ordering.index("left_knee")
+        self.left_hip_pitch_idx = self.robot.active_joint_name_ordering.index("left_hip_pitch")
+        self.left_hip_roll_idx = self.robot.active_joint_name_ordering.index("left_hip_roll")
+        self.right_knee_idx = self.robot.active_joint_name_ordering.index("right_knee")
+        self.right_hip_pitch_idx = self.robot.active_joint_name_ordering.index("right_hip_pitch")
+        self.right_hip_roll_idx = self.robot.active_joint_name_ordering.index("right_hip_roll")
 
     def _setup_mjx(self, com_z_lower_limit_offset: float = 0.01):
         """Initializes and configures the MuJoCo model for the robot, setting up joint indices, site IDs, and kinematic parameters.
@@ -182,13 +182,13 @@ class MotionReference(ABC):
         self.mj_joint_indices = np.array(
             [
                 mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, name)
-                for name in self.robot.joint_ordering
+                for name in self.robot.active_joint_name_ordering
             ]
         )
         self.mj_motor_indices = np.array(
             [
                 mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, name)
-                for name in self.robot.motor_ordering
+                for name in self.robot.motor_name_ordering
             ]
         )
         self.mj_passive_indices = np.array(
@@ -219,8 +219,8 @@ class MotionReference(ABC):
                     self.passive_joint_indices,
                     np.array(
                         [
-                            self.robot.joint_ordering.index("left_gripper_pinion"),
-                            self.robot.joint_ordering.index("right_gripper_pinion"),
+                            self.robot.active_joint_name_ordering.index("left_gripper_pinion"),
+                            self.robot.active_joint_name_ordering.index("right_gripper_pinion"),
                         ]
                     ),
                 ]
@@ -267,7 +267,7 @@ class MotionReference(ABC):
 
         self.knee_default = self.default_joint_pos[self.left_knee_idx]
         self.knee_max = np.max(
-            np.abs(np.array(self.robot.joint_limits["left_knee"], dtype=np.float32))
+            np.abs(np.array(self.robot.joint_cfg_limits["left_knee"], dtype=np.float32))
         )
 
         hip_to_knee_default = np.asarray(
