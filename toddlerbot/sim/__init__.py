@@ -5,7 +5,6 @@ from typing import Dict, Optional
 import numpy as np
 import numpy.typing as npt
 
-
 @dataclass(init=False)
 class Obs:
     """Observation data structure"""

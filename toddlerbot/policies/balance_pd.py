@@ -179,7 +179,7 @@ class BalancePDPolicy(BasePolicy, policy_name="balance_pd"):
             self.state_ref[13 : 13 + self.robot.nu] = self.manip_motor_pos.copy()
             self.state_ref[13 + self.robot.nu : 13 + 2 * self.robot.nu] = np.array(
                 list(
-                    self.robot.motor_to_joint_angles(
+                    self.robot.motor_to_active_joint_angles(
                         dict(zip(self.robot.motor_name_ordering, self.manip_motor_pos))
                     ).values()
                 ),
@@ -404,7 +404,7 @@ class BalancePDPolicy(BasePolicy, policy_name="balance_pd"):
         if self.state_ref is None:
             manip_joint_pos = np.array(
                 list(
-                    self.robot.motor_to_joint_angles(
+                    self.robot.motor_to_active_joint_angles(
                         dict(zip(self.robot.motor_name_ordering, self.manip_motor_pos))
                     ).values()
                 ),

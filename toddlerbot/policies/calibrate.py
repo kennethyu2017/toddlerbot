@@ -108,7 +108,7 @@ class CalibratePolicy(BasePolicy, policy_name="calibrate"):
         joint_pos[self.leg_pitch_joint_indicies] += self.leg_pitch_joint_signs * ctrl
 
         # Convert joint positions to motor angles
-        motor_angles = self.robot.joint_to_motor_angles(
+        motor_angles = self.robot.active_joint_to_motor_angles(
             dict(zip(self.robot.active_joint_name_ordering, joint_pos))
         )
         motor_target = np.array(list(motor_angles.values()), dtype=np.float32)
