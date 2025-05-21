@@ -424,7 +424,7 @@ class MuJoCoSim(BaseSim):
         for name in motor_angles:
             self.data.joint(name).qpos = motor_angles[name]
 
-        joint_angles = self.robot.motor_to_joint_angles(motor_angles)
+        joint_angles = self.robot.motor_to_active_joint_angles(motor_angles)
         for name in joint_angles:
             self.data.joint(name).qpos = joint_angles[name]
 
@@ -448,7 +448,7 @@ class MuJoCoSim(BaseSim):
         for name in joint_angles:
             self.data.joint(name).qpos = joint_angles[name]
 
-        motor_angles = self.robot.joint_to_motor_angles(joint_angles)
+        motor_angles = self.robot.active_joint_to_motor_angles(joint_angles)
         for name in motor_angles:
             self.data.joint(name).qpos = motor_angles[name]
 

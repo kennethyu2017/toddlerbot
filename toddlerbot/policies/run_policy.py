@@ -5,7 +5,7 @@ import json
 import os
 import pickle
 import pkgutil
-import time
+import time as timelib
 from typing import Any, Dict, List
 
 import matplotlib.pyplot as plt
@@ -14,24 +14,30 @@ import numpy.typing as npt
 from moviepy import ImageSequenceClip
 from tqdm import tqdm
 
-from toddlerbot.policies import BasePolicy, get_policy_class, get_policy_names
-from toddlerbot.policies.balance_pd import BalancePDPolicy
-from toddlerbot.policies.calibrate import CalibratePolicy
-from toddlerbot.policies.dp_policy import DPPolicy
-from toddlerbot.policies.mjx_policy import MJXPolicy
-from toddlerbot.policies.push_cart import PushCartPolicy
-from toddlerbot.policies.record import RecordPolicy
-from toddlerbot.policies.replay import ReplayPolicy
-from toddlerbot.policies.sysID import SysIDFixedPolicy
-from toddlerbot.policies.teleop_follower_pd import TeleopFollowerPDPolicy
-from toddlerbot.policies.teleop_joystick import TeleopJoystickPolicy
-from toddlerbot.policies.teleop_leader import TeleopLeaderPolicy
+
+from . import *
+
+# from toddlerbot.policies import BasePolicy, get_policy_class, get_policy_names
+# from toddlerbot.policies.balance_pd import BalancePDPolicy
+# from toddlerbot.policies.calibrate import CalibratePolicy
+# from toddlerbot.policies.dp_policy import DPPolicy
+# from toddlerbot.policies.mjx_policy import MJXPolicy
+# from toddlerbot.policies.push_cart import PushCartPolicy
+# from toddlerbot.policies.record import RecordPolicy
+# from toddlerbot.policies.replay import ReplayPolicy
+# from toddlerbot.policies.sysID import SysIDFixedPolicy
+# from toddlerbot.policies.teleop_follower_pd import TeleopFollowerPDPolicy
+# from toddlerbot.policies.teleop_joystick import TeleopJoystickPolicy
+# from toddlerbot.policies.teleop_leader import TeleopLeaderPolicy
+
 from toddlerbot.sim import BaseSim, Obs
 from toddlerbot.sim.mujoco_sim import MuJoCoSim
 from toddlerbot.sim.real_world import RealWorld
 from toddlerbot.sim.robot import Robot
+
 from toddlerbot.utils.comm_utils import sync_time
 from toddlerbot.utils.misc_utils import dump_profiling_data, log, snake2camel
+
 from toddlerbot.visualization.vis_plot import (
     plot_joint_tracking,
     plot_joint_tracking_frequency,
@@ -156,7 +162,7 @@ def plot_results(
                 action_dict[motor_name] = []
             action_dict[motor_name].append(motor_angle)
 
-        joint_angle_ref = robot.motor_to_joint_angles(motor_angles)
+        joint_angle_ref = robot.motor_to_active_joint_angles(motor_angles)
         for joint_name, joint_angle in joint_angle_ref.items():
             if joint_name not in joint_pos_ref_dict:
                 joint_pos_ref_dict[joint_name] = []
@@ -281,7 +287,7 @@ def run_policy(
 
     loop_time_list: List[List[float]] = []
     obs_list: List[Obs] = []
-    control_inputs_list: List[Dict[str, float]] = []
+    control_inputs_list: List[Dict[str, float]] = []  # e.g., human operation.
     motor_angles_list: List[Dict[str, float]] = []
 
     n_steps_total = (
@@ -290,13 +296,13 @@ def run_policy(
         else policy.n_steps_total
     )
     p_bar = tqdm(total=n_steps_total, desc="Running the policy")
-    start_time = time.time()
+    start_time = timelib.time()
     step_idx = 0
     time_until_next_step = 0.0
     last_ckpt_idx = -1
     try:
         while step_idx < n_steps_total:
-            step_start = time.time()
+            step_start = timelib.time()
 
             # Get the latest state from the queue
             obs = sim.get_observation(1)
@@ -305,7 +311,7 @@ def run_policy(
             if "real" not in sim.name and vis_type != "view":
                 obs.time += time_until_next_step
 
-            obs_time = time.time()
+            obs_time = timelib.time()
 
             if isinstance(policy, SysIDFixedPolicy):
                 ckpt_times = list(policy.ckpt_dict.keys())
@@ -341,17 +347,17 @@ def run_policy(
 
             control_inputs, motor_target = policy.step(obs, "real" in sim.name)
 
-            inference_time = time.time()
+            inference_time = timelib.time()
 
             motor_angles: Dict[str, float] = {}
             for motor_name, motor_angle in zip(robot.motor_name_ordering, motor_target):
                 motor_angles[motor_name] = motor_angle
 
             sim.set_motor_target(motor_angles)
-            set_action_time = time.time()
+            set_action_time = timelib.time()
 
             sim.step()
-            sim_step_time = time.time()
+            sim_step_time = timelib.time()
 
             obs_list.append(obs)
             control_inputs_list.append(control_inputs)
@@ -363,7 +369,7 @@ def run_policy(
             if step_idx % p_bar_steps == 0:
                 p_bar.update(p_bar_steps)
 
-            step_end = time.time()
+            step_end = timelib.time()
 
             loop_time_list.append(
                 [
@@ -379,7 +385,7 @@ def run_policy(
             time_until_next_step = start_time + policy.control_dt * step_idx - step_end
             # print(f"time_until_next_step: {time_until_next_step * 1000:.2f} ms")
             if ("real" in sim.name or vis_type == "view") and time_until_next_step > 0:
-                time.sleep(time_until_next_step)
+                timelib.sleep(time_until_next_step)
 
     except KeyboardInterrupt:
         log("KeyboardInterrupt recieved. Closing...", header=header_name)
@@ -388,7 +394,7 @@ def run_policy(
         p_bar.close()
 
         exp_name = f"{robot.name}_{policy.name}_{sim.name}"
-        time_str = time.strftime("%Y%m%d_%H%M%S")
+        time_str = timelib.strftime("%Y%m%d_%H%M%S")
         exp_folder_path = f"results/{exp_name}_{time_str}"
 
         os.makedirs(exp_folder_path, exist_ok=True)
@@ -579,7 +585,7 @@ def main(args=None):
 
     robot = Robot(args.robot)
 
-    # t1 = time.time()
+    # t1 = timelib.time()
 
     sim: BaseSim | None = None
     if args.sim == "mujoco":
@@ -593,8 +599,9 @@ def main(args=None):
     else:
         raise ValueError("Unknown simulator")
 
-    # t2 = time.time()
+    # t2 = timelib.time()
 
+    # `fixed` meas robot will not move, e.g. fixed by a bench clamp.
     PolicyClass = get_policy_class(args.policy.replace("_fixed", ""))
 
     if "replay" in args.policy:
@@ -666,7 +673,7 @@ def main(args=None):
     else:
         policy = PolicyClass(args.policy, robot, init_motor_pos)
 
-    # t3 = time.time()
+    # t3 = timelib.time()
 
     # print(f"Time taken to initialize sim: {t2 - t1:.2f} s")
     # print(f"Time taken to initialize policy: {t3 - t2:.2f} s")

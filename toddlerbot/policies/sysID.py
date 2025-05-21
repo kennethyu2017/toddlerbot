@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Mapping, Sequence
 
 import numpy as np
 import numpy.typing as npt
@@ -22,9 +22,145 @@ class SysIDSpecs:
     initial_frequency: float = 0.1
     final_frequency: float = 10.0
     decay_rate: float = 0.1
-    direction: float = 1
+    direction: float = 1  # 1, -1
     kp_list: Optional[List[float]] = None
     warm_up_angles: Optional[Dict[str, float]] = None
+
+
+def _build_jnt_sysID_spec(robot_name: str)->Mapping[str, SysIDSpecs]:
+
+    # NOTE: the key is joint name corresponding to `robot.active_joint` name.
+    # not motor name, but must be 1-to-1 mapping to motor name.
+    specs : Mapping[str, SysIDSpecs] | None = None
+
+    if "sysID" in robot_name:  # for single motor sysID.
+        kp_list: List[float] = []
+        if "330" in robot_name:
+            # will be divided by 128 in Dynamixel actuator's internal Position PD controller.
+            kp_list = list(range(900, 2400, 300))
+        elif 'sm40bl' in robot_name.casefold():
+            kp_list = list(range(7, 40, 5))  # defualt kp is `32` for SM40BL.
+        else:
+            kp_list = list(range(1500, 3600, 300))
+
+        # single motor joint.
+        specs = {
+            "joint_0": SysIDSpecs(amplitude_list=[0.25, 0.5, 0.75], kp_list=kp_list)
+        }
+
+    else:  # for multi-links sysID.
+        XC330_kp_list = [1200.0, 1500.0, 1800.0]
+        # XC430_kp_list = [1800.0, 2100.0, 2400.0]
+        # XM430_kp_list = [2400.0, 2700.0, 3000.0]
+
+        # symm motor joint.
+        specs = {
+
+            # "neck_yaw_driven": SysIDSpecs(amplitude_max=np.pi / 2),
+            # "neck_pitch": SysIDSpecs(),
+            "ank_roll": SysIDSpecs(
+                amplitude_list=[0.25, 0.5, 0.75], kp_list=XC330_kp_list
+            ),
+            "ank_pitch": SysIDSpecs(
+                amplitude_list=[0.25, 0.5, 0.75], kp_list=XC330_kp_list
+            ),
+            # "knee": SysIDSpecs(
+            #     amplitude_list=[0.25, 0.5, 0.75],
+            #     warm_up_angles={
+            #         "left_sho_roll": -np.pi / 12,
+            #         "right_sho_roll": -np.pi / 12,
+            #         "left_hip_roll": np.pi / 8,
+            #         "right_hip_roll": np.pi / 8,
+            #     },
+            #     direction=-1,
+            #     kp_list=XM430_kp_list,
+            # ),
+            # "hip_pitch": SysIDSpecs(
+            #     amplitude_list=[0.25, 0.5, 0.75],
+            #     warm_up_angles={
+            #         "left_sho_roll": -np.pi / 12,
+            #         "right_sho_roll": -np.pi / 12,
+            #         "left_hip_roll": np.pi / 8,
+            #         "right_hip_roll": np.pi / 8,
+            #     },
+            #     kp_list=XC430_kp_list,
+            # ),
+            # "hip_roll": SysIDSpecs(
+            #     amplitude_list=[0.25, 0.5, 0.75],
+            #     warm_up_angles={
+            #         "left_sho_roll": -np.pi / 6,
+            #         "right_sho_roll": -np.pi / 6,
+            #     },
+            #     direction=-1,
+            #     kp_list=XC430_kp_list,
+            # ),
+
+            # driven by gear transmission.
+            "hip_yaw_driven": SysIDSpecs(
+                amplitude_list=[0.25, 0.5, 0.75],
+                warm_up_angles={
+                    "left_sho_roll": -np.pi / 6,
+                    "right_sho_roll": -np.pi / 6,
+                },
+                kp_list=XC330_kp_list,
+            ),
+            "waist_roll": SysIDSpecs(
+                amplitude_list=[0.25, 0.5, 0.75],
+                warm_up_angles={
+                    "left_sho_roll": -np.pi / 6,
+                    "right_sho_roll": -np.pi / 6,
+                },
+                kp_list=XC330_kp_list,
+            ),
+            "waist_yaw": SysIDSpecs(
+                amplitude_list=[0.25, 0.5, 0.75],
+                warm_up_angles={
+                    "left_sho_roll": -np.pi / 6,
+                    "right_sho_roll": -np.pi / 6,
+                },
+                kp_list=XC330_kp_list,
+            ),
+            # "sho_yaw_driven": SysIDSpecs(
+            #     warm_up_angles={
+            #         "left_sho_roll": -np.pi / 6,
+            #         "right_sho_roll": -np.pi / 6,
+            #     },
+            #     direction=-1,
+            # ),
+            # "elbow_yaw_driven": SysIDSpecs(
+            #     warm_up_angles={
+            #         "left_sho_roll": -np.pi / 6,
+            #         "right_sho_roll": -np.pi / 6,
+            #     },
+            #     direction=-1,
+            # ),
+            # "wrist_pitch_driven": SysIDSpecs(
+            #     warm_up_angles={
+            #         "left_sho_roll": -np.pi / 6,
+            #         "right_sho_roll": -np.pi / 6,
+            #     },
+            # ),
+            # "elbow_roll": SysIDSpecs(
+            #     warm_up_angles={
+            #         "left_sho_roll": -np.pi / 6,
+            #         "right_sho_roll": -np.pi / 6,
+            #         "left_sho_yaw_driven": -np.pi / 2,
+            #         "right_sho_yaw_driven": -np.pi / 2,
+            #     },
+            # ),
+            # "wrist_roll": SysIDSpecs(
+            #     warm_up_angles={
+            #         "left_sho_roll": -np.pi / 6,
+            #         "right_sho_roll": -np.pi / 6,
+            #         "left_sho_yaw_driven": -np.pi / 2,
+            #         "right_sho_yaw_driven": -np.pi / 2,
+            #     },
+            # ),
+            # "sho_pitch": SysIDSpecs(),
+            # "sho_roll": SysIDSpecs(),
+        }
+
+    return specs
 
 
 class SysIDFixedPolicy(BasePolicy, policy_name="sysID"):
@@ -38,7 +174,7 @@ class SysIDFixedPolicy(BasePolicy, policy_name="sysID"):
         Args:
             name (str): The name of the instance.
             robot (Robot): The robot object containing joint and motor information.
-            init_motor_pos (npt.NDArray[np.float32]): Initial motor positions as a NumPy array.
+            init_motor_pos (npt.NDArray[np.float32]): observed Initial motor positions as a NumPy array.
 
         Attributes:
             prep_duration (float): Duration for preparation phase.
@@ -47,152 +183,43 @@ class SysIDFixedPolicy(BasePolicy, policy_name="sysID"):
             action_arr (npt.NDArray[np.float32]): Concatenated array of actions corresponding to each time step.
             n_steps_total (int): Total number of steps in the time array.
         """
-        super().__init__(name, robot, init_motor_pos)
 
+        # TODO: robot.motor_id_ordering should be 1-to-1 mapping with robot.active_joint_name_ordering.
+        assert len(init_motor_pos) == len(robot.motor_id_ordering) == len(robot.active_joint_name_ordering)
+        super().__init__(name, robot, init_motor_pos)
         set_seed(0)
 
-        self.prep_duration = 2.0
+        self.prep_duration = 2.0   # 2 sec.
         warm_up_duration = 2.0
         signal_duraion = 10.0
         reset_duration = 2.0
 
-        if "sysID" in robot.name:
-            kp_list: List[float] = []
-            if "330" in robot.name:
-                # will be divided by 128 in Dynamixel Position PD controller.
-                kp_list = list(range(900, 2400, 300))
-            else:
-                kp_list = list(range(1500, 3600, 300))
-
-            joint_sysID_specs = {
-                "joint_0": SysIDSpecs(amplitude_list=[0.25, 0.5, 0.75], kp_list=kp_list)
-            }
-        else:
-            XC330_kp_list = [1200.0, 1500.0, 1800.0]
-            # XC430_kp_list = [1800.0, 2100.0, 2400.0]
-            # XM430_kp_list = [2400.0, 2700.0, 3000.0]
-            joint_sysID_specs = {
-                # "neck_yaw_driven": SysIDSpecs(amplitude_max=np.pi / 2),
-                # "neck_pitch": SysIDSpecs(),
-                "ank_roll": SysIDSpecs(
-                    amplitude_list=[0.25, 0.5, 0.75], kp_list=XC330_kp_list
-                ),
-                "ank_pitch": SysIDSpecs(
-                    amplitude_list=[0.25, 0.5, 0.75], kp_list=XC330_kp_list
-                ),
-                # "knee": SysIDSpecs(
-                #     amplitude_list=[0.25, 0.5, 0.75],
-                #     warm_up_angles={
-                #         "left_sho_roll": -np.pi / 12,
-                #         "right_sho_roll": -np.pi / 12,
-                #         "left_hip_roll": np.pi / 8,
-                #         "right_hip_roll": np.pi / 8,
-                #     },
-                #     direction=-1,
-                #     kp_list=XM430_kp_list,
-                # ),
-                # "hip_pitch": SysIDSpecs(
-                #     amplitude_list=[0.25, 0.5, 0.75],
-                #     warm_up_angles={
-                #         "left_sho_roll": -np.pi / 12,
-                #         "right_sho_roll": -np.pi / 12,
-                #         "left_hip_roll": np.pi / 8,
-                #         "right_hip_roll": np.pi / 8,
-                #     },
-                #     kp_list=XC430_kp_list,
-                # ),
-                # "hip_roll": SysIDSpecs(
-                #     amplitude_list=[0.25, 0.5, 0.75],
-                #     warm_up_angles={
-                #         "left_sho_roll": -np.pi / 6,
-                #         "right_sho_roll": -np.pi / 6,
-                #     },
-                #     direction=-1,
-                #     kp_list=XC430_kp_list,
-                # ),
-                "hip_yaw_driven": SysIDSpecs(
-                    amplitude_list=[0.25, 0.5, 0.75],
-                    warm_up_angles={
-                        "left_sho_roll": -np.pi / 6,
-                        "right_sho_roll": -np.pi / 6,
-                    },
-                    kp_list=XC330_kp_list,
-                ),
-                "waist_roll": SysIDSpecs(
-                    amplitude_list=[0.25, 0.5, 0.75],
-                    warm_up_angles={
-                        "left_sho_roll": -np.pi / 6,
-                        "right_sho_roll": -np.pi / 6,
-                    },
-                    kp_list=XC330_kp_list,
-                ),
-                "waist_yaw": SysIDSpecs(
-                    amplitude_list=[0.25, 0.5, 0.75],
-                    warm_up_angles={
-                        "left_sho_roll": -np.pi / 6,
-                        "right_sho_roll": -np.pi / 6,
-                    },
-                    kp_list=XC330_kp_list,
-                ),
-                # "sho_yaw_driven": SysIDSpecs(
-                #     warm_up_angles={
-                #         "left_sho_roll": -np.pi / 6,
-                #         "right_sho_roll": -np.pi / 6,
-                #     },
-                #     direction=-1,
-                # ),
-                # "elbow_yaw_driven": SysIDSpecs(
-                #     warm_up_angles={
-                #         "left_sho_roll": -np.pi / 6,
-                #         "right_sho_roll": -np.pi / 6,
-                #     },
-                #     direction=-1,
-                # ),
-                # "wrist_pitch_driven": SysIDSpecs(
-                #     warm_up_angles={
-                #         "left_sho_roll": -np.pi / 6,
-                #         "right_sho_roll": -np.pi / 6,
-                #     },
-                # ),
-                # "elbow_roll": SysIDSpecs(
-                #     warm_up_angles={
-                #         "left_sho_roll": -np.pi / 6,
-                #         "right_sho_roll": -np.pi / 6,
-                #         "left_sho_yaw_driven": -np.pi / 2,
-                #         "right_sho_yaw_driven": -np.pi / 2,
-                #     },
-                # ),
-                # "wrist_roll": SysIDSpecs(
-                #     warm_up_angles={
-                #         "left_sho_roll": -np.pi / 6,
-                #         "right_sho_roll": -np.pi / 6,
-                #         "left_sho_yaw_driven": -np.pi / 2,
-                #         "right_sho_yaw_driven": -np.pi / 2,
-                #     },
-                # ),
-                # "sho_pitch": SysIDSpecs(),
-                # "sho_roll": SysIDSpecs(),
-            }
+        jnt_sysID_specs = _build_jnt_sysID_spec(robot.name)
 
         time_list: List[npt.NDArray[np.float32]] = []
         action_list: List[npt.NDArray[np.float32]] = []
         self.ckpt_dict: Dict[float, Dict[str, float]] = {}
 
-        prep_time, prep_action = self.move(
-            -self.control_dt,
-            init_motor_pos,
-            np.zeros_like(init_motor_pos),
-            self.prep_duration,
-        )
+        prep_time, prep_action = self.move(time_curr= -self.control_dt,
+                                           action_curr=init_motor_pos,
+                                           action_next= np.zeros_like(init_motor_pos),
+                                           duration=self.prep_duration )
 
         time_list.append(prep_time)
         action_list.append(prep_action)
 
-        for symm_joint_name, sysID_specs in joint_sysID_specs.items():
-            joint_idx: int | List[int] | None = None
+        for symm_joint_name, sysID_specs in jnt_sysID_specs.items():
+            joint_idx: List[int] | None = None
+            joint_names : List[str] | None = None
+            # warm_up_pos = np.zeros_like(init_motor_pos)
+            active_jnt_warm_up_angles: Mapping[str, float] | None = {}
+            # active_jnt_warm_up_angles = np.full(shape= len(robot.active_joint_name_ordering),
+            #                            fill_value=np.inf,
+            #                            dtype=np.float32)
+
             if symm_joint_name in robot.active_joint_name_ordering:
                 joint_names = [symm_joint_name]
-                joint_idx = robot.active_joint_name_ordering.index(joint_names[0])
+                joint_idx = [robot.active_joint_name_ordering.index(joint_names[0])]
             else:
                 joint_names = [f"left_{symm_joint_name}", f"right_{symm_joint_name}"]
                 joint_idx = [
@@ -203,27 +230,23 @@ class SysIDFixedPolicy(BasePolicy, policy_name="sysID"):
             mean = (
                 robot.joint_cfg_limits[joint_names[0]][0]
                 + robot.joint_cfg_limits[joint_names[0]][1]
-            ) / 2
-            warm_up_pos = np.zeros_like(init_motor_pos)
+            ) / 2.
+            amplitude_max = robot.joint_cfg_limits[joint_names[0]][1] - mean
 
-            if isinstance(joint_idx, int):
-                warm_up_pos[joint_idx] = mean
-            else:
-                warm_up_pos[joint_idx[0]] = mean
-                warm_up_pos[joint_idx[1]] = mean * sysID_specs.direction
+            active_jnt_warm_up_angles[joint_idx[0]] = mean
+            if len(joint_idx) > 1:
+                active_jnt_warm_up_angles[joint_idx[1]] = mean * sysID_specs.direction
 
             if sysID_specs.warm_up_angles is not None:
-                for name, angle in sysID_specs.warm_up_angles.items():
-                    warm_up_pos[robot.active_joint_name_ordering.index(name)] = angle
+                for _n, _a in sysID_specs.warm_up_angles.items():
+                    active_jnt_warm_up_angles[robot.active_joint_name_ordering.index(_n)] = _a
 
-            warm_up_motor_angles = robot.joint_to_motor_angles(
-                dict(zip(robot.active_joint_name_ordering, warm_up_pos))
-            )
+            # TODO: robot.motor_id_ordering should be 1-to-1 mapping with robot.active_joint_name_ordering.
+            motor_warm_up_angles = robot.active_joint_to_motor_angles(joints_config=robot.config,
+                                                                      joint_angles= dict(zip(robot.active_joint_name_ordering, warm_up_pos)) )
             warm_up_act = np.array(
                 list(warm_up_motor_angles.values()), dtype=np.float32
             )
-
-            amplitude_max = robot.joint_cfg_limits[joint_names[0]][1] - mean
 
             def build_episode(amplitude_ratio: float, kp: float):
                 if not np.allclose(warm_up_act, action_list[-1][-1], 1e-6):
@@ -253,15 +276,13 @@ class SysIDFixedPolicy(BasePolicy, policy_name="sysID"):
 
                 rotate_pos = np.zeros((signal.shape[0], robot.nu), np.float32)
 
-                if isinstance(joint_idx, int):
-                    rotate_pos[:, joint_idx] = signal
-                else:
-                    rotate_pos[:, joint_idx[0]] = signal
+                rotate_pos[:, joint_idx[0]] = signal
+                if len(joint_idx)>1:
                     rotate_pos[:, joint_idx[1]] = signal * sysID_specs.direction
 
                 rotate_action = np.zeros_like(rotate_pos)
                 for j, pos in enumerate(rotate_pos):
-                    rotate_motor_angles = robot.joint_to_motor_angles(
+                    rotate_motor_angles = robot.active_joint_to_motor_angles(
                         dict(zip(robot.active_joint_name_ordering, pos))
                     )
                     signal_action = np.array(

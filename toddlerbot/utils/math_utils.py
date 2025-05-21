@@ -529,7 +529,7 @@ def gaussian_basis_functions(phase: ArrayType, N: int = 50):
     return basis
 
 
-def interpolate(
+def interpolate(*,
     p_start: ArrayType | float,
     p_end: ArrayType | float,
     duration: ArrayType | float,

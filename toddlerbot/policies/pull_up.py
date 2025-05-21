@@ -124,7 +124,7 @@ class PullUpPolicy(BasePolicy, policy_name="pull_up"):
         right_tag_poses = self.right_eye.detect_tags()
 
         if len(left_tag_poses) > 0 and len(right_tag_poses) > 0:
-            joint_angles = self.robot.motor_to_joint_angles(
+            joint_angles = self.robot.motor_to_active_joint_angles(
                 dict(zip(self.robot.motor_name_ordering, obs.motor_pos))
             )
             neck_yaw_pos = joint_angles["neck_yaw_driven"]

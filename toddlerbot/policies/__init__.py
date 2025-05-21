@@ -9,8 +9,25 @@ from toddlerbot.sim.robot import Robot
 from toddlerbot.utils.math_utils import interpolate
 from toddlerbot.utils.misc_utils import snake2camel
 
+from .balance_pd import BalancePDPolicy
+from .calibrate import CalibratePolicy
+from .dp_policy import DPPolicy
+from .mjx_policy import MJXPolicy
+from .push_cart import PushCartPolicy
+from .record import RecordPolicy
+from .replay import ReplayPolicy
+from .sysID import SysIDFixedPolicy
+from .teleop_follower_pd import TeleopFollowerPDPolicy
+from .teleop_joystick import TeleopJoystickPolicy
+from .teleop_leader import TeleopLeaderPolicy
+
+__all__ = ['BasePolicy', 'get_policy_class', 'get_policy_names','BalancePDPolicy', 'CalibratePolicy', 'DPPolicy', 'MJXPolicy', 'PushCartPolicy',
+            'RecordPolicy','ReplayPolicy', 'SysIDFixedPolicy', 'TeleopFollowerPDPolicy', 'TeleopJoystickPolicy', 'TeleopLeaderPolicy',
+            ]
+
 # Global registry to store policy names and their corresponding classes
-policy_registry: Dict[str, Type["BasePolicy"]] = {}
+# TODO: move into BasePolicy as class variable.
+__policy_registry: Dict[str, Type["BasePolicy"]] = {}
 
 
 def get_policy_class(policy_name: str) -> Type["BasePolicy"]:
@@ -25,10 +42,10 @@ def get_policy_class(policy_name: str) -> Type["BasePolicy"]:
     Raises:
         ValueError: If the policy name is not found in the policy registry.
     """
-    if policy_name not in policy_registry:
+    if policy_name not in __policy_registry:
         raise ValueError(f"Unknown policy: {policy_name}")
 
-    return policy_registry[policy_name]
+    return __policy_registry[policy_name]
 
 
 def get_policy_names() -> List[str]:
@@ -42,7 +59,7 @@ def get_policy_names() -> List[str]:
         List[str]: A list containing the original and modified policy names.
     """
     policy_names: List[str] = []
-    for key in policy_registry.keys():
+    for key in __policy_registry.keys():
         policy_names.append(key)
         policy_names.append(key + "_fixed")
 
@@ -58,7 +75,7 @@ class BasePolicy(ABC):
         name: str,
         robot: Robot,
         init_motor_pos: npt.NDArray[np.float32],
-        control_dt: float = 0.02,
+        control_dt: float = 0.02,    # 20ms, 50Hz.
         prep_duration: float = 2.0,
         n_steps_total: float = float("inf"),
     ):
@@ -121,7 +138,8 @@ class BasePolicy(ABC):
         """
         super().__init_subclass__(**kwargs)
         if len(policy_name) > 0:
-            policy_registry[policy_name] = cls
+            global __policy_registry
+            __policy_registry[policy_name] = cls
 
     def reset(self):
         pass
@@ -135,13 +153,13 @@ class BasePolicy(ABC):
     # duration: total length of the motion
     # end_time: when motion should end, end time < time < duration will be static
     def move(
-        self,
+        self, *,
         time_curr: float,
         action_curr: npt.NDArray[np.float32],
         action_next: npt.NDArray[np.float32],
         duration: float,
         end_time: float = 0.0,
-    ):
+    )->Tuple[npt.NDArray[np.float32], npt.NDArray[np.float32]]:
         """Calculates the trajectory of an action over a specified duration, interpolating between current and next actions.
 
         Args:
@@ -149,33 +167,34 @@ class BasePolicy(ABC):
             action_curr (npt.NDArray[np.float32]): The current action state as a NumPy array.
             action_next (npt.NDArray[np.float32]): The next action state as a NumPy array.
             duration (float): The total duration over which the action should be interpolated.
-            end_time (float, optional): The time at the end of the duration where the action should remain constant. Defaults to 0.0.
+            end_time (float, optional): The duration time at the end of the duration where the action should remain constant,
+                    i.e., keep action_next inside `end_time`. Defaults to 0.0.
 
         Returns:
             Tuple[npt.NDArray[np.float32], npt.NDArray[np.float32]]: A tuple containing the time steps and the corresponding interpolated positions.
         """
-        reset_time = np.linspace(
-            0,
-            duration,
-            int(duration / self.control_dt),
+        duration_spaced:npt.NDArray[np.float32] = np.linspace(
+            start=0,
+            stop=duration,
+            num=int(duration / self.control_dt),
             endpoint=False,
             dtype=np.float32,
         )
 
-        reset_pos = np.zeros((len(reset_time), action_curr.shape[0]), dtype=np.float32)
-        for i, t in enumerate(reset_time):
-            if t < duration - end_time:
-                pos = interpolate(
-                    action_curr,
-                    action_next,
-                    duration - end_time,
-                    t,
-                )
+        act_seq = np.zeros((len(duration_spaced), action_curr.shape[0]), dtype=np.float32)
+        moving_dur = duration - end_time
+        for i, t in enumerate(duration_spaced):
+            if t < moving_dur:
+                # TODO : us np.linspace directly...?
+                act_seq[i] = interpolate(
+                    p_start=action_curr,
+                    p_end=action_next,
+                    duration=moving_dur,
+                    t=t )
             else:
-                pos = action_next
+                act_seq[i] = action_next   # keep action_next inside `end_time`.
 
-            reset_pos[i] = pos
+        # TODO: why add control_dt?
+        duration_spaced += time_curr + self.control_dt
 
-        reset_time += time_curr + self.control_dt
-
-        return reset_time, reset_pos
+        return duration_spaced, act_seq

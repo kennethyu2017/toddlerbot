@@ -67,7 +67,7 @@ def load_datasets(robot: Robot, data_path: str):
         obs_pos_list: List[List[float]] = []
         for obs in obs_list[idx_range]:
             motor_angles_obs = dict(zip(robot.motor_name_ordering, obs.motor_pos))
-            joint_angles_obs = robot.motor_to_joint_angles(motor_angles_obs)
+            joint_angles_obs = robot.motor_to_active_joint_angles(motor_angles_obs)
             obs_pos_list.append(list(joint_angles_obs.values()))
 
         obs_pos = np.array(obs_pos_list)
