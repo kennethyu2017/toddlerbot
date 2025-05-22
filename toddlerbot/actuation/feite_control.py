@@ -424,6 +424,9 @@ class FeiteController(BaseController):
         Args:
             pos (Sequence): A list of position values to set for the motors.
         """
+
+        # TODO: convert from [-pi/2, pi/2] to [pi/2, 3pi/2]
+
         pos_arr: npt.NDArray[np.float32] = np.array(pos)
         pos_arr_drive = self.init_pos + pos_arr
         with self.lock:
@@ -439,6 +442,8 @@ class FeiteController(BaseController):
         Returns:
             Dict[int, JointState]: A dictionary mapping motor IDs to their respective `JointState`, which includes time, position, velocity, and torque.
         """
+
+        # TODO: convert POS from [pi/2, 3pi/2] to [-pi/2, pi/2].
 
         # log(f"Start... {time.time()}", header="Feite", level="warning")
         state_dict: Dict[int, JointState] = {}

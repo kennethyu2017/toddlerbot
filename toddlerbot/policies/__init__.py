@@ -151,7 +151,7 @@ class BasePolicy(ABC):
         pass
 
     # duration: total length of the motion
-    # end_time: when motion should end, end time < time < duration will be static
+    # end_time: when motion should end, end time < time < duration will keep static.
     def move(
         self, *,
         time_curr: float,
@@ -173,7 +173,7 @@ class BasePolicy(ABC):
         Returns:
             Tuple[npt.NDArray[np.float32], npt.NDArray[np.float32]]: A tuple containing the time steps and the corresponding interpolated positions.
         """
-        duration_spaced:npt.NDArray[np.float32] = np.linspace(
+        time_seq: npt.NDArray[np.float32] = np.linspace(
             start=0,
             stop=duration,
             num=int(duration / self.control_dt),
@@ -181,9 +181,9 @@ class BasePolicy(ABC):
             dtype=np.float32,
         )
 
-        act_seq = np.zeros((len(duration_spaced), action_curr.shape[0]), dtype=np.float32)
+        act_seq = np.zeros((len(time_seq), action_curr.shape[0]), dtype=np.float32)
         moving_dur = duration - end_time
-        for i, t in enumerate(duration_spaced):
+        for i, t in enumerate(time_seq):
             if t < moving_dur:
                 # TODO : us np.linspace directly...?
                 act_seq[i] = interpolate(
@@ -195,6 +195,6 @@ class BasePolicy(ABC):
                 act_seq[i] = action_next   # keep action_next inside `end_time`.
 
         # TODO: why add control_dt?
-        duration_spaced += time_curr + self.control_dt
+        time_seq += time_curr + self.control_dt
 
-        return duration_spaced, act_seq
+        return time_seq, act_seq

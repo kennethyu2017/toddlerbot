@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple, Mapping, Sequence
+from typing import Dict, List, Optional, Tuple, Mapping, OrderedDict
 
 import numpy as np
 import numpy.typing as npt
@@ -24,6 +24,8 @@ class SysIDSpecs:
     decay_rate: float = 0.1
     direction: float = 1  # 1, -1
     kp_list: Optional[List[float]] = None
+
+    # active joint angles, not same thing of `motor act`.
     warm_up_angles: Optional[Dict[str, float]] = None
 
 
@@ -98,6 +100,8 @@ def _build_jnt_sysID_spec(robot_name: str)->Mapping[str, SysIDSpecs]:
             # driven by gear transmission.
             "hip_yaw_driven": SysIDSpecs(
                 amplitude_list=[0.25, 0.5, 0.75],
+
+                # active joint angles, not same thing of `motor act`.
                 warm_up_angles={
                     "left_sho_roll": -np.pi / 6,
                     "right_sho_roll": -np.pi / 6,
@@ -163,6 +167,78 @@ def _build_jnt_sysID_spec(robot_name: str)->Mapping[str, SysIDSpecs]:
     return specs
 
 
+def _build_episode(*, time_curr:float,
+                   action_curr: npt.NDArray[np.float32],
+                   action_warm_up: npt.NDArray[np.float32], duration_warm_up:float,
+                   chirp_signal_param: Dict[str,float],
+                   #kp: float
+                   ) -> Tuple[npt.NDArray[np.float32], npt.NDArray[np.float32]]:
+    # including from action_curr -> warm_up -> chirp_signal -> reset_to_warm_up
+    episode_time_seq: npt.NDArray[np.float32] | None = None
+    episode_act_seq: npt.NDArray[np.float32] | None = None
+
+    # --- warm up:
+    if not np.allclose(action_warm_up, action_curr,1e-06):   #  self.action_arr[-1, :], 1e-6):
+        warm_up_time_seq, warm_up_act_seq = self.move(time_curr=time_curr, # self.time[-1],
+                                                 action_curr=action_curr,  #self.action_arr[-1, :],
+                                                 action_next=action_warm_up,
+                                                 duration=duration_warm_up)
+
+        episode_time_seq = warm_up_time_seq
+        episode_act_seq = warm_up_act_seq
+
+    # --- rotate joint angles by `chirp` signal:
+    chirp_time_seq, chirp_signal_seq = get_chirp_signal(**chirp_signal_param)
+
+    # if episode_time_seq is not None:
+    #     chirp_time_seq += episode_time_seq[-1] + self.control_dt
+    # else:
+    #     chirp_time_seq += time_curr + self.control_dt
+
+    rotate_jnt_angle_seq = np.zeros((chirp_signal_seq.shape[0], robot.nu), np.float32)
+
+    rotate_jnt_angle_seq[:, joint_idx[0]] = signal_seq
+    if len(joint_idx) > 1:
+        rotate_jnt_angle_seq[:, joint_idx[1]] = signal_seq * sysID_specs.direction
+
+    rotate_act_seq = np.zeros_like(rotate_jnt_angle_seq)
+    for _t_idx, _jnt_angle in enumerate(rotate_motor_angle_seq):
+        rotate_motor_angles = robot.active_joint_to_motor_angles(
+            dict(zip(robot.active_joint_name_ordering, _jnt_angle))
+        )
+        signal_action = np.array(
+            list(rotate_motor_angles.values()), dtype=np.float32
+        )
+        # add signal onto warm_up pos.
+        rotate_act_seq[_t_idx] = signal_action + action_warm_up
+
+    if episode_time_seq is not None:
+        chirp_time_seq += episode_time_seq[-1] + self.control_dt
+        episode_time_seq = np.concatenate([episode_time_seq, chirp_time_seq], axis=0, dtype=np.float32)
+        episode_act_seq = np.concatenate([episode_act_seq, rotate_act_seq], axis=0, dtype=np.float32)
+    else:
+        chirp_time_seq += time_curr + self.control_dt
+        episode_time_seq = chirp_time_seq
+        episode_act_seq = rotate_act_seq
+
+    # --- reset to warm up:
+    reset_time_seq, reset_act_seq = self.move(time_curr=episode_time_seq[-1],
+                                         action_curr=episode_act_seq[-1, :],
+                                         action_next=action_warm_up,
+                                         duration=reset_duration,
+                                         end_time=0.5)
+
+    # NOTE: already reset_time_seq += episode_time_seq[-1] + self.control_dt in self.move().
+    episode_time_seq = np.concatenate([episode_time_seq, reset_time_seq], axis=0, dtype=np.float32)
+    episode_act_seq = np.concatenate([episode_act_seq, reset_act_seq], axis=0, dtype=np.float32)
+
+    # self.ckpt_dict[self.time[-1]] = dict(
+    #     zip(joint_names, [kp] * len(joint_names))
+    # )
+
+    return episode_time_seq, episode_act_seq
+
+
 class SysIDFixedPolicy(BasePolicy, policy_name="sysID"):
     """System identification policy for the toddlerbot robot."""
 
@@ -180,7 +256,7 @@ class SysIDFixedPolicy(BasePolicy, policy_name="sysID"):
             prep_duration (float): Duration for preparation phase.
             ckpt_dict (Dict[float, Dict[str, float]]): Dictionary storing checkpoint data for joint names and their corresponding kp values.
             time_arr (npt.NDArray[np.float32]): Concatenated array of time steps for the entire process.
-            action_arr (npt.NDArray[np.float32]): Concatenated array of actions corresponding to each time step.
+            action_arr (npt.NDArray[np.float32]): motor actions. Concatenated array of actions corresponding to each time step.
             n_steps_total (int): Total number of steps in the time array.
         """
 
@@ -196,129 +272,125 @@ class SysIDFixedPolicy(BasePolicy, policy_name="sysID"):
 
         jnt_sysID_specs = _build_jnt_sysID_spec(robot.name)
 
-        time_list: List[npt.NDArray[np.float32]] = []
-        action_list: List[npt.NDArray[np.float32]] = []
+        # time_list: List[npt.NDArray[np.float32]] = []
+        # action_list: List[npt.NDArray[np.float32]] = []
+        # self.time_arr:npt.NDArray[np.float32] | None= None
+        # self.action_arr:npt.NDArray[np.float32] | None = None
+
         self.ckpt_dict: Dict[float, Dict[str, float]] = {}
 
-        prep_time, prep_action = self.move(time_curr= -self.control_dt,
+        # NOTE: `act` is motor control action, e.g., target pos of motor.
+        # In prep duration, make all motors back to zero.
+        # In the following steps, the default angels for irrelative motors are kept `0`. easy way.
+        prep_time_seq, prep_motor_act_seq = self.move(time_curr= -self.control_dt,
                                            action_curr=init_motor_pos,
                                            action_next= np.zeros_like(init_motor_pos),
                                            duration=self.prep_duration )
 
-        time_list.append(prep_time)
-        action_list.append(prep_action)
+        # for whole sysID procedure.
+        self.sysID_time_seq: npt.NDArray[np.float32] = prep_time_seq
+        self.sysID_motor_act_seq: npt.NDArray[np.float32] = prep_motor_act_seq
+
+        # time_list.append(prep_time)
+        # action_list.append(prep_action)
 
         for symm_joint_name, sysID_specs in jnt_sysID_specs.items():
-            joint_idx: List[int] | None = None
+            # joint_idx: List[int] | None = None
             joint_names : List[str] | None = None
             # warm_up_pos = np.zeros_like(init_motor_pos)
-            active_jnt_warm_up_angles: Mapping[str, float] | None = {}
+            active_jnt_warm_up_angles: OrderedDict[str, float] = {}
             # active_jnt_warm_up_angles = np.full(shape= len(robot.active_joint_name_ordering),
             #                            fill_value=np.inf,
             #                            dtype=np.float32)
 
             if symm_joint_name in robot.active_joint_name_ordering:
                 joint_names = [symm_joint_name]
-                joint_idx = [robot.active_joint_name_ordering.index(joint_names[0])]
+                # joint_idx = [robot.active_joint_name_ordering.index(joint_names[0])]
             else:
                 joint_names = [f"left_{symm_joint_name}", f"right_{symm_joint_name}"]
-                joint_idx = [
-                    robot.active_joint_name_ordering.index(joint_names[0]),
-                    robot.active_joint_name_ordering.index(joint_names[1]),
-                ]
+                # joint_idx = [
+                #     robot.active_joint_name_ordering.index(joint_names[0]),
+                #     robot.active_joint_name_ordering.index(joint_names[1]),
+                # ]
 
+            # --- calc warm up action:
             mean = (
                 robot.joint_cfg_limits[joint_names[0]][0]
                 + robot.joint_cfg_limits[joint_names[0]][1]
             ) / 2.
             amplitude_max = robot.joint_cfg_limits[joint_names[0]][1] - mean
 
-            active_jnt_warm_up_angles[joint_idx[0]] = mean
-            if len(joint_idx) > 1:
-                active_jnt_warm_up_angles[joint_idx[1]] = mean * sysID_specs.direction
+            # active_jnt_warm_up_angles[joint_idx[0]] = mean
+            active_jnt_warm_up_angles[joint_names[0]] = mean
+            if len(joint_names) > 1:
+                active_jnt_warm_up_angles[joint_names[1]] = mean * sysID_specs.direction
 
             if sysID_specs.warm_up_angles is not None:
                 for _n, _a in sysID_specs.warm_up_angles.items():
-                    active_jnt_warm_up_angles[robot.active_joint_name_ordering.index(_n)] = _a
+                    # active_jnt_warm_up_angles[robot.active_joint_name_ordering.index(_n)] = _a
+                    assert _n in robot.active_joint_name_ordering
+                    active_jnt_warm_up_angles[_n] = _a
 
             # TODO: robot.motor_id_ordering should be 1-to-1 mapping with robot.active_joint_name_ordering.
-            motor_warm_up_angles = robot.active_joint_to_motor_angles(joints_config=robot.config,
-                                                                      joint_angles= dict(zip(robot.active_joint_name_ordering, warm_up_pos)) )
+            # motor_warm_up_angles = robot.active_joint_to_motor_angles(joints_config=robot.config,
+            #                                                           joint_angles= dict(zip(robot.active_joint_name_ordering, warm_up_pos)) )
+
+
+            TODO: len(active_jnt_warm_up_angles) != nu......
+            TODO: len(active_jnt_warm_up_angles) != nu......
+            
+
+
+            motor_warm_up_angles = robot.active_joint_to_motor_angles(active_jnt_warm_up_angles)
             warm_up_act = np.array(
                 list(warm_up_motor_angles.values()), dtype=np.float32
             )
 
-            def build_episode(amplitude_ratio: float, kp: float):
-                if not np.allclose(warm_up_act, action_list[-1][-1], 1e-6):
-                    warm_up_time, warm_up_action = self.move(
-                        time_list[-1][-1],
-                        action_list[-1][-1],
-                        warm_up_act,
-                        warm_up_duration,
-                    )
-
-                    time_list.append(warm_up_time)
-                    action_list.append(warm_up_action)
-
-                rotate_time, signal = get_chirp_signal(
-                    signal_duraion,
-                    self.control_dt,
-                    0.0,
-                    sysID_specs.initial_frequency,
-                    sysID_specs.final_frequency,
-                    amplitude_ratio * amplitude_max,
-                    sysID_specs.decay_rate,
-                )
-                rotate_time = np.asarray(rotate_time)
-                signal = np.asarray(signal)
-
-                rotate_time += time_list[-1][-1] + self.control_dt
-
-                rotate_pos = np.zeros((signal.shape[0], robot.nu), np.float32)
-
-                rotate_pos[:, joint_idx[0]] = signal
-                if len(joint_idx)>1:
-                    rotate_pos[:, joint_idx[1]] = signal * sysID_specs.direction
-
-                rotate_action = np.zeros_like(rotate_pos)
-                for j, pos in enumerate(rotate_pos):
-                    rotate_motor_angles = robot.active_joint_to_motor_angles(
-                        dict(zip(robot.active_joint_name_ordering, pos))
-                    )
-                    signal_action = np.array(
-                        list(rotate_motor_angles.values()), dtype=np.float32
-                    )
-
-                    rotate_action[j] = signal_action + warm_up_act
-
-                time_list.append(rotate_time)
-                action_list.append(rotate_action)
-
-                reset_time, reset_action = self.move(
-                    time_list[-1][-1],
-                    action_list[-1][-1],
-                    warm_up_act,
-                    reset_duration,
-                    end_time=0.5,
-                )
-
-                time_list.append(reset_time)
-                action_list.append(reset_action)
-
-                self.ckpt_dict[time_list[-1][-1]] = dict(
-                    zip(joint_names, [kp] * len(joint_names))
-                )
+            # --- calc chirp signal:
+            # chirp_time_seq, chirp_signal_seq = get_chirp_signal(
+            #     signal_duraion,
+            #     self.control_dt,
+            #     0.0,
+            #     sysID_specs.initial_frequency,
+            #     sysID_specs.final_frequency,
+            #     amplitude_ratio * amplitude_max,
+            #     sysID_specs.decay_rate,
+            # )
 
             if sysID_specs.kp_list is None:
                 for amplitude_ratio in sysID_specs.amplitude_list:
+                    chirp_signal_params = dict(
+                        duration=signal_duraion,
+                        control_dt=self.control_dt,
+                        mean=0.0,
+                        initial_frequency=sysID_specs.initial_frequency,
+                        final_frequency=sysID_specs.final_frequency,
+                        amplitude=amplitude_ratio * amplitude_max,
+                        decay_rate=sysID_specs.decay_rate)
+
                     build_episode(amplitude_ratio, 0.0)
+                    self.ckpt_dict[self.time[-1]] = dict(
+                        zip(joint_names, [kp] * len(joint_names))
+                    )
             else:
+                # TODO: use permutation instead.
                 for kp in sysID_specs.kp_list:
                     for amplitude_ratio in sysID_specs.amplitude_list:
+                        chirp_signal_params = dict(
+                            duration=signal_duraion,
+                            control_dt=self.control_dt,
+                            mean=0.0,
+                            initial_frequency=sysID_specs.initial_frequency,
+                            final_frequency=sysID_specs.final_frequency,
+                            amplitude=amplitude_ratio * amplitude_max,
+                            decay_rate=sysID_specs.decay_rate)
                         build_episode(amplitude_ratio, kp)
+                        self.ckpt_dict[self.time[-1]] = dict(
+                            zip(joint_names, [kp] * len(joint_names))
+                        )
 
-        self.time_arr = np.concatenate(time_list)
-        self.action_arr = np.concatenate(action_list)
+        # self.time_arr = np.concatenate(time_list)
+        # self.action_arr = np.concatenate(action_list)
         self.n_steps_total = len(self.time_arr)
 
     def step(

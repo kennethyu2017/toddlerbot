@@ -8,7 +8,7 @@ from ._module_logger import logger
 
 @dataclass(init=False)
 class Robot:
-    """This class defines some data strucutres, FK, IK of ToddlerBot."""
+    """This class defines some data structures, FK, IK of ToddlerBot."""
     """    
     init_motor_angles (OrderedDict[str, float]): Initial motor angles for active joints.
     init_active_joint_angles (OrderedDict[str, float]): Initial joint angles derived from motor angles.
@@ -157,13 +157,9 @@ class Robot:
         # only include `linkage` and `rack_and_pinion` transmission.
         # NOTE: a joint driven by gear, e.g., right_elbow_yaw_driven, even whose `is_passive` is true in config.json,
         # is still one of self.active_joint, and is not `self.passive_joint`.
-        self.init_active_joint_angles = Robot.motor_to_active_joint_angles(joints_config=self.config['joints'],
-                                                                           motor_angles=self.init_motor_angles,
-                                                                           offsets=self.config["general"]["offsets"])
+        self.init_active_joint_angles = self.motor_to_active_joint_angles(self.init_motor_angles)
 
-        self.default_active_joint_angles = Robot.motor_to_active_joint_angles(joints_config=self.config['joints'],
-                                                                              motor_angles=self.default_motor_angles,
-                                                                              offsets = self.config["general"]["offsets"])
+        self.default_active_joint_angles = self.motor_to_active_joint_angles(self.default_motor_angles)
 
         #NOTE: len(self.motor_name_ordering) != len(self.active_joint_name_ordering)
         # immutable.
@@ -396,6 +392,7 @@ class Robot:
 
         Args:
             motor_pos (List[float]): A list containing the positions of the motors.
+            offsets
 
         Returns:
             List[float]: A list containing the calculated waist roll and yaw angles.
@@ -411,6 +408,7 @@ class Robot:
 
         Args:
             waist_pos (List[float]): A list containing the desired roll and yaw positions of the waist.
+            offsets
 
         Returns:
             List[float]: A list containing the calculated positions for the two waist actuators.
@@ -422,10 +420,8 @@ class Robot:
         waist_act_2 = (roll + yaw) / 2.
         return [waist_act_1, waist_act_2]
 
-    @staticmethod
-    def motor_to_active_joint_angles(*, joints_config: Mapping[str, Any],
-                                     motor_angles: OrderedDict[str, float],
-                                     offsets: Mapping[str, float]) -> OrderedDict[str, float]:
+    def motor_to_active_joint_angles(self, #joints_config: Mapping[str, Any],
+                                     motor_angles: OrderedDict[str, float]) -> OrderedDict[str, float]:
         """Converts motor angles to joint angles based on the robot's configuration.
 
         Args:
@@ -443,7 +439,7 @@ class Robot:
         # NOTE: only transmission `ankle` will increase the len(joint_angles) more than len(motor_angles).
         # but we don't use `ankle` transmission till now. so, len(motor_name) == len(active_joint_name).
         for motor_name, motor_pos in motor_angles.items():
-            transmission = joints_config[motor_name]["transmission"]
+            transmission = self.config[motor_name]["transmission"]
 
             if transmission == "gear":
                 # NOTE: a joint driven by gear, e.g., right_elbow_yaw_driven, even whose `is_passive` is true in config.json,
@@ -452,12 +448,12 @@ class Robot:
 
                 joint_name = motor_name.replace("_drive", "_driven")
                 joint_angles[joint_name] = (
-                        -motor_pos * joints_config[motor_name]["gear_ratio"]
+                        -motor_pos * self.config[motor_name]["gear_ratio"]
                 )
             elif transmission == "rack_and_pinion":
                 joint_pinion_name = motor_name.replace("_rack", "_pinion")
                 joint_angles[joint_pinion_name] = (
-                        -motor_pos * joints_config[motor_name]["gear_ratio"]
+                        -motor_pos * self.config[motor_name]["gear_ratio"]
                 )
             elif transmission == "waist":   # motors: `waist_act_1` and `waist_act_2`
                 # Placeholder to ensure the correct order
@@ -482,14 +478,12 @@ class Robot:
 
         if len(waist_act_pos) > 0:
             joint_angles["waist_roll"], joint_angles["waist_yaw"] = Robot.waist_fk(motor_pos=waist_act_pos,
-                                                                              offsets=offsets)
+                                                                                   offsets=self.config["general"]["offsets"])
 
         return joint_angles
 
-    @staticmethod
-    def active_joint_to_motor_angles(*, joints_config: Mapping[str, Any],
-                                     joint_angles: OrderedDict[str, float],
-                                     offsets: Mapping[str, float]) -> OrderedDict[str, float]:
+    def active_joint_to_motor_angles(self, #joints_config: Mapping[str, Any],
+                                     joint_angles: OrderedDict[str, float]) -> OrderedDict[str, float]:
         """Converts joint angles to motor angles based on the transmission type specified in the configuration.
 
         Args:
@@ -506,16 +500,16 @@ class Robot:
         right_ankle_pos: List[float] = []
 
         for joint_name, joint_pos in joint_angles.items():
-            transmission = joints_config[joint_name]["transmission"]
+            transmission = self.config[joint_name]["transmission"]
             if transmission == "gear":
                 motor_name = joint_name.replace("_driven", "_drive")
                 motor_angles[motor_name] = (
-                        -joint_pos / joints_config[motor_name]["gear_ratio"]
+                        -joint_pos / self.config[motor_name]["gear_ratio"]
                 )
             elif transmission == "rack_and_pinion":
                 motor_name = joint_name.replace("_pinion", "_rack")
                 motor_angles[motor_name] = (
-                        -joint_pos / joints_config[motor_name]["gear_ratio"]
+                        -joint_pos / self.config[motor_name]["gear_ratio"]
                 )
             elif transmission == "waist":
                 # Placeholder to ensure the correct order
@@ -538,12 +532,12 @@ class Robot:
 
         if len(waist_pos) > 0:
             motor_angles["waist_act_1"], motor_angles["waist_act_2"] = Robot.waist_ik(waist_pos=waist_pos,
-                                                                                 offsets=offsets)
+                                                                                      offsets=self.config["general"]["offsets"])
 
         return motor_angles
 
-    @staticmethod
-    def joint_to_passive_angles(*, joints_config: Mapping[str, Any], joint_angles: OrderedDict[str, float]) \
+    def joint_to_passive_angles(self, #joints_config: Mapping[str, Any],
+                                joint_angles: OrderedDict[str, float]) \
             -> OrderedDict[str, float]:
         """Converts joint angles to passive angles based on the transmission type.
 
@@ -557,7 +551,7 @@ class Robot:
         """
         passive_angles: OrderedDict[str, float] = OrdDictCls()
         for joint_name, joint_pos in joint_angles.items():
-            transmission = joints_config[joint_name]["transmission"]
+            transmission = self.config[joint_name]["transmission"]
             if transmission == "linkage":
                 sign = 1 if "knee" in joint_name else -1
                 for suffix in [
