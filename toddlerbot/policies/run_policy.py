@@ -313,6 +313,7 @@ def run_policy(
 
             obs_time = timelib.time()
 
+            # TODO: no need to bisect. just increment the step_count and check current...
             if isinstance(policy, SysIDFixedPolicy):
                 ckpt_times = list(policy.ckpt_dict.keys())
                 ckpt_idx = bisect.bisect_left(ckpt_times, obs.time)
@@ -320,9 +321,9 @@ def run_policy(
                 if ckpt_idx != last_ckpt_idx:
                     motor_kps = policy.ckpt_dict[ckpt_times[ckpt_idx]]
                     motor_kps_updated = {}
-                    for joint_name in motor_kps:
-                        for motor_name in robot.active_joint_to_motor_name[joint_name]:
-                            motor_kps_updated[motor_name] = motor_kps[joint_name]
+                    for _jnt_name in motor_kps:
+                        for motor_name in robot.active_joint_to_motor_name[_jnt_name]:
+                            motor_kps_updated[motor_name] = motor_kps[_jnt_name]
 
                     if np.any(list(motor_kps_updated.values())):
                         sim.set_motor_kps(motor_kps_updated)

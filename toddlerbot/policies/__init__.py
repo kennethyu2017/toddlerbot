@@ -164,8 +164,8 @@ class BasePolicy(ABC):
 
         Args:
             time_curr (float): The current time from which the trajectory starts.
-            action_curr (npt.NDArray[np.float32]): The current action state as a NumPy array.
-            action_next (npt.NDArray[np.float32]): The next action state as a NumPy array.
+            action_curr (npt.NDArray[np.float32]): The current action state of all motors as a NumPy array.
+            action_next (npt.NDArray[np.float32]): The next action state of all motors as a NumPy array.
             duration (float): The total duration over which the action should be interpolated.
             end_time (float, optional): The duration time at the end of the duration where the action should remain constant,
                     i.e., keep action_next inside `end_time`. Defaults to 0.0.
@@ -181,7 +181,11 @@ class BasePolicy(ABC):
             dtype=np.float32,
         )
 
+
+        assert action_curr.shape[0] == self.robot.nu
+        # shape: ( time_seq_len, robot.nu )
         act_seq = np.zeros((len(time_seq), action_curr.shape[0]), dtype=np.float32)
+
         moving_dur = duration - end_time
         for i, t in enumerate(time_seq):
             if t < moving_dur:
