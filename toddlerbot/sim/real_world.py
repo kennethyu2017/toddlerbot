@@ -445,6 +445,7 @@ class RealWorld(BaseSim):
         # TODO: not waiting for the future to complete?
         self._executor.submit(self._actuator_controller.set_pos, write_pos)
 
+    # NOTE: sync write to all.
     def set_motor_kps(self, motor_kps: Dict[str, float]):
         """Sets the proportional gain (Kp) values for motors of type 'dynamixel'.
 

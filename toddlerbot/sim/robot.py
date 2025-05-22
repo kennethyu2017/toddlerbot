@@ -1,8 +1,11 @@
 import json
 import os
-from typing import Any, List, Mapping, Tuple, OrderedDict
+from typing import Any, List, Mapping, Tuple, OrderedDict, Sequence
 from collections import OrderedDict as OrdDictCls
 from dataclasses import dataclass, field
+import numpy as np
+import numpy.typing as npt
+
 
 from ._module_logger import logger
 
@@ -387,7 +390,8 @@ class Robot:
         return name
 
     @staticmethod
-    def waist_fk(*, motor_pos: List[float], offsets: Mapping[str, float]) -> List[float]:
+    def waist_fk(*, motor_pos: Sequence[float|npt.NDArray[np.float32]], offsets: Mapping[str, float]) \
+            -> Tuple[float|npt.NDArray[np.float32],float|npt.NDArray[np.float32]]:
         """Calculates the forward kinematics for the waist joint based on motor positions.
 
         Args:
@@ -400,10 +404,11 @@ class Robot:
         # offsets = self.config["general"]["offsets"]
         waist_roll = offsets["waist_roll_coef"] * (-motor_pos[0] + motor_pos[1])
         waist_yaw = offsets["waist_yaw_coef"] * (motor_pos[0] + motor_pos[1])
-        return [waist_roll, waist_yaw]
+        return waist_roll, waist_yaw
 
     @staticmethod
-    def waist_ik(*, offsets: Mapping[str, float], waist_pos: List[float]) -> List[float]:
+    def waist_ik(*, offsets: Mapping[str, float], waist_pos: Sequence[float|npt.NDArray[np.float32]]) \
+            -> Tuple[float|npt.NDArray[np.float32], float|npt.NDArray[np.float32]]:
         """Calculates the inverse kinematics for the waist actuators based on the desired waist position.
 
         Args:
@@ -418,10 +423,10 @@ class Robot:
         yaw = waist_pos[1] / offsets["waist_yaw_coef"]
         waist_act_1 = (-roll + yaw) / 2.
         waist_act_2 = (roll + yaw) / 2.
-        return [waist_act_1, waist_act_2]
+        return waist_act_1, waist_act_2
 
     def motor_to_active_joint_angles(self, #joints_config: Mapping[str, Any],
-                                     motor_angles: OrderedDict[str, float]) -> OrderedDict[str, float]:
+                                     motor_angles: OrderedDict[str, float|npt.NDArray[np.float32]]) -> OrderedDict[str, float]:
         """Converts motor angles to joint angles based on the robot's configuration.
 
         Args:
@@ -430,11 +435,13 @@ class Robot:
         Returns:
             OrderedDict[str, float]: A dictionary mapping joint names to their calculated angles.
         """
-        joint_angles: OrderedDict[str, float] = OrdDictCls()
-        waist_act_pos: List[float] = []
+        # joint_angels: float: single angle; npt.NDArray(np.float32): a sequence of angels.
+        joint_angles: OrderedDict[str, float|npt.NDArray[np.float32]] = OrdDictCls()
+
+        waist_act_pos: List[float|npt.NDArray[np.float32]] = []
         # TODO: no use of ank ?
-        left_ank_act_pos: List[float] = []
-        right_ank_act_pos: List[float] = []
+        left_ank_act_pos: List[float|npt.NDArray[np.float32]] = []
+        right_ank_act_pos: List[float|npt.NDArray[np.float32]] = []
 
         # NOTE: only transmission `ankle` will increase the len(joint_angles) more than len(motor_angles).
         # but we don't use `ankle` transmission till now. so, len(motor_name) == len(active_joint_name).
@@ -483,22 +490,23 @@ class Robot:
         return joint_angles
 
     def active_joint_to_motor_angles(self, #joints_config: Mapping[str, Any],
-                                     joint_angles: OrderedDict[str, float]) -> OrderedDict[str, float]:
+                                     joint_angles: OrderedDict[str, float|npt.NDArray[np.float32]]) -> OrderedDict[str, float]:
         """Converts joint angles to motor angles based on the transmission type specified in the configuration.
 
         Args:
-            joint_angles (OrderedDict[str, float]): A dictionary mapping joint names to their respective angles.
+            joint_angles (OrderedDict[str, float]): A dictionary mapping joint names to their respective angles or angles of time sequence.
 
         Returns:
             OrderedDict[str, float]: A dictionary mapping motor names to their calculated angles.
         """
-        motor_angles: OrderedDict[str, float] = OrdDictCls()
-        waist_pos: List[float] = []
+        motor_angles: OrderedDict[str, float|npt.NDArray[np.float32]] = OrdDictCls()
+        waist_pos: List[float|npt.NDArray[np.float32]] = []
 
         # TODO: no use of ank ?
-        left_ankle_pos: List[float] = []
-        right_ankle_pos: List[float] = []
+        left_ankle_pos: List[float|npt.NDArray[np.float32]] = []
+        right_ankle_pos: List[float|npt.NDArray[np.float32]] = []
 
+        # joint_pos: float: single pos; npt.NDArray(np.float32): a sequence of pos.
         for joint_name, joint_pos in joint_angles.items():
             transmission = self.config[joint_name]["transmission"]
             if transmission == "gear":
