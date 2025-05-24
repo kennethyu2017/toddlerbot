@@ -1,6 +1,7 @@
 import platform
 from concurrent.futures import ThreadPoolExecutor, as_completed, Future
 from typing import Dict, List, Optional, Mapping
+from collections import OrderedDict
 
 import numpy as np
 import numpy.typing as npt
@@ -178,7 +179,9 @@ class RealWorld(BaseEnv, env_name='real_world'):
         # TODO: should put actuator_controller, _imu into Robot.
         self.actuator_controller: BaseController | None = None
         self._imu: BNO08X_IMU | None = None
+        # TODO: only RealWorld has negated_motor_list, MujocoSim has no .
         self.negated_motor_ids: List[int] = []
+        self.negated_motor_direction_mask: npt.NDArray[np.float32] | None = None
         
         self.initialize()
 
@@ -232,6 +235,12 @@ class RealWorld(BaseEnv, env_name='real_world'):
         self.negated_motor_ids: List[int] = [
             self.robot.motor_name_to_id[_name] for _name in _neg_mtr_names
         ]
+
+        self.negated_motor_direction_mask: npt.NDArray[np.float32] = np.where(
+            np.isin(self.robot.motor_id_ordering, self.negated_motor_ids),
+            -1.,
+            1. ).astype(np.float32)
+        assert len(self.negated_motor_direction_mask) == self.robot.nu
 
         for _ in range(100):
             self.get_observation(1)
@@ -412,24 +421,55 @@ class RealWorld(BaseEnv, env_name='real_world'):
         """
 
         # Directions are tuned to match the assembly of the robot.
-        # motor_angles contains all the robot motors.
+        # motor_angles must contain all the robot motors.
         assert len(motor_angles)==self.robot.nu
         if self.actuator_controller is None:
             raise ValueError(f'self.actuator_controller is None.')
 
-        write_pos: List[float]= []
+        write_pos: npt.NDArray[np.float32]= np.full_like(self.robot.motor_name_ordering,
+                                                         fill_value=np.inf,
+                                                         dtype=np.float32)
+
+        if isinstance(motor_angles, (dict, OrderedDict)):
+            for _x, _n in enumerate(self.robot.motor_name_ordering):
+                # assert _name in motor_angles
+                write_pos[_x]=(motor_angles[_n])
+
+        elif isinstance(motor_angles, npt.NDArray[np.float32]):
+            write_pos = motor_angles
+
+        else:
+            raise TypeError(f'motor_angles type error: {type(motor_angles)=:} ')
+
+        assert not np.any(write_pos == np.inf)
+        # write_pos *= self.negated_motor_direction_mask
+
+        # TODO: not waiting for the future to complete?
+        self._executor.submit(self.actuator_controller.set_pos,
+                              write_pos * self.negated_motor_direction_mask)
 
         # for _id, _name in zip(self.robot.motor_id_ordering, self.robot.motor_name_ordering):
-        for _id in  self.robot.motor_id_ordering:
-            _name = self.robot.id_to_motor_name[_id]
-            # assert _name in motor_angles
+        # if isinstance(motor_angles, (dict, OrderedDict)):
+        #     for _id in self.robot.motor_id_ordering:
+        #         _name = self.robot.id_to_motor_name[_id]
+        #         # assert _name in motor_angles
+        #
+        #         if _id in self.negated_motor_ids:
+        #             write_pos.append( -motor_angles[_name])
+        #         else:
+        #             write_pos.append(motor_angles[_name])
+        # elif isinstance(motor_angles, npt.NDArray[np.float32]):
+        #     write_pos = list(motor_angles)
+        #     for _id in self.robot.motor_id_ordering:
+        #         if _id in self.negated_motor_ids:
+        #             write_pos.append(-motor_angles[_name])
+        #         else:
+        #             write_pos.append(motor_angles[_name])
+        #
+        # else:
+        #     raise TypeError(f'motor_angles type error: {type(motor_angles)=:} ')
 
-            if _id in self.negated_motor_ids:
-                write_pos.append( -motor_angles[_name])
-            else:
-                write_pos.append(motor_angles[_name])
-
-        assert len(write_pos) == len(motor_angles)
+        # assert len(write_pos) == len(motor_angles)
 
         # motor_angles_updated: Dict[int, float] = {}
         # for _name, _angle in motor_angles.items():
@@ -446,8 +486,8 @@ class RealWorld(BaseEnv, env_name='real_world'):
         #         for k in self.robot.get_joint_config_attrs("type", "dynamixel")
         #     ]
 
-        # TODO: not waiting for the future to complete?
-        self._executor.submit(self.actuator_controller.set_pos, write_pos)
+        # # TODO: not waiting for the future to complete?
+        # self._executor.submit(self.actuator_controller.set_pos, write_pos)
 
     # NOTE: sync write to all.
     def set_motor_kps(self, motor_kps: Dict[str, float]):
