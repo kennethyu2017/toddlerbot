@@ -383,6 +383,7 @@ def run_policy(*,
     """
     header_name = snake2camel(env.env_name)
 
+    # TODO: use multi-thread solution to record the following running data into log files.
     loop_time_record_list: List[_StepTimeRecord] = []
     obs_list: List[Obs] = []
     control_inputs_list: List[Dict[str, float]] = []  # e.g., human operation.
@@ -415,79 +416,67 @@ def run_policy(*,
     # not use tqdm for n_steps_total is inf?
     with  tqdm(total=policy.n_steps_total, desc="Running the policy",
                  colour='CYAN', unit='step', unit_scale=True) as p_bar:
-            try:
-                while _step_count < policy.n_steps_total:
-                    time_record = _StepTimeRecord()
-                    time_record.step_start = timelib.time()
+        try:
+            while _step_count < policy.n_steps_total:
+                time_record = _StepTimeRecord()
+                time_record.step_start = timelib.time()
 
-                    # Get the latest state from the queue
-                    obs = env.get_observation(1)
-                    # change to epoch time.
-                    obs.time -= run_start_time
+                # Get the latest state from the queue
+                obs = env.get_observation(1)
+                # change to epoch time.
+                obs.time -= run_start_time
 
-                    if "real" not in env.env_name and vis_type != "view":
-                        obs.time += time_until_next_step
+                if "real" not in env.env_name and vis_type != "view":
+                    obs.time += time_until_next_step
 
-                    time_record.recv_obs = timelib.time()
+                time_record.recv_obs = timelib.time()
 
-                    # for sysID policy to change motor kp if kp changed.
-                    motor_kp_setter.set_kp(policy=policy, env=env,step_count=_step_count,obs_time=obs.time)
+                # for sysID policy to change motor kp if kp changed.
+                motor_kp_setter.set_kp(policy=policy, env=env,step_count=_step_count,obs_time=obs.time)
 
-                    # for TeleopLeaderPolicy and RecordPolicy to toggle motor torque.
-                    # # need to enable and disable motors according to logging state
-                    _toggle_motor(policy, env)
+                # for TeleopLeaderPolicy and RecordPolicy to toggle motor torque.
+                # # need to enable and disable motors according to logging state
+                _toggle_motor(policy, env)
 
-                    control_inputs, motor_target_arr = policy.step(obs, "real" in env.env_name)
-                    time_record.inference = timelib.time()
+                control_inputs, motor_target_arr = policy.step(obs, "real" in env.env_name)
+                time_record.inference = timelib.time()
 
-                    assert len(motor_target_arr) == len(robot.motor_name_ordering)
-                    motor_angle_dict: Dict[str, float] = OrderedDict(zip(robot.motor_name_ordering, motor_target_arr))
+                assert len(motor_target_arr) == len(robot.motor_name_ordering)
+                motor_angle_dict: Dict[str, float] = OrderedDict(zip(robot.motor_name_ordering, motor_target_arr))
 
-                    # every 6 seconds.
-                    if _step_count % 300 == 0:
-                        logger.info(f'{motor_angle_dict=:}')
+                # every 6 seconds.
+                if _step_count % 300 == 0:
+                    logger.info(f'{motor_angle_dict=:}')
 
-                    # for _name, _angle in zip(robot.motor_name_ordering, motor_target):
-                    #     motor_angles[_name] = _angle
+                env.set_motor_target(motor_angle_dict)
+                time_record.set_action = timelib.time()
 
-                    env.set_motor_target(motor_angle_dict)
-                    time_record.set_action = timelib.time()
+                env.step()
+                time_record.sim_step = timelib.time()
 
-                    env.step()
-                    time_record.sim_step = timelib.time()
+                obs_list.append(obs)
+                control_inputs_list.append(control_inputs)
+                motor_angles_list.append(motor_angles)
 
-                    obs_list.append(obs)
-                    control_inputs_list.append(control_inputs)
-                    motor_angles_list.append(motor_angles)
+                _step_count += 1
 
-                    _step_count += 1
+                # update tqdm every 1 sec (time measured in policy.control_dt).
+                if _step_count % p_bar_steps == 0:
+                    p_bar.update(p_bar_steps)
 
-                    # update tqdm every 1 sec (time measured in policy.control_dt).
-                    if _step_count % p_bar_steps == 0:
-                        p_bar.update(p_bar_steps)
+                time_record.step_end = timelib.time()
 
-                    time_record.step_end = timelib.time()
+                loop_time_record_list.append( time_record )
 
-                    loop_time_record_list.append( time_record )
-                        # [
-                        #     step_start,
-                        #     cur_loop_start_time,
-                        #     inference,
-                        #     set_action,
-                        #     sim_step,
-                        #     step_end,
-                        # ]
-                    # )
+                time_until_next_step = (run_start_time +
+                                        policy.control_dt * _step_count
+                                        - time_record.step_end)
+                logger.debug(f"time_until_next_step: {time_until_next_step * 1000:.2f} ms")
 
-                    time_until_next_step = (run_start_time +
-                                            policy.control_dt * _step_count
-                                            - time_record.step_end)
-                    logger.debug(f"time_until_next_step: {time_until_next_step * 1000:.2f} ms")
+                assert time_until_next_step always < 0????
 
-                    assert time_until_next_step always < 0????
-
-                    if ("real" in env.env_name or vis_type == "view") and time_until_next_step > 0:
-                        timelib.sleep(time_until_next_step)
+                if ("real" in env.env_name or vis_type == "view") and time_until_next_step > 0:
+                    timelib.sleep(time_until_next_step)
 
         except KeyboardInterrupt:
             # only catch Keyboard Interrupt as normal exit from while loop,
@@ -503,7 +492,6 @@ def run_policy(*,
 
         finally:
             # p_bar.close()
-
             # TODO: save recording file every n steps n seconds. ... not at the end of while loop.....
             exp_name = f"{robot.name}_{policy.name}_{env.env_name}"
             time_str = timelib.strftime("%Y%m%d_%H%M%S")
