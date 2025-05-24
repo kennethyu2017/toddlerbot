@@ -1,6 +1,13 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Dict, List, Sequence
+from .feite_control import FeiteController, FeiteConfig
+from .dynamixel_control import DynamixelController, DynamixelConfig
+
+__all__ = ['FeiteController', 'FeiteConfig', 'DynamixelController', 'DynamixelConfig',
+           'BaseController',]
+
+
 
 @dataclass
 class JointState:
@@ -41,4 +48,16 @@ class BaseController(ABC):
 
     @abstractmethod
     def set_kp(self, kp: Sequence[int|float]):...
+
+
+    @staticmethod
+    @abstractmethod
+    def disable_motors(ids=None):...
+
+
+    @staticmethod
+    @abstractmethod
+    def enable_motors(ids=None):...
+
+
 

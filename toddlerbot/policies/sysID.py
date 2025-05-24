@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple, Mapping, OrderedDict
+from typing import Dict, List, Optional, Tuple, Mapping, OrderedDict, NamedTuple
 from collections import OrderedDict
 from itertools import product
 
@@ -23,8 +23,9 @@ _SIGNAL_DURATION = 10.0
 _RESET_DURATION = 2.0
 
 
+# TODO: put into yaml.
 @dataclass(init=True)
-class SysIDSpecs:
+class _SysIDSpecs:
     """Dataclass for system identification specifications."""
 
     amplitude_ratio_list: List[float]
@@ -38,11 +39,12 @@ class SysIDSpecs:
     accompany_jnt_warm_up_angles: Optional[Dict[str, float]] = None
 
 
-def _build_jnt_sysID_spec(robot_name: str)->Mapping[str, SysIDSpecs]:
+# TODO: put into yaml.
+def _build_jnt_sysID_spec(robot_name: str)->Mapping[str, _SysIDSpecs]:
 
     # NOTE: the key is joint name corresponding to `robot.active_joint` name.
     # not motor name, but must be 1-to-1 mapping to motor name.
-    specs : Mapping[str, SysIDSpecs] | None = None
+    specs : Mapping[str, _SysIDSpecs] | None = None
 
     if "sysID" in robot_name:  # for single motor sysID.
         kp_list: List[float]|None = None
@@ -56,7 +58,7 @@ def _build_jnt_sysID_spec(robot_name: str)->Mapping[str, SysIDSpecs]:
 
         # single motor joint.
         specs = {
-            "joint_0": SysIDSpecs(amplitude_ratio_list=[0.25, 0.5, 0.75], kp_list=kp_list)
+            "joint_0": _SysIDSpecs(amplitude_ratio_list=[0.25, 0.5, 0.75], kp_list=kp_list)
         }
 
     else:  # for multi-links sysID.
@@ -67,15 +69,15 @@ def _build_jnt_sysID_spec(robot_name: str)->Mapping[str, SysIDSpecs]:
         # symm motor joint.
         specs = {
 
-            # "neck_yaw_driven": SysIDSpecs(amplitude_max=np.pi / 2),
-            # "neck_pitch": SysIDSpecs(),
-            "ank_roll": SysIDSpecs(
+            # "neck_yaw_driven": _SysIDSpecs(amplitude_max=np.pi / 2),
+            # "neck_pitch": _SysIDSpecs(),
+            "ank_roll": _SysIDSpecs(
                 amplitude_ratio_list=[0.25, 0.5, 0.75], kp_list=XC330_kp_list
             ),
-            "ank_pitch": SysIDSpecs(
+            "ank_pitch": _SysIDSpecs(
                 amplitude_ratio_list=[0.25, 0.5, 0.75], kp_list=XC330_kp_list
             ),
-            # "knee": SysIDSpecs(
+            # "knee": _SysIDSpecs(
             #     amplitude_ratio_list=[0.25, 0.5, 0.75],
             #     warm_up_angles={
             #         "left_sho_roll": -np.pi / 12,
@@ -86,7 +88,7 @@ def _build_jnt_sysID_spec(robot_name: str)->Mapping[str, SysIDSpecs]:
             #     direction=-1,
             #     kp_list=XM430_kp_list,
             # ),
-            # "hip_pitch": SysIDSpecs(
+            # "hip_pitch": _SysIDSpecs(
             #     amplitude_ratio_list=[0.25, 0.5, 0.75],
             #     warm_up_angles={
             #         "left_sho_roll": -np.pi / 12,
@@ -96,7 +98,7 @@ def _build_jnt_sysID_spec(robot_name: str)->Mapping[str, SysIDSpecs]:
             #     },
             #     kp_list=XC430_kp_list,
             # ),
-            # "hip_roll": SysIDSpecs(
+            # "hip_roll": _SysIDSpecs(
             #     amplitude_ratio_list=[0.25, 0.5, 0.75],
             #     warm_up_angles={
             #         "left_sho_roll": -np.pi / 6,
@@ -107,7 +109,7 @@ def _build_jnt_sysID_spec(robot_name: str)->Mapping[str, SysIDSpecs]:
             # ),
 
             # driven by gear transmission.
-            "hip_yaw_driven": SysIDSpecs(
+            "hip_yaw_driven": _SysIDSpecs(
                 amplitude_ratio_list=[0.25, 0.5, 0.75],
 
                 # active joint angles, not same thing of `motor act`.
@@ -117,7 +119,7 @@ def _build_jnt_sysID_spec(robot_name: str)->Mapping[str, SysIDSpecs]:
                 },
                 kp_list=XC330_kp_list,
             ),
-            "waist_roll": SysIDSpecs(
+            "waist_roll": _SysIDSpecs(
                 amplitude_ratio_list=[0.25, 0.5, 0.75],
                 accompany_jnt_warm_up_angles={
                     "left_sho_roll": -np.pi / 6,
@@ -125,7 +127,7 @@ def _build_jnt_sysID_spec(robot_name: str)->Mapping[str, SysIDSpecs]:
                 },
                 kp_list=XC330_kp_list,
             ),
-            "waist_yaw": SysIDSpecs(
+            "waist_yaw": _SysIDSpecs(
                 amplitude_ratio_list=[0.25, 0.5, 0.75],
                 accompany_jnt_warm_up_angles={
                     "left_sho_roll": -np.pi / 6,
@@ -133,27 +135,27 @@ def _build_jnt_sysID_spec(robot_name: str)->Mapping[str, SysIDSpecs]:
                 },
                 kp_list=XC330_kp_list,
             ),
-            # "sho_yaw_driven": SysIDSpecs(
+            # "sho_yaw_driven": _SysIDSpecs(
             #     warm_up_angles={
             #         "left_sho_roll": -np.pi / 6,
             #         "right_sho_roll": -np.pi / 6,
             #     },
             #     direction=-1,
             # ),
-            # "elbow_yaw_driven": SysIDSpecs(
+            # "elbow_yaw_driven": _SysIDSpecs(
             #     warm_up_angles={
             #         "left_sho_roll": -np.pi / 6,
             #         "right_sho_roll": -np.pi / 6,
             #     },
             #     direction=-1,
             # ),
-            # "wrist_pitch_driven": SysIDSpecs(
+            # "wrist_pitch_driven": _SysIDSpecs(
             #     warm_up_angles={
             #         "left_sho_roll": -np.pi / 6,
             #         "right_sho_roll": -np.pi / 6,
             #     },
             # ),
-            # "elbow_roll": SysIDSpecs(
+            # "elbow_roll": _SysIDSpecs(
             #     warm_up_angles={
             #         "left_sho_roll": -np.pi / 6,
             #         "right_sho_roll": -np.pi / 6,
@@ -161,7 +163,7 @@ def _build_jnt_sysID_spec(robot_name: str)->Mapping[str, SysIDSpecs]:
             #         "right_sho_yaw_driven": -np.pi / 2,
             #     },
             # ),
-            # "wrist_roll": SysIDSpecs(
+            # "wrist_roll": _SysIDSpecs(
             #     warm_up_angles={
             #         "left_sho_roll": -np.pi / 6,
             #         "right_sho_roll": -np.pi / 6,
@@ -169,14 +171,20 @@ def _build_jnt_sysID_spec(robot_name: str)->Mapping[str, SysIDSpecs]:
             #         "right_sho_yaw_driven": -np.pi / 2,
             #     },
             # ),
-            # "sho_pitch": SysIDSpecs(),
-            # "sho_roll": SysIDSpecs(),
+            # "sho_pitch": _SysIDSpecs(),
+            # "sho_roll": _SysIDSpecs(),
         }
 
     return specs
 
 
-class SysIDFixedPolicy(BasePolicy, policy_name="sysID"):
+class _EpisodeKp(NamedTuple):
+    ep_end_time_pnt: float
+    motor_kp: Dict[str, float]
+
+
+class SysIDPolicy(BasePolicy, policy_name="sysID"):
+# class SysIDFixedPolicy(BasePolicy, policy_name="sysID"):
     """System identification policy for the toddlerbot robot."""
 
     def __init__(
@@ -202,7 +210,7 @@ class SysIDFixedPolicy(BasePolicy, policy_name="sysID"):
         super().__init__(name, robot, init_motor_pos)
         set_seed(0)
 
-        self.prep_duration = 2.0   # 2 sec.
+        # self.prep_duration = 2.0   # 2 sec.
         # _WARM_UP_DURATION = 2.0
         # _SIGNAL_DURATION = 10.0
         # _RESET_DURATION = 2.0
@@ -215,7 +223,10 @@ class SysIDFixedPolicy(BasePolicy, policy_name="sysID"):
         # self.action_arr:npt.NDArray[np.float32] | None = None
 
         # TODO: change key index from float time to int index value.
-        self.episode_motor_kp: OrderedDict[float, Dict[str, float]] = OrderedDict()
+        # self.episode_motor_kp: OrderedDict[float, Dict[str, float]] = OrderedDict()
+        # self.episode_motor_kp: List[ Tuple[float, Dict[str, float]] ] = []
+        # must be ordered list.
+        self.episode_motor_kp: List[_EpisodeKp] = []
 
         # NOTE: `act` is motor control action, e.g., target pos of motor.
         # In prep duration, make all motors back to zero.
@@ -355,6 +366,11 @@ class SysIDFixedPolicy(BasePolicy, policy_name="sysID"):
             # for kp in _sysID_specs.kp_list:
             # for _kp in kp_list:
             #     for _ratio in _sysID_specs.amplitude_ratio_list:
+
+            motor_name: List[str] = []
+            for _n in active_jnt_name:
+                motor_name.extend(self.robot.active_joint_to_motor_name[_n])
+
             for _kp, _ratio in product(kp_list, _sysID_specs.amplitude_ratio_list):
                 chirp_param = dict(
                     duration=_SIGNAL_DURATION,
@@ -378,17 +394,21 @@ class SysIDFixedPolicy(BasePolicy, policy_name="sysID"):
                 self.sysID_motor_act_seq = np.concatenate([self.sysID_motor_act_seq, prep_motor_act_seq],
                                                           axis=0, dtype=np.float32)
 
-                motor_name: List[str] = []
-                for _n in active_jnt_name:
-                    motor_name.extend(self.robot.active_joint_to_motor_name[_n])
+                # motor_name: List[str] = []
+                # for _n in active_jnt_name:
+                #     motor_name.extend(self.robot.active_joint_to_motor_name[_n])
 
-                self.episode_motor_kp[self.sysID_time_seq[-1]] = { _n: _kp for _n in motor_name}
+                # self.episode_motor_kp[self.sysID_time_seq[-1]] = { _n: _kp for _n in motor_name}
+                # must be ordered list.
+                self.episode_motor_kp.append(_EpisodeKp(ep_end_time_pnt=self.sysID_time_seq[-1],
+                                                        motor_kp={ _n: _kp for _n in motor_name}))
+
 
                 logger.info(f'--->build episode, end time: {self.sysID_time_seq[-1]}, end act: {self.sysID_motor_act_seq[-1]}'
                             f'\n active jnt name: {active_jnt_name}, active jnt direction: {active_jnt_dir}, '
                             f'\n active jnt warm_up angle: {active_jnt_warm_up_angle}, amplitude ratio: {_ratio}'
                             f'\n sysID_time_seq shape: {self.sysID_time_seq.shape}, sysID_act_seq shape: {self.sysID_motor_act_seq.shape} '
-                            f'\n kp for motors: {self.episode_motor_kp[self.sysID_time_seq[-1]]} ')
+                            f'\n kp for motors: {self.episode_motor_kp[-1]} ')
 
 
                 # self.episode_motor_kp[self.sysID_time_seq[-1]] = dict(
@@ -397,7 +417,11 @@ class SysIDFixedPolicy(BasePolicy, policy_name="sysID"):
 
         # self.time_arr = np.concatenate(time_list)
         # self.action_arr = np.concatenate(action_list)
-        # self.n_steps_total = len(self.sysID_time_seq)
+
+        # override the value set in BasePolicy.__init__()
+        self.n_steps_total = len(self.sysID_time_seq)
+        logger.info(f'finish building all the episodes: {self.n_steps_total=:}'
+                    f'sysID end time: {self.sysID_time_seq[-1]}, end act: {self.sysID_motor_act_seq[-1]}')
 
 
     # one episode: act_seq from action_curr -> warm_up -> chirp_signal -> reset_to_warm_up.
@@ -526,6 +550,7 @@ class SysIDFixedPolicy(BasePolicy, policy_name="sysID"):
         )
         return {}, action
 
-    @property
-    def n_steps_total(self):
-        return len(self.sysID_time_seq)
+
+    # @property
+    # def n_steps_total(self):
+    #     return len(self.sysID_time_seq)

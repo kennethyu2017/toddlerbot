@@ -35,15 +35,27 @@ class Obs:
     #     self.motor_tor = self.motor_pos.copy()
 
 
-class BaseSim(ABC):
+class BaseEnv(ABC):
     """Base class for simulation environments"""
 
     @abstractmethod
-    def __init__(self, name: str):
-        self.name = name
+    def __init__(self, *args, **kwargs):
+        super().__init__(args, kwargs)
+
+    # def __init__(self, name: str):
+    #     self.name = name
+
+    def __init_subclass__(cls, env_name: str, **kwargs):
+        """
+        Args:
+            cls: the subclass.
+            env_name (str):  `real world`, `mujoco`.
+        """
+        super().__init_subclass__(**kwargs)
+        cls._env_name = env_name
 
     @abstractmethod
-    def set_motor_target(self, motor_angles: Dict[str, float]):
+    def set_motor_target(self, motor_angles: Dict[str, float]| npt.NDArray[np.float32]):
         pass
 
     @abstractmethod
@@ -61,3 +73,7 @@ class BaseSim(ABC):
     @abstractmethod
     def close(self):
         pass
+
+    @property
+    def env_name(self):
+        return self._env_name  # class variable of subclass.
