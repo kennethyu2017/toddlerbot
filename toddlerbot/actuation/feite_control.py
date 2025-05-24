@@ -330,25 +330,27 @@ class FeiteController(BaseController):
                 set_ids = _client._motor_ids
                 logger.info(f"set all the motors in client with ids: {set_ids} toque {enabled=:}")
 
-            _client.set_torque_enabled(motor_ids=set_ids, enabled=enabled, retries=0)
+            _client.set_torque_enabled(motor_ids=set_ids, enabled=enabled, retries=2)
 
 
-    # def enable_motors(self, ids:Sequence[int]=None):
-    #     """Enables torque for specified motors or all motors if no IDs are provided.
-    #
-    #     Args:
-    #         ids (list, optional): A list of motor IDs to enable. If None, all motors will be enabled.
-    #     """
-    #     open_clients: Set[DynamixelClient] = FeiteGroupClient.OPEN_CLIENTS  # type: ignore
-    #     for _client in open_clients:
-    #         if ids is not None:
-    #             # get the intersecting list between ids and _motor_ids
-    #             ids_to_enable = list(set(open_client._motor_ids) & set(ids))
-    #             print(f"\nEnabling motor id {ids_to_enable}\n")
-    #             open_client.set_torque_enabled(ids_to_enable, True)
-    #         else:
-    #             print("\nEnabling all the motors\n")
-    #             open_client.set_torque_enabled(open_client._motor_ids, True)
+    @staticmethod
+    def enable_motors(ids:Sequence[int]=None):
+        """Enables torque for specified motors or all motors if no IDs are provided.
+
+        Args:
+            ids (list, optional): A list of motor IDs to enable. If None, all motors will be enabled.
+        """
+        FeiteController.set_motor_torque(enabled=True, ids=ids)
+
+    @staticmethod
+    def disable_motors(ids:Sequence[int]=None):
+        """Enables torque for specified motors or all motors if no IDs are provided.
+
+        Args:
+            ids (list, optional): A list of motor IDs to enable. If None, all motors will be enabled.
+        """
+        FeiteController.set_motor_torque(enabled=False, ids=ids)
+
 
     def set_kp(self, kp: Sequence[int]):
         """Set the proportional gain (Kp) for the motors.

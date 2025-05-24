@@ -6,8 +6,11 @@ import numpy.typing as npt
 
 from toddlerbot.sim import Obs
 from toddlerbot.sim.robot import Robot
-from toddlerbot.utils.math_utils import interpolate
-from toddlerbot.utils.misc_utils import snake2camel
+
+from ..utils import interpolate, snake2camel
+
+# from toddlerbot.utils.math_utils import interpolate
+# from toddlerbot.utils.misc_utils import snake2camel
 
 from .balance_pd import BalancePDPolicy
 from .calibrate import CalibratePolicy
@@ -16,14 +19,14 @@ from .mjx_policy import MJXPolicy
 from .push_cart import PushCartPolicy
 from .record import RecordPolicy
 from .replay import ReplayPolicy
-from .sysID import SysIDFixedPolicy
+from .sysID import SysIDPolicy
 from .teleop_follower_pd import TeleopFollowerPDPolicy
 from .teleop_joystick import TeleopJoystickPolicy
 from .teleop_leader import TeleopLeaderPolicy
 
 __all__ = ['BasePolicy', 'get_policy_class', 'get_policy_names','BalancePDPolicy', 'CalibratePolicy', 'DPPolicy', 'MJXPolicy', 'PushCartPolicy',
-            'RecordPolicy','ReplayPolicy', 'SysIDFixedPolicy', 'TeleopFollowerPDPolicy', 'TeleopJoystickPolicy', 'TeleopLeaderPolicy',
-            ]
+            'RecordPolicy','ReplayPolicy', 'SysIDPolicy', 'TeleopFollowerPDPolicy', 'TeleopJoystickPolicy', 'TeleopLeaderPolicy',
+           ]
 
 # Global registry to store policy names and their corresponding classes
 # TODO: move into BasePolicy as class variable.
@@ -75,9 +78,9 @@ class BasePolicy(ABC):
         name: str,
         robot: Robot,
         init_motor_pos: npt.NDArray[np.float32],
-        control_dt: float = 0.02,    # 20ms, 50Hz.
-        prep_duration: float = 2.0,
-        n_steps_total: float = float("inf"),
+        # control_dt: float = 0.02,    # 20ms, 50Hz.
+        # prep_duration: float = 2.0,
+        # n_steps_total: float = float("inf"),
     ):
         """Initializes the class with robot configuration and control parameters.
 
@@ -92,9 +95,15 @@ class BasePolicy(ABC):
         self.name = name
         self.robot = robot
         self.init_motor_pos = init_motor_pos
-        self.control_dt = control_dt
-        self.prep_duration = prep_duration
-        self.n_steps_total = n_steps_total
+
+        # self.control_dt = control_dt
+        # self.prep_duration = prep_duration
+        # self.n_steps_total = n_steps_total
+
+        # some default values. can be overridden.
+        self.control_dt: float = 0.02      # 20ms, 50Hz.
+        self.prep_duration: float = 2.0
+        self.n_steps_total: float = float("inf")
 
         self.header_name = snake2camel(name)
 
@@ -123,16 +132,17 @@ class BasePolicy(ABC):
         self.waist_motor_indices = indices[motor_groups == "waist"]
         self.waist_joint_indices = indices[joint_groups == "waist"]
 
-        self.prep_duration = 2.0
-        self.prep_time, self.prep_action = self.move(
-            -self.control_dt, init_motor_pos, self.default_motor_pos, self.prep_duration
-        )
+        # self.prep_duration = 2.0
+        # self.prep_time, self.prep_action = self.move(
+        #     -self.control_dt, init_motor_pos, self.default_motor_pos, self.prep_duration
+        # )
 
     # Automatic registration of subclasses
     def __init_subclass__(cls, policy_name: str = "", **kwargs):
         """Initializes a subclass and registers it with a policy name.
 
         Args:
+            cls: the subclass.
             policy_name (str): The name of the policy to register the subclass under. If not provided, the subclass will not be registered.
             **kwargs: Additional keyword arguments passed to the superclass initializer.
         """
@@ -141,14 +151,13 @@ class BasePolicy(ABC):
             global __policy_registry
             __policy_registry[policy_name] = cls
 
-    def reset(self):
-        pass
+    def reset(self):...
 
     @abstractmethod
     def step(
         self, obs: Obs, is_real: bool = False
-    ) -> Tuple[Dict[str, float], npt.NDArray[np.float32]]:
-        pass
+    ) -> Tuple[Dict[str, float], npt.NDArray[np.float32]]:...
+
 
     # duration: total length of the motion
     # end_time: when motion should end, end time < time < duration will keep static.
@@ -202,3 +211,4 @@ class BasePolicy(ABC):
         time_seq += time_curr + self.control_dt
 
         return time_seq, act_seq
+

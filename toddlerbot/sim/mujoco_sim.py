@@ -8,7 +8,7 @@ import numpy as np
 import numpy.typing as npt
 
 from toddlerbot.actuation import JointState
-from toddlerbot.sim import BaseSim, Obs
+from toddlerbot.sim import BaseEnv, Obs
 from toddlerbot.sim.mujoco_control import (
     MotorController,
     PositionController,
@@ -19,7 +19,7 @@ from toddlerbot.utils.file_utils import find_robot_file_path
 from toddlerbot.utils.math_utils import quat2euler, quat_inv, rotate_vec
 
 
-class MuJoCoSim(BaseSim):
+class MuJoCoSim(BaseEnv, env_name="mujoco"):
     """A class for the MuJoCo simulation environment."""
 
     def __init__(
@@ -45,7 +45,8 @@ class MuJoCoSim(BaseSim):
             assets (Any, optional): Additional assets required for the XML model. Defaults to None.
             vis_type (str, optional): Type of visualization to use ('render' or 'view'). Defaults to an empty string.
         """
-        super().__init__("mujoco")
+        # super().__init__("mujoco")
+        super().__init__()
 
         self.robot = robot
         self.n_frames = n_frames
@@ -401,7 +402,8 @@ class MuJoCoSim(BaseSim):
         """Sets the target angles for the motors.
 
         Args:
-            motor_angles (Dict[str, float] | npt.NDArray[np.float32]): A dictionary mapping motor names to their target angles or a NumPy array of target angles. If a dictionary is provided, the values are converted to a NumPy array of type float32.
+            motor_angles (Dict[str, float] | npt.NDArray[np.float32]): A dictionary mapping motor names to their target angles or a NumPy array of target angles.
+             If a dictionary is provided, the values are converted to a NumPy array of type float32.
         """
         if isinstance(motor_angles, dict):
             self.target_motor_angles = np.array(

@@ -135,6 +135,8 @@ class Robot:
                 _cfg["lower_limit"],
                 _cfg["upper_limit"],
             ]
+            # TODO: to be not confused with the passive_joint.
+            #  we can rename  "is_passive": false to 'motor_drive': true.
             if not _cfg["is_passive"]:
                 # when a config joint is not passive, use it as `motor`.
                 # self.init_motor_angles[joint_name] = 0.0
@@ -158,7 +160,7 @@ class Robot:
         # NOTE: the keys in `init_active_joint_angles` maybe more than the `joint` and motors in config.
         # NOTE: here, the `active joint` is derived from motor, not same as in config, not self.passive_joints which
         # only include `linkage` and `rack_and_pinion` transmission.
-        # NOTE: a joint driven by gear, e.g., right_elbow_yaw_driven, even whose `is_passive` is true in config.json,
+        # TODO: better naming `active` and `passive`... NOTE: a joint driven by gear, e.g., right_elbow_yaw_driven, even whose `is_passive` is true in config.json,
         # is still one of self.active_joint, and is not `self.passive_joint`.
         self.init_active_joint_angles = self.motor_to_active_joint_angles(self.init_motor_angles)
 

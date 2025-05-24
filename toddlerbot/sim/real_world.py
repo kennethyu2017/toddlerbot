@@ -6,13 +6,15 @@ import numpy as np
 import numpy.typing as npt
 
 from ..actuation import JointState
-from ..sim import BaseSim, Obs
+from ..sim import BaseEnv, Obs
 from ..sim.robot import Robot
 from ..sensing.IMU import IMU as BNO08X_IMU
 from ..utils.file_utils import find_ports
-from ..actuation import BaseController
-from ..actuation.dynamixel_control import (DynamixelConfig, DynamixelController)
-from ..actuation.feite_control import (FeiteConfig, FeiteController)
+
+from ..actuation import *
+# from ..actuation import BaseController
+# from ..actuation.dynamixel_control import (DynamixelConfig, DynamixelController)
+# from ..actuation.feite_control import (FeiteConfig, FeiteController)
 
 from ._module_logger import logger
 
@@ -131,7 +133,7 @@ def  _init_imu(executor: ThreadPoolExecutor)->Future:
     # from toddlerbot.sensing.IMU import IMU
     return executor.submit(BNO08X_IMU)
 
-class RealWorld(BaseSim):
+class RealWorld(BaseEnv, env_name='real_world'):
     """Real-world robot interface class."""
 
     def __init__(self, robot: Robot):
@@ -145,7 +147,8 @@ class RealWorld(BaseSim):
             has_dynamixel (bool): Indicates if the robot uses Dynamixel motors.
             negated_motor_names (List[str]): A list of motor names that require direction negation due to URDF configuration issues.
         """
-        super().__init__("real_world")
+        # super().__init__("real_world")
+        super().__init__()
         self.robot = robot
 
         # self._imu is not None:bool = self.robot.config["general"]["has_imu"]
@@ -172,8 +175,8 @@ class RealWorld(BaseSim):
         # self.dynamixel_controller: DynamixelController|None = None
         # self.feite_controller: FeiteController | None = None
 
-        # TODO: should put _actuator_controller, _imu into Robot.
-        self._actuator_controller: BaseController | None = None
+        # TODO: should put actuator_controller, _imu into Robot.
+        self.actuator_controller: BaseController | None = None
         self._imu: BNO08X_IMU | None = None
         self.negated_motor_ids: List[int] = []
         
@@ -191,12 +194,12 @@ class RealWorld(BaseSim):
         if self.robot.config["general"]["has_dynamixel"]:
             dyn_f = _init_dynamixel_actuators(robot=self.robot, executor=self._executor)
             if dyn_f is not None:
-                future_seq[dyn_f] = '_actuator_controller'  # attr name.
+                future_seq[dyn_f] = 'actuator_controller'  # attr name.
 
         if self.robot.config["general"]["has_feite"]:
             ft_f = _init_feite_actuators(robot=self.robot, executor=self._executor)
             if ft_f is not None:
-                future_seq[ft_f] = '_actuator_controller'  # attr name.
+                future_seq[ft_f] = 'actuator_controller'  # attr name.
                 
         if self.robot.config["general"]["has_imu"]:
             imu_f = _init_imu(self._executor)
@@ -303,8 +306,8 @@ class RealWorld(BaseSim):
         pass
 
     def read_motor_state(self, retries:int) ->Optional[Mapping[str, float|npt.NDArray[np.float32]]]:
-        if self._actuator_controller is not None:
-            ste: Mapping[int, JointState] = self._actuator_controller.get_motor_state(retries)
+        if self.actuator_controller is not None:
+            ste: Mapping[int, JointState] = self.actuator_controller.get_motor_state(retries)
             # for _k,_v in self.process_motor_reading(state):
             #       setattr(obs, __name=_k, __value=_v)
             # if m_ste is None:
@@ -362,7 +365,7 @@ class RealWorld(BaseSim):
             self._executor.submit(self.read_imu_state, retries): 'read_imu_state',
         }
 
-        # results["dynamixel"] = self._actuator_controller.get_motor_state(retries)
+        # results["dynamixel"] = self.actuator_controller.get_motor_state(retries)
         # results["_imu"] = self._imu.get_state()
 
         for _f in as_completed(future_seq):
@@ -399,19 +402,20 @@ class RealWorld(BaseSim):
         return obs
 
     # @profile()
-    def set_motor_target(self, motor_angles: Dict[str, float]):
+    def set_motor_target(self, motor_angles: Dict[str, float]| npt.NDArray[np.float32]):
         """Sets the target angles for the robot's motors, adjusting for any negated motor directions and updating
          the positions of Dynamixel motors if present.
 
         Args:
-            motor_angles (Dict[str, float]): A dictionary mapping motor names to their target angles in degrees.
+            motor_angles (Dict[str, float]): A dictionary mapping motor names to their target angles in degrees
+             or a NumPy array of target angles. If a dictionary is provided, the values are converted to a NumPy array of type float32.
         """
 
         # Directions are tuned to match the assembly of the robot.
         # motor_angles contains all the robot motors.
         assert len(motor_angles)==self.robot.nu
-        if self._actuator_controller is None:
-            raise ValueError(f'self._actuator_controller is None.')
+        if self.actuator_controller is None:
+            raise ValueError(f'self.actuator_controller is None.')
 
         write_pos: List[float]= []
 
@@ -436,14 +440,14 @@ class RealWorld(BaseSim):
         #     else:
         #         motor_angles_updated[mtr_id] = _angle
 
-        # if self._actuator_controller is not None:
+        # if self.actuator_controller is not None:
         #     dynamixel_pos = [
         #         motor_angles_updated[k]
         #         for k in self.robot.get_joint_config_attrs("type", "dynamixel")
         #     ]
 
         # TODO: not waiting for the future to complete?
-        self._executor.submit(self._actuator_controller.set_pos, write_pos)
+        self._executor.submit(self.actuator_controller.set_pos, write_pos)
 
     # NOTE: sync write to all.
     def set_motor_kps(self, motor_kps: Dict[str, float]):
@@ -457,8 +461,8 @@ class RealWorld(BaseSim):
         """
         # assert len(motor_kps) == self.robot.nu
 
-        if self._actuator_controller is None:
-            raise ValueError(f'self._actuator_controller is None.')
+        if self.actuator_controller is None:
+            raise ValueError(f'self.actuator_controller is None.')
 
         write_kps: List[float] = []
 
@@ -470,8 +474,9 @@ class RealWorld(BaseSim):
                 write_kps.append(self.robot.config["joints"][_name]["kp_real"])
 
         # TODO: not waiting for the future to complete?
-        self._executor.submit(self._actuator_controller.set_kp, write_kps)
+        self._executor.submit(self.actuator_controller.set_kp, write_kps)
 
+    # TODO: use context manager.
     def close(self):
         """Closes all active components and shuts down the _executor.
 
@@ -480,8 +485,8 @@ class RealWorld(BaseSim):
          Finally, it shuts down the _executor, ensuring all submitted tasks are completed before termination.
         """
 
-        if self._actuator_controller is not None:
-            self._executor.submit(self._actuator_controller.close_motors)
+        if self.actuator_controller is not None:
+            self._executor.submit(self.actuator_controller.close_motors)
 
         if self._imu is not None:
             self._executor.submit(self._imu.close)
