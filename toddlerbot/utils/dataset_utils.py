@@ -1,7 +1,8 @@
-import os
+# import os
 import shutil
 from dataclasses import dataclass, fields
 from typing import Optional
+from pathlib import Path
 
 import joblib
 import numpy as np
@@ -67,22 +68,29 @@ class DatasetLogger:
 
         self.data_list = []
 
-    def move_files_to_exp_folder(self, exp_folder_path: str):
+    def move_files_to_folder(self, folder: Path):
         """Moves files with a specific naming pattern from the temporary directory to a specified experiment folder.
 
         Args:
-            exp_folder_path (str): The destination directory path where the files will be moved.
+           folder (Path): The destination directory path where the files will be moved.
         """
-        lz4_files = [
-            f
-            for f in os.listdir("/tmp")
-            if f.startswith("toddlerbot_") and f.endswith(".lz4")
-        ]
+
+        lz4_files = Path('/tmp').glob('toddlerbot_*.lz4')
+
+        #
+        # lz4_files = [
+        #     f
+        #     for f in os.listdir("/tmp")
+        #     if f.startswith("toddlerbot_") and f.endswith(".lz4")
+        # ]
 
         # Move each file to the exp_folder
-        for file_name in lz4_files:
-            source = os.path.join("/tmp", file_name)
-            destination = os.path.join(exp_folder_path, file_name)
-            shutil.move(source, destination)
+        # for file_name in lz4_files:
+        for src in lz4_files:
+            # source = os.path.join("/tmp", file_name)
+            # source = Path('/tmp')/ file_name
+            # destination = os.path.join(exp_folder_path, file_name)
+            dest = folder /src.name  # basename.
+            shutil.move(src, dest)
 
-        print(f"Moved {len(lz4_files)} files to {exp_folder_path}")
+        # print(f"Moved {len(lz4_files)} files to {exp_folder_path.resolve()}")

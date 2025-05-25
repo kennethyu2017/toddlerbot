@@ -2,7 +2,8 @@ import argparse
 # import bisect
 import importlib
 import json
-import os
+# import os
+from pathlib import Path
 import pickle
 import pkgutil
 import time
@@ -18,7 +19,7 @@ import numpy.typing as npt
 from moviepy import ImageSequenceClip
 from tqdm import tqdm
 import logging
-
+from copy import deepcopy
 
 from . import *
 # from toddlerbot.policies import BasePolicy, get_policy_class, get_policy_names
@@ -76,8 +77,8 @@ def dynamic_import_policies(policy_package: str):
         full_module_name = f"{policy_package}.{module_name}"
         try:
             importlib.import_module(full_module_name)
-        except Exception:
-            log(f"Could not import {full_module_name}", header="Dynamic Import")
+        except Exception as err:
+            logger.error(f"Could not import {full_module_name}, err:{err}")
 
 
 # Call this to import all policies dynamically
@@ -280,13 +281,20 @@ def plot_results(
 
 
 @dataclass(init=True)
-class _StepTimeRecord:
+class _StepTimePnt:
     step_start:float = float('inf')
     recv_obs: float = float('inf')
     inference: float = float('inf')
     set_action: float = float('inf')
     sim_step: float = float('inf')
     step_end: float = float('inf')
+
+@dataclass(init=True)
+class _StepRecord:
+    time_pnt: _StepTimePnt = None
+    obs: Obs = None
+    motor_act: npt.NDArray[np.float32] = None
+    ctrl_input: Dict[str, float] = None  # e.g., human operation.
 
 
 @dataclass(init=True)
@@ -367,6 +375,93 @@ def _toggle_motor(policy:BasePolicy, env:BaseEnv):
         policy.toggle_motor = False
 
 
+def _save_run_log(step_record_list: List[_StepRecord], exp_folder: Path):
+    log_dir = exp_folder / 'step_record'
+    log_dir.mkdir()
+    with open(log_dir / 'step_record_list.pkl', 'wb') as _f:
+        pickle.dump(step_record_list, _f)
+
+
+def _save_policy_log(policy:BasePolicy, robot:Robot, exp_folder: Path):
+    log_dir = exp_folder / policy.name
+    log_dir.mkdir()
+
+    if isinstance(policy, SysIDPolicy):
+        with open(log_dir/'episode_motor_kp.pkl', "wb") as _f:
+            pickle.dump(policy.episode_motor_kp, _f)
+
+    if isinstance(policy, TeleopFollowerPDPolicy):
+        policy.dataset_logger.move_files_to_folder(log_dir)
+
+    if isinstance(policy, DPPolicy) and len(policy.camera_frame_list) > 0:
+        fps = int(1 / np.diff(policy.camera_time_list).mean())
+        logger.info(f"visual_obs fps: {fps}")
+        video_path = log_dir / "visual_obs.mp4"
+        video_clip = ImageSequenceClip(policy.camera_frame_list, fps=fps)
+        video_clip.write_videofile(video_path, codec="libx264", fps=fps)
+
+    if isinstance(policy, ReplayPolicy):
+        with open(log_dir/ 'keyframes.pkl', 'wb') as _f:
+            pickle.dump(policy.keyframes, _f)
+
+    if isinstance(policy, CalibratePolicy):
+        motor_config_path: Path = robot.root_path / 'config_motors.json'
+        if motor_config_path.exists():
+            motor_names = robot.get_joint_config_attrs("is_passive", False)
+            motor_pos_init = np.array(robot.get_joint_config_attrs("is_passive", False, "init_pos"),
+                                      dtype=np.float32)
+            motor_pos_delta = (
+                np.array(list(motor_angles_list[-1].values()), dtype=np.float32)
+                - policy.default_motor_pos
+            )
+            motor_pos_delta[
+                np.logical_and(motor_pos_delta > -0.005, motor_pos_delta < 0.005)
+            ] = 0.0
+
+            with open(motor_config_path, "r") as f:
+                motor_config = json.load(f)
+
+            for motor_name, init_pos in zip(
+                motor_names, motor_pos_init + motor_pos_delta
+            ):
+                motor_config[motor_name]["init_pos"] = float(init_pos)
+
+            with open(motor_config_path, "w") as f:
+                json.dump(motor_config, f, indent=4)
+        else:
+            raise FileNotFoundError(f"Could not find {motor_config_path}")
+
+    if isinstance(policy, PushCartPolicy):
+        video_path = log_dir / 'visual_obs.mp4'
+        fps = int(1 / np.diff(policy.grasp_policy.camera_time_list).mean())
+        log(f"visual_obs fps: {fps}", header=header_name)
+        video_clip = ImageSequenceClip(policy.grasp_policy.camera_frame_list, fps=fps)
+        video_clip.write_videofile(video_path, codec="libx264", fps=fps)
+
+    if isinstance(policy, TeleopJoystickPolicy):
+        policy_dict = {
+            "hug": policy.hug_policy,
+            "pick": policy.pick_policy,
+            "grasp": policy.push_cart_policy.grasp_policy
+            if hasattr(policy.push_cart_policy, "grasp_policy")
+            else policy.teleop_policy,
+        }
+        for task_name, task_policy in policy_dict.items():
+            if (
+                not isinstance(task_policy, DPPolicy)
+                or len(task_policy.camera_frame_list) == 0
+            ):
+                continue
+
+            video_path = log_dir / f'{task_name}_visual_obs.mp4'
+            fps = int(1 / np.diff(task_policy.camera_time_list).mean())
+            log(f"{task_name} visual_obs fps: {fps}", header=header_name)
+            video_clip = ImageSequenceClip(task_policy.camera_frame_list, fps=fps)
+            video_clip.write_videofile(video_path, codec="libx264", fps=fps)
+
+
+
+
 
 # @profile()
 def run_policy(*,
@@ -384,10 +479,14 @@ def run_policy(*,
     header_name = snake2camel(env.env_name)
 
     # TODO: use multi-thread solution to record the following running data into log files.
-    loop_time_record_list: List[_StepTimeRecord] = []
-    obs_list: List[Obs] = []
-    control_inputs_list: List[Dict[str, float]] = []  # e.g., human operation.
-    motor_angles_list: List[Dict[str, float]] = []
+    step_record_list: List[_StepRecord] = []
+
+    # loop_time_record_list: List[_StepTimeRecord] = []
+    # obs_list: List[Obs] = []
+    # control_inputs_list: List[Dict[str, float]] = []  # e.g., human operation.
+    # motor_angles_list: List[Dict[str, float]] = []
+    # motor_angles_list: List[npt.NDArray[np.float32]] = []
+
 
     # TODO: BasePolicy.n_steps_total defaults to `inf`, and only sysIDPolicy override it to len(time_seq).
     # n_steps_total = (
@@ -418,8 +517,8 @@ def run_policy(*,
                  colour='CYAN', unit='step', unit_scale=True) as p_bar:
         try:
             while _step_count < policy.n_steps_total:
-                time_record = _StepTimeRecord()
-                time_record.step_start = timelib.time()
+                _record = _StepRecord()
+                _record.time_pnt.step_start = timelib.time()
 
                 # Get the latest state from the queue
                 obs = env.get_observation(1)
@@ -429,7 +528,7 @@ def run_policy(*,
                 if "real" not in env.env_name and vis_type != "view":
                     obs.time += time_until_next_step
 
-                time_record.recv_obs = timelib.time()
+                _record.time_pnt.recv_obs = timelib.time()
 
                 # for sysID policy to change motor kp if kp changed.
                 motor_kp_setter.set_kp(policy=policy, env=env,step_count=_step_count,obs_time=obs.time)
@@ -439,24 +538,31 @@ def run_policy(*,
                 _toggle_motor(policy, env)
 
                 control_inputs, motor_target_arr = policy.step(obs, "real" in env.env_name)
-                time_record.inference = timelib.time()
+                _record.time_pnt.inference = timelib.time()
 
                 assert len(motor_target_arr) == len(robot.motor_name_ordering)
-                motor_angle_dict: Dict[str, float] = OrderedDict(zip(robot.motor_name_ordering, motor_target_arr))
+                # motor_angle_dict: Dict[str, float] = OrderedDict(zip(robot.motor_name_ordering, motor_target_arr))
 
                 # every 6 seconds.
                 if _step_count % 300 == 0:
-                    logger.info(f'{motor_angle_dict=:}')
+                    logger.info(f'{motor_target_arr=:}')
 
-                env.set_motor_target(motor_angle_dict)
-                time_record.set_action = timelib.time()
+                # env.set_motor_target(motor_angle_dict)
+                env.set_motor_target(motor_target_arr)
+                _record.time_pnt.set_action = timelib.time()
 
                 env.step()
-                time_record.sim_step = timelib.time()
 
-                obs_list.append(obs)
-                control_inputs_list.append(control_inputs)
-                motor_angles_list.append(motor_angles)
+                _record.time_pnt.sim_step = timelib.time()
+
+                _record.obs=deepcopy(obs)
+                _record.ctrl_input = deepcopy(control_inputs)
+                _record.motor_act = deepcopy(motor_target_arr)
+
+
+                # obs_list.append(obs)
+                # control_inputs_list.append(control_inputs)
+                # motor_angles_list.append(motor_target_arr)
 
                 _step_count += 1
 
@@ -464,16 +570,20 @@ def run_policy(*,
                 if _step_count % p_bar_steps == 0:
                     p_bar.update(p_bar_steps)
 
-                time_record.step_end = timelib.time()
+                _record.time_pnt.step_end = timelib.time()
 
-                loop_time_record_list.append( time_record )
+                # loop_time_record_list.append( time_record)
 
                 time_until_next_step = (run_start_time +
                                         policy.control_dt * _step_count
-                                        - time_record.step_end)
+                                        - _record.time_pnt.step_end)
+
+                step_record_list.append(_record)
+
                 logger.debug(f"time_until_next_step: {time_until_next_step * 1000:.2f} ms")
 
-                assert time_until_next_step always < 0????
+                if time_until_next_step < 0:
+                    logger.warning(f'time_until_next_step < 0 : {time_until_next_step}')
 
                 if ("real" in env.env_name or vis_type == "view") and time_until_next_step > 0:
                     timelib.sleep(time_until_next_step)
@@ -492,12 +602,16 @@ def run_policy(*,
 
         finally:
             # p_bar.close()
+
+            logger.info(f'exit from run while loop, final step_count: {_step_count},'
+                        f' step record count: {len(step_record_list)}')
+
             # TODO: save recording file every n steps n seconds. ... not at the end of while loop.....
             exp_name = f"{robot.name}_{policy.name}_{env.env_name}"
             time_str = timelib.strftime("%Y%m%d_%H%M%S")
-            exp_folder_path = f"results/{exp_name}_{time_str}"
-
-            os.makedirs(exp_folder_path, exist_ok=True)
+            exp_folder_path = Path('run_policy_log') / f'{exp_name}_{time_str}'
+            exp_folder_path.mkdir(parents=False, exist_ok=True)
+            # os.makedirs(exp_folder_path, exist_ok=True)
 
             # TODO: save recording file every n steps n seconds. ... not at the end of while loop.....
             if vis_type == "render" and isinstance(env, MuJoCoSim):   #hasattr(env, "save_recording"):
@@ -515,91 +629,16 @@ def run_policy(*,
 
     # TODO: write log data every n steps..n seconds.. not at the end of while loop.....
 
-    log_data_dict: Dict[str, Any] = {
-        "obs_list": obs_list,
-        "control_inputs_list": control_inputs_list,
-        "motor_angles_list": motor_angles_list,
-    }
+    # log_data_dict: Dict[str, Any] = {
+    #     "obs_list": obs_list,
+    #     "control_inputs_list": control_inputs_list,
+    #     "motor_angles_list": motor_angles_list,
+    # }
 
-    if isinstance(policy, SysIDPolicy):
-        log_data_dict["episode_motor_kp"] = policy.episode_motor_kp
+    _save_run_log(step_record_list, exp_folder_path)
+    _save_policy_log(policy, exp_folder_path)
 
-    log_data_path = os.path.join(exp_folder_path, "log_data.pkl")
-    with open(log_data_path, "wb") as f:
-        pickle.dump(log_data_dict, f)
-
-    prof_path = os.path.join(exp_folder_path, "profile_output.lprof")
-    dump_profiling_data(prof_path)
-
-    if isinstance(policy, TeleopFollowerPDPolicy):
-        policy.dataset_logger.move_files_to_exp_folder(exp_folder_path)
-
-    if isinstance(policy, DPPolicy) and len(policy.camera_frame_list) > 0:
-        fps = int(1 / np.diff(policy.camera_time_list).mean())
-        log(f"visual_obs fps: {fps}", header=header_name)
-        video_path = os.path.join(exp_folder_path, "visual_obs.mp4")
-        video_clip = ImageSequenceClip(policy.camera_frame_list, fps=fps)
-        video_clip.write_videofile(video_path, codec="libx264", fps=fps)
-
-    if isinstance(policy, ReplayPolicy):
-        with open(os.path.join(exp_folder_path, "keyframes.pkl"), "wb") as f:
-            pickle.dump(policy.keyframes, f)
-
-    if isinstance(policy, CalibratePolicy):
-        motor_config_path = os.path.join(robot.root_path, "config_motors.json")
-        if os.path.exists(motor_config_path):
-            motor_names = robot.get_joint_config_attrs("is_passive", False)
-            motor_pos_init = np.array(
-                robot.get_joint_config_attrs("is_passive", False, "init_pos")
-            )
-            motor_pos_delta = (
-                np.array(list(motor_angles_list[-1].values()), dtype=np.float32)
-                - policy.default_motor_pos
-            )
-            motor_pos_delta[
-                np.logical_and(motor_pos_delta > -0.005, motor_pos_delta < 0.005)
-            ] = 0.0
-
-            with open(motor_config_path, "r") as f:
-                motor_config = json.load(f)
-
-            for motor_name, init_pos in zip(
-                motor_names, motor_pos_init + motor_pos_delta
-            ):
-                motor_config[motor_name]["init_pos"] = float(init_pos)
-
-            with open(motor_config_path, "w") as f:
-                json.dump(motor_config, f, indent=4)
-        else:
-            raise FileNotFoundError(f"Could not find {motor_config_path}")
-
-    if isinstance(policy, PushCartPolicy):
-        video_path = os.path.join(exp_folder_path, "visual_obs.mp4")
-        fps = int(1 / np.diff(policy.grasp_policy.camera_time_list).mean())
-        log(f"visual_obs fps: {fps}", header=header_name)
-        video_clip = ImageSequenceClip(policy.grasp_policy.camera_frame_list, fps=fps)
-        video_clip.write_videofile(video_path, codec="libx264", fps=fps)
-
-    if isinstance(policy, TeleopJoystickPolicy):
-        policy_dict = {
-            "hug": policy.hug_policy,
-            "pick": policy.pick_policy,
-            "grasp": policy.push_cart_policy.grasp_policy
-            if hasattr(policy.push_cart_policy, "grasp_policy")
-            else policy.teleop_policy,
-        }
-        for task_name, task_policy in policy_dict.items():
-            if (
-                not isinstance(task_policy, DPPolicy)
-                or len(task_policy.camera_frame_list) == 0
-            ):
-                continue
-
-            video_path = os.path.join(exp_folder_path, f"{task_name}_visual_obs.mp4")
-            fps = int(1 / np.diff(task_policy.camera_time_list).mean())
-            log(f"{task_name} visual_obs fps: {fps}", header=header_name)
-            video_clip = ImageSequenceClip(task_policy.camera_frame_list, fps=fps)
-            video_clip.write_videofile(video_path, codec="libx264", fps=fps)
+    dump_profiling_data(exp_folder_path / 'profile_output.lprof')
 
     if plot:
         log("Visualizing...", header=header_name)

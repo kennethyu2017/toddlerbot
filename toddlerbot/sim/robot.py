@@ -1,10 +1,11 @@
 import json
-import os
+# import os
 from typing import Any, List, Mapping, Tuple, OrderedDict, Sequence
 from collections import OrderedDict as OrdDictCls
 from dataclasses import dataclass, field
 import numpy as np
 import numpy.typing as npt
+from pathlib import Path
 
 
 from ._module_logger import logger
@@ -69,12 +70,11 @@ class Robot:
             robot_name (str): The name of the robot, used to set up directory paths and configurations.
         """
         self.name = robot_name
-        self.root_path = os.path.join("toddlerbot", "descriptions", self.name)
-        self.config_path = os.path.join(self.root_path, "config.json")
-        self.collision_config_path = os.path.join(
-            self.root_path, "config_collision.json"
-        )
-        self.cache_path = os.path.join(self.root_path, f"{self.name}_cache.pkl")
+        self.root_path: Path = Path('toddlerbot')/'descriptions'/self.name  #  os.path.join("toddlerbot", "descriptions", self.name)
+        self.config_path: Path = self.root_path / 'config.json'
+        self.collision_config_path :Path = self.root_path /'config_collision.json'
+
+        self.cache_path = self.root_path / f'{self.name}_cache.pkl'
 
         self.load_robot_config()
 
@@ -86,14 +86,16 @@ class Robot:
         Raises:
             FileNotFoundError: If the main configuration file or the collision configuration file does not exist at the specified paths.
         """
-        if os.path.exists(self.config_path):
+        # if os.path.exists(self.config_path):
+        if self.config_path.exists():
             with open(self.config_path, "rt") as f:
                 self.config = json.load(f)
 
         else:
             raise FileNotFoundError(f"No config file found for robot '{self.name}'.")
 
-        if os.path.exists(self.collision_config_path):
+        # if os.path.exists(self.collision_config_path):
+        if self.collision_config_path.exists():
             with open(self.collision_config_path, "rt") as f:
                 self.collision_config = json.load(f)
 

@@ -3,7 +3,8 @@ import asyncio
 import functools
 import inspect
 import logging
-import os
+# import os
+from pathlib import Path
 import re
 import subprocess
 import time
@@ -112,7 +113,7 @@ def profile() -> Callable[[F], F]:
     return decorator
 
 
-def dump_profiling_data(prof_path: str = "profile_output.lprof"):
+def dump_profiling_data(prof_path: Path = "profile_output.lprof"):
     """Save profiling data to a specified file path.
 
     Args:
@@ -120,10 +121,11 @@ def dump_profiling_data(prof_path: str = "profile_output.lprof"):
     """
     # Dump all profiling data into a single file
     global_profiler.dump_stats(prof_path)
-    txt_path = prof_path.replace(".lprof", ".txt")
-    subprocess.run(f"python -m line_profiler {prof_path} > {txt_path}", shell=True)
+    # txt_path = prof_path.replace(".lprof", ".txt")
+    txt_path = prof_path.with_suffix('.txt')
+    subprocess.run(f"python -m line_profiler {prof_path.resolve()} > {txt_path.resolve()}", shell=True)
 
-    log(f"Profile results saved to {txt_path}.", header="Profiler")
+    log(f"Profile results saved to {txt_path.resolve()}.", header="Profiler")
 
 
 def snake2camel(snake_str: str) -> str:

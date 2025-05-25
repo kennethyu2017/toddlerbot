@@ -6,6 +6,7 @@ import mujoco.rollout
 import mujoco.viewer
 import numpy as np
 import numpy.typing as npt
+from pathlib import Path
 
 from toddlerbot.actuation import JointState
 from toddlerbot.sim import BaseEnv, Obs
@@ -574,7 +575,8 @@ class MuJoCoSim(BaseEnv, env_name="mujoco"):
 
     def save_recording(
         self,
-        exp_folder_path: str,
+        # exp_folder_path: str,
+        exp_folder_path: Path, # :str
         dt: float,
         render_every: int,
         name: str = "mujoco.mp4",
