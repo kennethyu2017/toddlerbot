@@ -1,8 +1,9 @@
-import os
+# import os
 import pickle
 import time
 import warnings
 from typing import Any, Dict, List
+from pathlib import Path
 
 import cv2
 import matplotlib.pyplot as plt
@@ -247,7 +248,7 @@ class MuJoCoRenderer:
 
     def save_recording(
         self,
-        exp_folder_path: str,
+        exp_folder_path: Path, # str,
         dt: float,
         render_every: int,
         name: str = "mujoco.mp4",
@@ -263,7 +264,8 @@ class MuJoCoRenderer:
             dump_data (bool, optional): If True, dumps the animation data to a pickle file. Defaults to False.
         """
         if dump_data:
-            anim_data_path = os.path.join(exp_folder_path, "anim_data.pkl")
+            # anim_data_path = os.path.join(exp_folder_path, "anim_data.pkl")
+            anim_data_path:Path = exp_folder_path / 'anim_data.pkl'
             with open(anim_data_path, "wb") as f:
                 pickle.dump(self.anim_data, f)
 
@@ -271,7 +273,8 @@ class MuJoCoRenderer:
         video_paths: List[str] = []
         # Render and save videos for each camera
         for camera in ["perspective", "side", "top", "front"]:
-            video_path = os.path.join(exp_folder_path, f"{camera}.mp4")
+            # video_path = os.path.join(exp_folder_path, f"{camera}.mp4")
+            video_path:Path = exp_folder_path / f'{camera}.mp4'
             video_frames: List[npt.NDArray[np.float32]] = []
             for qpos, qvel in zip(
                 self.qpos_data[::render_every], self.qvel_data[::render_every]
@@ -293,7 +296,8 @@ class MuJoCoRenderer:
         # Arrange the clips in a 2x2 grid
         final_video = clips_array([[clips[0], clips[1]], [clips[2], clips[3]]])
         # Save the final concatenated video
-        final_video.write_videofile(os.path.join(exp_folder_path, name))
+        # final_video.write_videofile(os.path.join(exp_folder_path, name))
+        final_video.write_videofile( exp_folder_path/name )
 
     def anim_pose_callback(self, data: Any):
         """Processes animation pose data and updates the animation data dictionary.

@@ -441,7 +441,7 @@ class RealWorld(BaseEnv, env_name='real_world'):
         else:
             raise TypeError(f'motor_angles type error: {type(motor_angles)=:} ')
 
-        assert not np.any(write_pos == np.inf)
+        assert np.all(write_pos != np.inf)
         # write_pos *= self.negated_motor_direction_mask
 
         # TODO: not waiting for the future to complete?
