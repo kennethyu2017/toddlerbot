@@ -61,6 +61,11 @@ from ..visualization import *
 # from toddlerbot.utils.misc_utils import profile
 from ._module_logger import logger
 
+RUN_POLICY_LOG_FOLDER_FMT = 'run_policy_log/{robot_name}_{policy_name}_{env_name}_{cur_time}'
+RUN_STEP_RECORD_PICKLE_FILE = 'step_record/step_record_list.pkl'
+RUN_EPISODE_MOTOR_KP_PICKLE_FILE = '{policy_name}/episode_motor_kp.pkl'
+
+
 def dynamic_import_policies(policy_package: str):
     """Dynamically imports all modules within a specified package.
 
@@ -94,14 +99,14 @@ class _StepTimePnt:
     step_end: float = float('inf')
 
 @dataclass(init=True)
-class _StepRecord:
+class StepRecord:
     time_pnt: _StepTimePnt = None
     obs: Obs = None
     motor_act: npt.NDArray[np.float32] = None
     ctrl_input: Dict[str, float] = None  # e.g., human operation.
 
 
-def _plot_loop_time_helper( step_record_list: List[_StepRecord], plot_dir: Path):
+def _plot_loop_time_helper(step_record_list: List[StepRecord], plot_dir: Path):
     # loop_time_dict: Dict[str, List[float]] = {
     #     "obs_time": [],
     #     "inference": [],
@@ -233,7 +238,7 @@ def _plot_action_helper(*, robot:Robot,
 
 def _plot_run_log(
     robot: Robot,
-    step_record_list: List[_StepRecord],
+    step_record_list: List[StepRecord],
     # loop_time_list: List[List[float]],
     # obs_list: List[Obs],
     # control_inputs_list: List[Mapping[str, float]],
@@ -533,24 +538,26 @@ def _toggle_motor(policy:BasePolicy, env:BaseEnv):
         policy.toggle_motor = False
 
 
-def _save_run_log(step_record_list: List[_StepRecord], log_dir: Path):
+def _save_run_log(step_record_list: List[StepRecord], pickle_file: Path):
     # log_dir = exp_folder / 'step_record'
-    if not log_dir.exists():
-        log_dir.mkdir()
+    if not pickle_file.parent.exists():
+        pickle_file.parent.mkdir(parents=True)
 
-    with open(log_dir / 'step_record_list.pkl', 'wb') as _f:
+    # with open(log_dir / 'step_record_list.pkl', 'wb') as _f:
+    with open(pickle_file, 'wb') as _f:
         pickle.dump(step_record_list, _f)
 
 
 def _save_policy_log(*, policy:BasePolicy, robot:Robot,
                      log_dir: Path,
-                     step_record_list: List[_StepRecord]):
+                     step_record_list: List[StepRecord]):
     # log_dir = exp_folder / policy.name
     if not log_dir.exists():
         log_dir.mkdir()
 
     if isinstance(policy, SysIDPolicy):
-        with open(log_dir/'episode_motor_kp.pkl', "wb") as _f:
+        # with open(log_dir/'episode_motor_kp.pkl', "wb") as _f:
+        with open(RUN_EPISODE_MOTOR_KP_PICKLE_FILE.format(policy_name=policy.name), "wb") as _f:
             pickle.dump(policy.episode_motor_kp, _f)
 
     if isinstance(policy, TeleopFollowerPDPolicy):
@@ -659,7 +666,7 @@ def run_policy(*,
     # header_name = snake2camel(env.env_name)
 
     # TODO: use multi-thread solution to record the following running data into log files.
-    step_record_list: List[_StepRecord] = []
+    step_record_list: List[StepRecord] = []
 
     # loop_time_record_list: List[_StepTimeRecord] = []
     # obs_list: List[Obs] = []
@@ -697,7 +704,7 @@ def run_policy(*,
                  colour='CYAN', unit='step', unit_scale=True) as p_bar:
         try:
             while _step_count < policy.n_steps_total:
-                _record = _StepRecord()
+                _record = StepRecord()
                 _record.time_pnt.step_start = timelib.time()
 
                 # Get the latest state from the queue
@@ -787,9 +794,15 @@ def run_policy(*,
                         f' step record count: {len(step_record_list)}')
 
             # TODO: save recording file every n steps n seconds. ... not at the end of while loop.....
-            exp_name = f"{robot.name}_{policy.name}_{env.env_name}"
-            time_str = timelib.strftime("%Y%m%d_%H%M%S")
-            exp_folder = Path('run_policy_log') / f'{exp_name}_{time_str}'
+            # exp_name = f"{robot.name}_{policy.name}_{env.env_name}"
+            # exp_folder = Path('run_policy_log') / f'{exp_name}_{cur_time}'
+            # 'run_policy_log/{robot_name}_{policy_name}_{env_name}_{cur_time}'
+            cur_time = timelib.strftime("%Y%m%d_%H%M%S")
+            exp_folder = Path(RUN_POLICY_LOG_FOLDER_FMT.format(robot_name=robot.name,
+                                                          policy_name=policy.name,
+                                                          env_name=env.env_name,
+                                                          cur_time=cur_time) )
+
             exp_folder.mkdir(parents=False, exist_ok=True)
             # os.makedirs(exp_folder, exist_ok=True)
 
@@ -815,7 +828,7 @@ def run_policy(*,
     #     "motor_angles_list": motor_angles_list,
     # }
 
-    _save_run_log(step_record_list, exp_folder / 'step_record')
+    _save_run_log(step_record_list, exp_folder / RUN_STEP_RECORD_PICKLE_FILE)
     _save_policy_log(policy=policy,robot=robot,
                      log_dir=exp_folder / policy.name,
                      step_record_list=step_record_list)
