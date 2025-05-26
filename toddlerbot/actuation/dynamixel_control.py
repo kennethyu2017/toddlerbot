@@ -105,7 +105,7 @@ class DynamixelConfig:
     kD: List[float]
     kFF2: List[float]
     kFF1: List[float]
-    init_pos: List[float]
+    init_pos: List[float] | npt.NDArray[np.float32] | None
     default_vel: float = np.pi
     interp_method: str = "cubic"
     return_delay_time: int = 1
@@ -134,11 +134,13 @@ class DynamixelController(BaseController):
         self.connect_to_client()
         self.initialize_motors()
 
-        if len(self.config.init_pos) == 0:
+        # if config.init_pos is None, that is for calibrate_zero.
+        # if len(self.config.init_pos) == 0:
+        if self.config.init_pos is None:
             self.init_pos = np.zeros(len(motor_ids), dtype=np.float32)
         else:
-            self.init_pos = np.array(config.init_pos, dtype=np.float32)
-            self.update_init_pos()
+            self.init_pos = np.asarray(config.init_pos, dtype=np.float32)
+            self.normalize_init_pos()
 
     def connect_to_client(self, latency_value: int = 1):
         """Connects to a Dynamixel client and sets the USB latency timer.
@@ -242,7 +244,7 @@ class DynamixelController(BaseController):
 
         time.sleep(0.2)
 
-    def update_init_pos(self):
+    def normalize_init_pos(self):
         """Update the initial position to account for any changes in position.
 
         This method reads the current position from the client and calculates the
@@ -251,6 +253,9 @@ class DynamixelController(BaseController):
         the range of [-π, π].
         """
         _, pos_arr = self.client.read_pos(retries=-1)
+
+        assert np.all( abs(pos_arr) < np.pi)
+
         delta_pos = pos_arr - self.init_pos
         delta_pos = (delta_pos + np.pi) % (2 * np.pi) - np.pi
         self.init_pos = pos_arr - delta_pos

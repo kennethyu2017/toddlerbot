@@ -155,7 +155,10 @@ class Robot:
                 self.motor_name_to_id[_name] = motor_id
                 self.id_to_motor_name[motor_id] = _name
 
-                self.init_motor_angles[_name] = 0.0
+                # TODO: why not read init_pos from cfg ???
+                # self.init_motor_angles[_name] = 0.0
+                self.init_motor_angles[_name] = _cfg['init_pos']
+
                 self.default_motor_angles[_name] = _cfg["default_pos"]
 
         # generate joints based on motors.
@@ -350,7 +353,7 @@ class Robot:
         key_name: str,
         key_value: Any,
         attr_name: str,
-        attr_values: Any,
+        attr_values: Mapping[int, float] | Sequence[float],
         group: str = "all",
     ):
         """Sets attributes for joints in the configuration based on specified criteria.

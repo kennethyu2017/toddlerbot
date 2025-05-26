@@ -34,7 +34,7 @@ class TableValueName(Enum):
     model = 5
     pos_vel_load = 6  # together.
 
-class PosVelLoadRecord(NamedTuple):
+class PosVelLoadRead(NamedTuple):
     comm_time: float
     pos: npt.NDArray[np.float32]
     vel: npt.NDArray[np.float32]
@@ -603,7 +603,7 @@ class FeiteGroupClient:
 
     def read_pos_vel_load(
         self, retries: int = 0
-    ) -> PosVelLoadRecord:
+    ) -> PosVelLoadRead:
         comm_time, value_arr_list = self._read_table_multiple_values_helper(name=TableValueName.pos_vel_load)
 
         # TODO: the necessary of saving into cached data dict?
@@ -611,7 +611,7 @@ class FeiteGroupClient:
         self._cached_read_data_dict[TableValueName.vel]=value_arr_list[1]
         self._cached_read_data_dict[TableValueName.load]=value_arr_list[2]  # load in percentage of stall torque.
 
-        return PosVelLoadRecord(
+        return PosVelLoadRead(
             comm_time,
             pos=self._cached_read_data_dict[TableValueName.pos].copy(),
             vel=self._cached_read_data_dict[TableValueName.vel].copy(),
@@ -620,7 +620,7 @@ class FeiteGroupClient:
 
     # def read_pos_vel_load(
     #     self, retries: int = 0
-    # ) -> PosVelLoadRecord:
+    # ) -> PosVelLoadRead:
     #     # NEED to update line 115 and 349 if calling this function
     #     """Returns the current positions and velocities, and torque"""
     #     param_list: List[bytearray]
@@ -642,7 +642,7 @@ class FeiteGroupClient:
     #         self._cached_read_data_dict["load"][_x] = _parse_load(_bytes[4:6])
     #
     #     # NOTE: if the ID does not return pkt, the corresponding value is timed value...
-    #     return PosVelLoadRecord(
+    #     return PosVelLoadRead(
     #         comm_time,
     #         pos=self._cached_read_data_dict["pos"].copy(),
     #         vel=self._cached_read_data_dict["vel"].copy(),

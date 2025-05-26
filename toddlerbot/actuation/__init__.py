@@ -1,8 +1,10 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Dict, List, Sequence
+from contextlib import contextmanager
 from .feite_control import FeiteController, FeiteConfig
 from .dynamixel_control import DynamixelController, DynamixelConfig
+
 
 __all__ = ['FeiteController', 'FeiteConfig', 'DynamixelController', 'DynamixelConfig',
            'BaseController',]
@@ -60,4 +62,20 @@ class BaseController(ABC):
     def enable_motors(ids=None):...
 
 
+    @classmethod
+    @contextmanager
+    def open_controller(cls, *args, **kwargs):
+        # cls should be sub-class.
+        assert cls is not BaseController
+
+        controller = None
+        try:
+            controller = cls(args, kwargs)
+            yield controller
+        except (IOError,OSError) as err:
+            print(f'open controller {cls.__name__} got error: {err} {type(err)=:},'
+                  f'check the USE serial connections...')
+        finally:
+            if controller is not None:
+                controller.close_motors()
 
