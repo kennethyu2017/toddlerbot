@@ -1,5 +1,5 @@
 import argparse
-from typing import Any, Callable, Dict, List, Tuple
+from typing import Any, Callable, Dict, List, Tuple,Mapping
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -322,7 +322,7 @@ def plot_footsteps(
 
 
 def plot_loop_time(
-    loop_time_dict: Dict[str, List[float]], save_path: str, file_name: str = "loop_time"
+    loop_time_dict: Mapping[str, List[float]], save_path: str, file_name: str = "loop_time"
 ):
     plot_line_graph(
         list(loop_time_dict.values()),

@@ -1,6 +1,8 @@
 import argparse
 import json
-import os
+# import os
+from pathlib import Path
+import logging
 import pickle
 import time
 from functools import partial
@@ -9,21 +11,28 @@ from typing import Dict, List, Tuple
 import numpy as np
 import numpy.typing as npt
 import optuna
-from optuna.logging import _get_library_root_logger
+# from optuna.logging import _get_library_root_logger
 
-from toddlerbot.sim import Obs
-from toddlerbot.sim.mujoco_control import MotorController
-from toddlerbot.sim.mujoco_sim import MuJoCoSim
-from toddlerbot.sim.robot import Robot
-from toddlerbot.utils.misc_utils import log
+# from toddlerbot.sim import Obs
+# from toddlerbot.sim.mujoco_control import MotorController
+# from toddlerbot.sim.mujoco_sim import MuJoCoSim
+# from toddlerbot.sim.robot import Robot
+from ..sim import *
+from ..utils import config_logging
+
+# from toddlerbot.utils.misc_utils import log
+
 from toddlerbot.visualization.vis_plot import (
     plot_joint_tracking,
     plot_joint_tracking_frequency,
 )
 
+from ._module_logger import logger
+
 # This script is used to optimize the parameters of the robot's dynamics model using system identification (SysID) techniques.
 
-logger = _get_library_root_logger()
+# TODO> use optuna logger?
+# logger = _get_library_root_logger()
 
 
 def load_datasets(robot: Robot, data_path: str):
@@ -600,7 +609,7 @@ def evaluate(
     )
 
 
-def main():
+def _main():
     """Executes the SysID optimization process for a specified robot and simulator.
 
     This function parses command-line arguments to configure the optimization process,
@@ -612,45 +621,7 @@ def main():
         ValueError: If the specified experiment folder path does not exist.
     """
 
-    parser = argparse.ArgumentParser(description="Run the SysID optimization.")
-    parser.add_argument(
-        "--robot",
-        type=str,
-        default="toddlerbot",
-        help="The name of the robot. Need to match the name in descriptions.",
-    )
-    parser.add_argument(
-        "--sim",
-        type=str,
-        default="mujoco",
-        help="The simulator to use.",
-    )
-    parser.add_argument(
-        "--policy",
-        type=str,
-        default="sysID_fixed",
-        help="The name of the task.",
-    )
-    parser.add_argument(
-        "--n-iters",
-        type=int,
-        default=500,
-        help="The number of iterations to optimize the parameters.",
-    )
-    parser.add_argument(
-        "--early-stop",
-        type=int,
-        default=200,
-        help="The number of iterations to early stop the optimization.",
-    )
-    parser.add_argument(
-        "--time-str",
-        type=str,
-        default="",
-        required=True,
-        help="The name of the run.",
-    )
-    args = parser.parse_args()
+    # args = parser.parse_args()
 
     data_path = os.path.join(
         "results", f"{args.robot}_{args.policy}_real_world_{args.time_str}"
@@ -704,5 +675,65 @@ def main():
     )
 
 
+def _args_parsing() -> argparse.Namespace:
+
+    parser = argparse.ArgumentParser(description="Run the SysID optimization.")
+    parser.add_argument(
+        "--robot",
+        type=str,
+        default="toddlerbot",
+        help="The name of the robot. Need to match the name in descriptions.",
+    )
+    parser.add_argument(
+        "--sim",
+        type=str,
+        default="mujoco",
+        help="The simulator to use.",
+    )
+    parser.add_argument(
+        "--policy",
+        type=str,
+        default="sysID_fixed",
+        help="The name of the task.",
+    )
+    parser.add_argument(
+        "--n-iters",
+        type=int,
+        default=500,
+        help="The number of iterations to optimize the parameters.",
+    )
+    parser.add_argument(
+        "--early-stop",
+        type=int,
+        default=200,
+        help="The number of iterations to early stop the optimization.",
+    )
+    parser.add_argument(
+        "--time-str",
+        type=str,
+        default="",
+        required=True,
+        help="The name of the run.",
+    )
+
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
-    main()
+    _parsed_args = _args_parsing()
+    # TODO: move into yaml config.
+    config_logging(root_logger_level=logging.INFO, root_handler_level=logging.NOTSET,
+                   root_fmt='--- {levelname} - module:{module} - func:{funcName} ---> \n{message}',
+                   root_date_fmt='%Y-%m-%d %H:%M:%S',
+                   # log_file='/tmp/toddler/imitate_episode.log',
+                   log_file=None,
+                   module_logger_config={'policies': logging.INFO,
+                                         'main': logging.INFO})
+    # use root logger for __main__.
+    logger = logging.getLogger('root')
+    logger.info('parsed args --->\n{}'.format('\n'.join(
+        f'{arg_name}={arg_value}' for arg_name, arg_value in
+        sorted(_parsed_args.__dict__.items(), key=lambda k_v_pair: k_v_pair[0]))))
+
+    _main(_parsed_args)
+

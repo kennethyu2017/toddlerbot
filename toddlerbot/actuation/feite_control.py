@@ -12,7 +12,7 @@ import numpy.typing as npt
 
 from scservo_sdk import SMS_STS_DEFAULT_BAUD_RATE
 from . import BaseController, JointState
-from .feite_client import FeiteGroupClient, PosVelLoadRecord
+from .feite_client import FeiteGroupClient, PosVelLoadRead
 
 from ._module_logger import logger
 
@@ -105,7 +105,7 @@ class FeiteConfig(NamedTuple):
     kD: Sequence[int] = []
     # kFF2: Seq[float]
     # kFF1: Seq[float]
-    init_pos: Sequence[float] = []
+    init_pos: Sequence[float] | None = None
     default_vel: float = np.pi
     # interp_method: str = "cubic"
     return_delay_time: int = 1
@@ -142,12 +142,16 @@ class FeiteController(BaseController):
         self.client =self.connect_to_client()
         self.initialize_motors()
 
-        if len(self.config.init_pos) == 0:
+        # if len(self.config.init_pos) == 0:
+
+        # if config.init_pos is None, that is for calibrate_zero.
+        # TODO: during calibrate_zero , setting init_pos to pi ??
+        if self.config.init_pos is None:
             self.init_pos = np.zeros(len(self._motor_ids), dtype=np.float32)
         else:
             assert len(config.init_pos) == len(self._motor_ids)
-            self.init_pos = np.array(config.init_pos, dtype=np.float32)
-            self.update_init_pos()
+            self.init_pos = np.asarray(config.init_pos, dtype=np.float32)
+            self.normalize_init_pos()
 
     def connect_to_client(self, latency_value: int = 1)->FeiteGroupClient:
         """Connects to a Feite client and sets the USB latency timer.
@@ -286,7 +290,7 @@ class FeiteController(BaseController):
 
         time.sleep(0.2)
 
-    def update_init_pos(self):
+    def normalize_init_pos(self):
         """Update the initial position to account for any changes in position.
 
         This method reads the current position from the client and calculates the
@@ -427,9 +431,10 @@ class FeiteController(BaseController):
             pos (Sequence): A list of position values to set for the motors.
         """
 
-        # TODO: convert from [-pi/2, pi/2] to [pi/2, 3pi/2]
+        # TODO: convert from [-pi/2, pi/2] to [pi/2, 3pi/2] -> during calibrate_zero , setting init_pos to pi...
 
         pos_arr: npt.NDArray[np.float32] = np.array(pos)
+        # add init_pos as offset.
         pos_arr_drive = self.init_pos + pos_arr
         with self.lock:
             self.client.set_desired_pos(motor_ids=self._motor_ids, positions=pos_arr_drive)
@@ -449,25 +454,25 @@ class FeiteController(BaseController):
 
         # log(f"Start... {time.time()}", header="Feite", level="warning")
         state_dict: Dict[int, JointState] = {}
-        record: PosVelLoadRecord | None = None
+        read_value: PosVelLoadRead | None = None
         with self.lock:
-            record = self.client.read_pos_vel_load(retries=retries)
+            read_value = self.client.read_pos_vel_load(retries=retries)
 
         # log(f"Pos: {np.round(pos_arr, 4)}", header="Feite", level="debug")
         # log(f"Vel: {np.round(vel_arr, 4)}", header="Feite", level="debug")
         # log(f"Cur: {np.round(cur_arr, 4)}", header="Feite", level="debug")
 
-        assert len(self._motor_ids) == len(record.pos) == len(record.vel) == len(record.load)
+        assert len(self._motor_ids) == len(read_value.pos) == len(read_value.vel) == len(read_value.load)
 
         # relative to init pos.
-        relative_pos = record.pos - self.init_pos
+        relative_pos = read_value.pos - self.init_pos
 
         for _id, _pos, _vel, _load in zip(self._motor_ids,
                                           relative_pos,
-                                          record.vel,
-                                          record.load) :
+                                          read_value.vel,
+                                          read_value.load) :
             state_dict[_id] = JointState(
-                time=record.comm_time,
+                time=read_value.comm_time,
                 pos= _pos,
                 vel= _vel,
                 tor= _load)

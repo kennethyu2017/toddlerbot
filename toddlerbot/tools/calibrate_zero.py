@@ -1,27 +1,35 @@
 import argparse
 import json
-import os
-from concurrent.futures import ThreadPoolExecutor
+# import os
+from concurrent.futures import ThreadPoolExecutor, Future
 from typing import Dict, List
 
 import numpy as np
 
-from toddlerbot.actuation.dynamixel_control import (
-    DynamixelConfig,
-    DynamixelController,
-)
+from ..actuation import *
 from toddlerbot.sim.robot import Robot
 from toddlerbot.utils.file_utils import find_ports
-from toddlerbot.utils.misc_utils import log
+# from toddlerbot.utils.misc_utils import log
+
+from ._module_logger import logger
 
 
 # This script is used to calibrate the zero points of the Dynamixel motors.
 
 
-def calibrate_dynamixel(port: str, robot: Robot, group: str):
+# TODO: impl.
+def calibrate_feite():
+    feite_config = FeiteConfig(
+        # ????  init_pos= np.pi  ???
+    )
+    pass
+
+def calibrate_dynamixel(port: str, robot: Robot, group: str)->Dict[int, float]:
     """Calibrates the Dynamixel motors for a specified group of joints in a robot.
 
-    This function retrieves the necessary configuration and state information for the Dynamixel motors associated with a specified group of joints in the robot. It then calculates the initial positions for these motors and updates the robot's joint attributes accordingly.
+    This function retrieves the necessary configuration and state information for the Dynamixel motors
+    associated with a specified group of joints in the robot. It then calculates the initial positions
+     for these motors and updates the robot's joint attributes accordingly.
 
     Args:
         port (str): The communication port used to connect to the Dynamixel motors.
@@ -39,31 +47,42 @@ def calibrate_dynamixel(port: str, robot: Robot, group: str):
         kFF2=robot.get_joint_config_attrs("type", "dynamixel", "kff2_real", group),
         kFF1=robot.get_joint_config_attrs("type", "dynamixel", "kff1_real", group),
         # gear_ratio=robot.get_joint_attrs("type", "dynamixel", "gear_ratio", group),
-        init_pos=[],
+
+        # init_pos=[],  # will be set to all-zero in controller.
+        init_pos= None  # will be set to all-zero in controller.  #np.zeros_like(robot.motor_id_ordering, dtype=np.float32),  # set to all-zero.
     )
 
-    controller = DynamixelController(dynamixel_config, dynamixel_ids)
+    # controller = DynamixelController(dynamixel_config, dynamixel_ids)
+    # indexed by motor ID.
+    motor_init_pos: Dict[int, float] = {}
+    with DynamixelController.open_controller(dynamixel_config, dynamixel_ids) as controller:
+        transmission_list = robot.get_joint_config_attrs(
+            "type", "dynamixel", "transmission", group
+        )
+        joint_group_list = robot.get_joint_config_attrs("type", "dynamixel", "group", group)
 
-    transmission_list = robot.get_joint_config_attrs(
-        "type", "dynamixel", "transmission", group
-    )
-    joint_group_list = robot.get_joint_config_attrs("type", "dynamixel", "group", group)
-    state_dict = controller.get_motor_state(retries=-1)
-    init_pos: Dict[int, float] = {}
-    for transmission, joint_group, (id, state) in zip(
-        transmission_list, joint_group_list, state_dict.items()
-    ):
-        if transmission == "none" and joint_group == "arm":
-            init_pos[id] = np.pi / 4 * round(state.pos / (np.pi / 4))
-        else:
-            init_pos[id] = state.pos
+        # TODO: after settle up the real robot, read out the angles of motors, as `init_pos` write into config.json.
+        # then run_policy in real world, read out the `init_pos` from config.json and set to actuator_controller as
+        # motor angle read/set offset.
+        state_dict = controller.get_motor_state(retries=-1)
 
-    robot.set_joint_config_attrs("type", "dynamixel", "init_pos", init_pos, group)
+        assert len(transmission_list) == len(joint_group_list) == len(state_dict)
 
-    controller.close_motors()
+        for _trans, _group, (_id, _state) in zip(
+            transmission_list, joint_group_list, state_dict.items()
+        ):
+            if _trans == "none" and _group == "arm":
+                motor_init_pos[_id] = np.pi / 4 * round(_state.pos / (np.pi / 4))
+            else:
+                motor_init_pos[_id] = _state.pos
+
+        # robot.set_joint_config_attrs("type", "dynamixel", "init_pos", init_pos, group)
+        # controller.close_motors()
+
+    return motor_init_pos
 
 
-def main(robot: Robot, parts: List[str]):
+def main(args: argparse.Namespace): # robot: Robot, parts: List[str]):
     """Calibrates the robot's motors based on specified parts and updates the configuration.
 
     This function prompts the user to confirm the installation of calibration parts,
@@ -71,9 +90,10 @@ def main(robot: Robot, parts: List[str]):
     file with the initial positions of the specified parts.
 
     Args:
-        robot (Robot): The robot instance containing configuration and joint attributes.
-        parts (List[str]): A list of parts to calibrate. Can include specific parts
-            like 'left_arm', 'right_arm', or 'all' to calibrate all parts.
+        args:
+        # robot (Robot): The robot instance containing configuration and joint attributes.
+        # parts (List[str]): A list of parts to calibrate. Can include specific parts
+        #     like 'left_arm', 'right_arm', or 'all' to calibrate all parts.
 
     Raises:
         ValueError: If an invalid part is specified in the `parts` list.
@@ -81,7 +101,7 @@ def main(robot: Robot, parts: List[str]):
     """
     while True:
         response = input("Have you installed the calibration parts? (y/n) > ")
-        response = response.strip().lower()
+        response = response.strip().casefold()
         if response == "y" or response[0] == "y":
             break
         if response == "n" or response[0] == "n":
@@ -89,23 +109,43 @@ def main(robot: Robot, parts: List[str]):
 
         print("Please answer 'yes' or 'no'.")
 
+    # Parse parts into a list
+    parts = args.parts.split(" ") if args.parts != "all" else ["all"]
+    robot = Robot(args.robot)
+
     executor = ThreadPoolExecutor(max_workers=5)
 
     has_dynamixel = robot.config["general"]["has_dynamixel"]
 
-    future_dynamixel = None
+    future_dynamixel: Future|None = None
+    # TODO: Feite....
     if has_dynamixel:
         dynamixel_ports: List[str] = find_ports("USB <-> Serial Converter")
-        future_dynamixel = executor.submit(
+
+        # will modify robot.config .
+        future_dynamixel:Future = executor.submit(
             calibrate_dynamixel, dynamixel_ports[0], robot, "all"
         )
 
-    if future_dynamixel is not None:
-        future_dynamixel.result()
+    motor_init_pos: Dict[int, float] | None = None
+    try:
+        motor_init_pos = future_dynamixel.result()
+    except Exception as err:
+        logger.error(f'read init pos got an exception: {err}')
+        raise
+    else:
+        logger.info(f'read init pos succeed: {motor_init_pos} ')
+    finally:
+        executor.shutdown(wait=True)
 
-    executor.shutdown(wait=True)
+    #update robot config:
+    assert len(motor_init_pos) == robot.nu
+    robot.set_joint_config_attrs("type", "dynamixel", "init_pos", motor_init_pos, 'all')
 
     # Generate the motor mask based on the specified parts
+    # only update motor init pos corresponding to `all_parts`, into config_motors.json
+    motor_ordering_idx_mask: set[int]
+    # TODO: the number in list is ID or index of ordering? should be index, has value `0`.
     all_parts = {
         "left_arm": [16, 17, 18, 19, 20, 21, 22],
         "right_arm": [23, 24, 25, 26, 27, 28, 29],
@@ -118,37 +158,53 @@ def main(robot: Robot, parts: List[str]):
         "neck": [0, 1],
     }
     if "all" in parts:
-        motor_mask = list(range(robot.nu))
+        motor_ordering_idx_mask = set(range(robot.nu))
     else:
-        motor_mask = []
-        for part in parts:
-            if part not in all_parts:
-                raise ValueError(f"Invalid part: {part}")
+        motor_ordering_idx_mask = set()
 
-            motor_mask.extend(all_parts[part])
+        assert  ( set(parts) & set(all_parts) ) == set(parts)
+        # for _p in set(parts) & set(all_parts):
+        for _p in parts:
+            motor_ordering_idx_mask.update(all_parts[_p])
 
-    motor_names = robot.get_joint_config_attrs("is_passive", False)
-    motor_pos_init = np.array(robot.get_joint_config_attrs("is_passive", False, "init_pos"))
-    motor_angles = {}
-    for i, (name, pos) in enumerate(zip(motor_names, motor_pos_init)):
-        if i in motor_mask:
-            motor_angles[name] = round(pos, 4)
+        # for _p in parts:
+        #     if _p not in all_parts:
+        #         raise ValueError(f"Invalid part: {_p}")
+        #
+        #     motor_mask.extend(all_parts[_p])
 
-    log(f"Motor angles for selected parts: {motor_angles}", header="Calibration")
+    # motor_names = robot.get_joint_config_attrs("is_passive", False)
+    # robot.config modified in future_dynamixel.
+    # TODO: should use motor id ordering to index motor init pos instead the original robot cfg...
+    # motor_pos_init = np.array(robot.get_joint_config_attrs("is_passive", False, "init_pos"))
 
-    motor_config_path = os.path.join(robot.root_path, "config_motors.json")
-    if os.path.exists(motor_config_path):
-        with open(motor_config_path, "r") as f:
+    # motor_angles = {}
+    # for i, (name, pos) in enumerate(zip(motor_names, motor_init_pos)):
+    #     if i in motor_id_mask:
+    #         motor_angles[name] = round(pos, 4)
+
+    # logger.info(f"Motor angles for selected parts: {motor_angles}")
+
+    # motor_config_path = os.path.join(robot.root_path, "config_motors.json")
+    motor_config_file = robot.root_path / 'config_motors.json'
+    if motor_config_file.exists():
+        with open(motor_config_file, "rt") as f:
             motor_config = json.load(f)
 
-        for i, (name, pos) in enumerate(zip(motor_names, motor_pos_init)):
-            if i in motor_mask:
-                motor_config[name]["init_pos"] = float(pos)
+        logger.info(f"update motor init pos for selected parts:")
+        # for i, (name, pos) in enumerate(zip(motor_names, motor_init_pos)):
+        # only update motor in mask.
+        for _x, _id in enumerate(robot.motor_id_ordering):
+            if _x in motor_ordering_idx_mask:
+                motor_name = robot.id_to_motor_name[_id]
+                pos = motor_init_pos[_id]
+                motor_config[motor_name]["init_pos"] = pos
+                logger.info(f'motor_name: {motor_name} , id:{_id} , ordering_idx:{_x}, pos: {pos} ')
 
-        with open(motor_config_path, "w") as f:
+        with open(motor_config_file, "wt") as f:
             json.dump(motor_config, f, indent=4)
     else:
-        raise FileNotFoundError(f"Could not find {motor_config_path}")
+        raise FileNotFoundError(f"Could not find {motor_config_file}")
 
 
 if __name__ == "__main__":
@@ -165,11 +221,7 @@ if __name__ == "__main__":
         default="all",
         help="Specify parts to calibrate. Use 'all' or a subset of [left_arm, right_arm, left_gripper, right_gripper, hip, knee, left_ankle, right_ankle, neck], split by space.",
     )
-    args = parser.parse_args()
+    parsed_args = parser.parse_args()
 
-    # Parse parts into a list
-    parts = args.parts.split(" ") if args.parts != "all" else ["all"]
+    main(parsed_args)
 
-    robot = Robot(args.robot)
-
-    main(robot, parts)

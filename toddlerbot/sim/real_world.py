@@ -1,6 +1,6 @@
 import platform
 from concurrent.futures import ThreadPoolExecutor, as_completed, Future
-from typing import Dict, List, Optional, Mapping
+from typing import Dict, List, Optional, Mapping, Set
 from collections import OrderedDict
 
 import numpy as np
@@ -59,6 +59,7 @@ def _init_dynamixel_actuators(*, robot:Robot, executor: ThreadPoolExecutor)->Fut
     kFF1 = robot.get_motor_ordered_config_attrs("type", "dynamixel", "kff1_real")
     assert len(kFF1) == len(dynamixel_ids)
 
+    # TODO: why not use robot.default_motor_angles directly.
     init_pos = robot.get_motor_ordered_config_attrs("type", "dynamixel", "init_pos")
     assert len(init_pos) == len(dynamixel_ids)
 
@@ -115,6 +116,7 @@ def _init_feite_actuators(*, robot:Robot, executor: ThreadPoolExecutor)-> Option
     kD = robot.get_motor_ordered_config_attrs("type", "feite", "kd_real")
     assert len(kD) == len(feite_ids)
 
+    # NOTE: read `init_pos` is written by calibrate_zero.
     init_pos = robot.get_motor_ordered_config_attrs("type", "feite", "init_pos")
     assert len(init_pos) == len(feite_ids)
 
@@ -180,7 +182,7 @@ class RealWorld(BaseEnv, env_name='real_world'):
         self.actuator_controller: BaseController | None = None
         self._imu: BNO08X_IMU | None = None
         # TODO: only RealWorld has negated_motor_list, MujocoSim has no .
-        self.negated_motor_ids: List[int] = []
+        # self.negated_motor_ids: List[int] = []
         self.negated_motor_direction_mask: npt.NDArray[np.float32] | None = None
         
         self.initialize()
@@ -221,7 +223,7 @@ class RealWorld(BaseEnv, env_name='real_world'):
                 logger.info(f'instantiate {attr} succeed.')
 
         # TODO: Fix the mate directions in the URDF and remove the negated_motor_names
-        _neg_mtr_names: List[str] = [
+        _neg_mtr_names: Set[str] = {
             "neck_pitch_act",
             "left_sho_roll",
             "right_sho_roll",
@@ -231,15 +233,30 @@ class RealWorld(BaseEnv, env_name='real_world'):
             "right_wrist_pitch_drive",
             "left_gripper_rack",
             "right_gripper_rack",
-        ]
-        self.negated_motor_ids: List[int] = [
-            self.robot.motor_name_to_id[_name] for _name in _neg_mtr_names
-        ]
+        }
+
+        # _neg_mtr_names: List[str] = [
+        #     "neck_pitch_act",
+        #     "left_sho_roll",
+        #     "right_sho_roll",
+        #     "left_elbow_roll",
+        #     "right_elbow_roll",
+        #     "left_wrist_pitch_drive",
+        #     "right_wrist_pitch_drive",
+        #     "left_gripper_rack",
+        #     "right_gripper_rack",
+        # ]
+
+        # _negated_motor_ids: List[int] = [
+        #     self.robot.motor_name_to_id[_name] for _name in _neg_mtr_names
+        # ]
 
         self.negated_motor_direction_mask: npt.NDArray[np.float32] = np.where(
-            np.isin(self.robot.motor_id_ordering, self.negated_motor_ids),
+            # np.isin(self.robot.motor_id_ordering, _negated_motor_ids),
+            np.isin(self.robot.motor_name_ordering, _neg_mtr_names),
             -1.,
             1. ).astype(np.float32)
+
         assert len(self.negated_motor_direction_mask) == self.robot.nu
 
         for _ in range(100):
@@ -274,15 +291,19 @@ class RealWorld(BaseEnv, env_name='real_world'):
 
         time_curr = motor_state[self.robot.motor_id_ordering[0]].time
         for _x, _id in enumerate(self.robot.motor_id_ordering):
+            # if _id in self.negated_motor_ids:
+            #     motor_pos[_x] = - motor_state[_id].pos
+            #     motor_vel[_x] = - motor_state[_id].vel
+            # else:
+            #     motor_pos[_x] = motor_state[_id].pos
+            #     motor_vel[_x] = motor_state[_id].vel
 
-            if _id in self.negated_motor_ids:
-                motor_pos[_x] = - motor_state[_id].pos
-                motor_vel[_x] = - motor_state[_id].vel
-            else:
-                motor_pos[_x] = motor_state[_id].pos
-                motor_vel[_x] = motor_state[_id].vel
-
+            motor_pos[_x] = motor_state[_id].pos
+            motor_vel[_x] = motor_state[_id].vel
             motor_tor[_x] = abs(motor_state[_id].tor)
+
+        motor_pos *= self.negated_motor_direction_mask
+        motor_vel *= self.negated_motor_direction_mask
 
         # for i, motor_name in enumerate(self.robot.motor_name_ordering):
         #     if i == 0:

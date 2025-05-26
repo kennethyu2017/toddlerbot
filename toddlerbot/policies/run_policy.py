@@ -8,9 +8,9 @@ import pickle
 import pkgutil
 import time
 import time as timelib
-from typing import Any, Dict, List,Optional, Generator
+from typing import Any, Dict, List,Optional, Generator, DefaultDict, Mapping
 from dataclasses import dataclass
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 from contextlib import contextmanager
 
 import matplotlib.pyplot as plt
@@ -84,202 +84,6 @@ def dynamic_import_policies(policy_package: str):
 # Call this to import all policies dynamically
 dynamic_import_policies("toddlerbot.policies")
 
-
-def plot_results(
-    robot: Robot,
-    loop_time_list: List[List[float]],
-    obs_list: List[Obs],
-    control_inputs_list: List[Dict[str, float]],
-    motor_angles_list: List[Dict[str, float]],
-    exp_folder_path: str,
-):
-    """Generates and saves various plots to visualize the performance and behavior of a robot during an experiment.
-
-    Args:
-        robot (Robot): The robot object containing information about the robot's configuration and state.
-        loop_time_list (List[List[float]]): A list of lists containing timing information for each loop iteration.
-        obs_list (List[Obs]): A list of observations recorded during the experiment.
-        control_inputs_list (List[Dict[str, float]]): A list of dictionaries containing control inputs applied to the robot.
-        motor_angles_list (List[Dict[str, float]]): A list of dictionaries containing motor angles recorded during the experiment.
-        exp_folder_path (str): The path to the folder where the plots will be saved.
-    """
-    loop_time_dict: Dict[str, List[float]] = {
-        "obs_time": [],
-        "inference": [],
-        "set_action": [],
-        "sim_step": [],
-        "log_time": [],
-        # "total_time": [],
-    }
-    for i, loop_time in enumerate(loop_time_list):
-        (
-            step_start,
-            obs_time,
-            inference_time,
-            set_action_time,
-            sim_step_time,
-            step_end,
-        ) = loop_time
-        loop_time_dict["obs_time"].append((obs_time - step_start) * 1000)
-        loop_time_dict["inference"].append((inference_time - obs_time) * 1000)
-        loop_time_dict["set_action"].append(
-            (set_action_time - inference_time) * 1000
-        )
-        loop_time_dict["sim_step"].append((sim_step_time - set_action_time) * 1000)
-        loop_time_dict["log_time"].append((step_end - sim_step_time) * 1000)
-        # loop_time_dict["total_time"].append((step_end - step_start) * 1000)
-
-    time_obs_list: List[float] = []
-    # lin_vel_obs_list: List[npt.NDArray[np.float32]] = []
-    ang_vel_obs_list: List[npt.NDArray[np.float32]] = []
-    pos_obs_list: List[npt.NDArray[np.float32]] = []
-    euler_obs_list: List[npt.NDArray[np.float32]] = []
-    tor_obs_total_list: List[float] = []
-    time_seq_dict: Dict[str, List[float]] = {}
-    time_seq_ref_dict: Dict[str, List[float]] = {}
-    motor_pos_dict: Dict[str, List[float]] = {}
-    motor_vel_dict: Dict[str, List[float]] = {}
-    motor_tor_dict: Dict[str, List[float]] = {}
-    for i, obs in enumerate(obs_list):
-        time_obs_list.append(obs.time)
-        # lin_vel_obs_list.append(obs.lin_vel)
-        ang_vel_obs_list.append(obs.ang_vel)
-        pos_obs_list.append(obs.pos)
-        euler_obs_list.append(obs.euler)
-        tor_obs_total_list.append(sum(obs.motor_tor))
-
-        for j, motor_name in enumerate(robot.motor_name_ordering):
-            if motor_name not in time_seq_dict:
-                time_seq_ref_dict[motor_name] = []
-                time_seq_dict[motor_name] = []
-                motor_pos_dict[motor_name] = []
-                motor_vel_dict[motor_name] = []
-                motor_tor_dict[motor_name] = []
-
-            # Assume the state fetching is instantaneous
-            time_seq_dict[motor_name].append(float(obs.time))
-            time_seq_ref_dict[motor_name].append(float(obs.time))
-            # time_seq_ref_dict[motor_name].append(i * policy.control_dt)
-            motor_pos_dict[motor_name].append(obs.motor_pos[j])
-            motor_vel_dict[motor_name].append(obs.motor_vel[j])
-            motor_tor_dict[motor_name].append(obs.motor_tor[j])
-
-    action_dict: Dict[str, List[float]] = {}
-    joint_pos_ref_dict: Dict[str, List[float]] = {}
-    for motor_angles in motor_angles_list:
-        for motor_name, motor_angle in motor_angles.items():
-            if motor_name not in action_dict:
-                action_dict[motor_name] = []
-            action_dict[motor_name].append(motor_angle)
-
-        joint_angle_ref = robot.motor_to_active_joint_angles(motor_angles)
-        for joint_name, joint_angle in joint_angle_ref.items():
-            if joint_name not in joint_pos_ref_dict:
-                joint_pos_ref_dict[joint_name] = []
-            joint_pos_ref_dict[joint_name].append(joint_angle)
-
-    control_inputs_dict: Dict[str, List[float]] = {}
-    for control_inputs in control_inputs_list:
-        for control_name, control_input in control_inputs.items():
-            if control_name not in control_inputs_dict:
-                control_inputs_dict[control_name] = []
-            control_inputs_dict[control_name].append(control_input)
-
-    plt.switch_backend("Agg")
-
-    plot_loop_time(loop_time_dict, exp_folder_path)
-
-    if "sysID" in robot.name:
-        plot_motor_vel_tor_mapping(
-            motor_vel_dict["joint_0"],
-            motor_tor_dict["joint_0"],
-            save_path=exp_folder_path,
-        )
-
-    # if hasattr(policy, "com_pos_list"):
-    #     plot_len = min(len(policy.com_pos_list), len(time_obs_list))
-    #     plot_line_graph(
-    #         np.array(policy.com_pos_list).T[:2, :plot_len],
-    #         time_obs_list[:plot_len],
-    #         legend_labels=["COM X", "COM Y"],
-    #         title="Center of Mass Over Time",
-    #         x_label="Time (s)",
-    #         y_label="COM Position (m)",
-    #         save_config=True,
-    #         save_path=exp_folder_path,
-    #         file_name="com_tracking",
-    #     )()
-
-    plot_line_graph(
-        tor_obs_total_list,
-        time_obs_list,
-        legend_labels=["Torque (Nm) or Current (mA)"],
-        title="Total Torque or Current  Over Time",
-        x_label="Time (s)",
-        y_label="Torque (Nm) or Current (mA)",
-        save_config=True,
-        save_path=exp_folder_path,
-        file_name="total_tor_tracking",
-    )()
-    plot_line_graph(
-        np.array(ang_vel_obs_list).T,
-        time_obs_list,
-        legend_labels=["Roll (X)", "Pitch (Y)", "Yaw (Z)"],
-        title="Angular Velocities Over Time",
-        x_label="Time (s)",
-        y_label="Angular Velocity (rad/s)",
-        save_config=True,
-        save_path=exp_folder_path,
-        file_name="ang_vel_tracking",
-    )()
-    plot_line_graph(
-        np.array(euler_obs_list).T,
-        time_obs_list,
-        legend_labels=["Roll (X)", "Pitch (Y)", "Yaw (Z)"],
-        title="Euler Angles Over Time",
-        x_label="Time (s)",
-        y_label="Euler Angles (rad)",
-        save_config=True,
-        save_path=exp_folder_path,
-        file_name="euler_tracking",
-    )()
-    # if len(control_inputs_dict) > 0:
-    #     plot_path_tracking(
-    #         time_obs_list,
-    #         pos_obs_list,
-    #         euler_obs_list,
-    #         control_inputs_dict,
-    #         save_path=exp_folder_path,
-    #     )
-    plot_joint_tracking(
-        time_seq_dict,
-        time_seq_ref_dict,
-        motor_pos_dict,
-        action_dict,
-        robot.joint_cfg_limits,
-        save_path=exp_folder_path,
-    )
-    plot_joint_tracking_single(
-        time_seq_dict,
-        motor_tor_dict,
-        save_path=exp_folder_path,
-        y_label="Torque (Nm) or Current (mA)",
-        file_name="motor_tor_tracking",
-    )
-    plot_joint_tracking_single(
-        time_seq_dict,
-        motor_vel_dict,
-        save_path=exp_folder_path,
-    )
-    plot_joint_tracking_frequency(
-        time_seq_dict,
-        time_seq_ref_dict,
-        motor_pos_dict,
-        action_dict,
-        save_path=exp_folder_path,
-    )
-
-
 @dataclass(init=True)
 class _StepTimePnt:
     step_start:float = float('inf')
@@ -295,6 +99,360 @@ class _StepRecord:
     obs: Obs = None
     motor_act: npt.NDArray[np.float32] = None
     ctrl_input: Dict[str, float] = None  # e.g., human operation.
+
+
+def _plot_loop_time_helper( step_record_list: List[_StepRecord], plot_dir: Path):
+    # loop_time_dict: Dict[str, List[float]] = {
+    #     "obs_time": [],
+    #     "inference": [],
+    #     "set_action": [],
+    #     "sim_step": [],
+    #     "log_time": [],
+    #     # "total_time": [],
+    # }
+    loop_time_dict: DefaultDict[str, List[float]] = defaultdict(list)
+    # for i, loop_time in enumerate(loop_time_list):
+    for _r in step_record_list:
+        # (
+        #     step_start,
+        #     obs_time,
+        #     inference_time,
+        #     set_action_time,
+        #     sim_step_time,
+        #     step_end,
+        # ) = _r.time_pnt
+        t = _r.time_pnt
+        loop_time_dict["obs_time"].append((t.recv_obs - t.step_start) * 1000)
+        loop_time_dict["inference"].append((t.inference - t.recv_obs) * 1000)
+        loop_time_dict["set_action"].append((t.set_action - t.inference) * 1000)
+        loop_time_dict["sim_step"].append((t.sim_step - t.set_action) * 1000)
+        loop_time_dict["log_time"].append((t.step_end - t.sim_step) * 1000)
+        # loop_time_dict["total_time"].append((step_end - step_start) * 1000)
+
+    plot_loop_time(loop_time_dict=loop_time_dict, save_path=plot_dir.resolve().__str__())
+    del loop_time_dict
+
+
+def _plot_obs_helper(*, robot: Robot,
+                     time_obs_list: List[float],
+                     ang_vel_obs_list: List[npt.NDArray[np.float32]],
+                     euler_obs_list: List[npt.NDArray[np.float32]],
+                     tor_obs_total_list: List[float],
+                     motor_vel_dict: Mapping[str, List[float]],
+                     motor_tor_dict: Mapping[str, List[float]],
+                     plot_dir:Path
+                     ):
+    if "sysID" in robot.name:
+        plot_motor_vel_tor_mapping(
+            motor_vel_dict["joint_0"],
+            motor_tor_dict["joint_0"],
+            save_path=plot_dir.resolve().__str__(),
+        )
+
+    plot_line_graph(
+        tor_obs_total_list,
+        time_obs_list,
+        legend_labels=["Torque (Nm) or Current (mA)"],
+        title="Total Torque or Current  Over Time",
+        x_label="Time (s)",
+        y_label="Torque (Nm) or Current (mA)",
+        save_config=True,
+        save_path=plot_dir.resolve().__str__(),
+        file_name="total_tor_tracking",
+    )()
+    plot_line_graph(
+        np.array(ang_vel_obs_list).T,
+        time_obs_list,
+        legend_labels=["Roll (X)", "Pitch (Y)", "Yaw (Z)"],
+        title="Angular Velocities Over Time",
+        x_label="Time (s)",
+        y_label="Angular Velocity (rad/s)",
+        save_config=True,
+        save_path=plot_dir.resolve().__str__(),
+        file_name="ang_vel_tracking",
+    )()
+    plot_line_graph(
+        np.array(euler_obs_list).T,
+        time_obs_list,
+        legend_labels=["Roll (X)", "Pitch (Y)", "Yaw (Z)"],
+        title="Euler Angles Over Time",
+        x_label="Time (s)",
+        y_label="Euler Angles (rad)",
+        save_config=True,
+        save_path=plot_dir.resolve().__str__(),
+        file_name="euler_tracking",
+    )()
+
+    # if len(control_inputs_dict) > 0:
+    #     plot_path_tracking(
+    #         time_obs_list,
+    #         pos_obs_list,
+    #         euler_obs_list,
+    #         control_inputs_dict,
+    #         save_path=exp_folder.resolve().__str__(),
+    #     )
+
+
+def _plot_action_helper(*, robot:Robot,
+                        time_seq_dict: Dict[str, List[float]],
+                        time_seq_ref_dict: Dict[str, List[float]],
+                        motor_pos_dict: Dict[str, List[float]],
+                        motor_vel_dict: Dict[str, List[float]],
+                        motor_tor_dict: Dict[str, List[float]],
+                        action_dict: Dict[str, List[float]],
+                        plot_dir: Path
+                        ):
+    plot_joint_tracking(
+        time_seq_dict,
+        time_seq_ref_dict,
+        motor_pos_dict,
+        action_dict,
+        robot.joint_cfg_limits,
+        save_path=plot_dir.resolve().__str__(),
+    )
+    plot_joint_tracking_single(
+        time_seq_dict,
+        motor_tor_dict,
+        save_path=plot_dir.resolve().__str__(),
+        y_label="Torque (Nm) or Current (mA)",
+        file_name="motor_tor_tracking",
+    )
+    plot_joint_tracking_single(
+        time_seq_dict,
+        motor_vel_dict,
+        save_path=plot_dir.resolve().__str__(),
+    )
+    plot_joint_tracking_frequency(
+        time_seq_dict,
+        time_seq_ref_dict,
+        motor_pos_dict,
+        action_dict,
+        save_path=plot_dir.resolve().__str__(),
+    )
+
+
+def _plot_run_log(
+    robot: Robot,
+    step_record_list: List[_StepRecord],
+    # loop_time_list: List[List[float]],
+    # obs_list: List[Obs],
+    # control_inputs_list: List[Mapping[str, float]],
+    # motor_angles_list: List[Mapping[str, float]],
+    plot_dir: Path
+):
+    """Generates and saves various plots to visualize the performance and behavior of a robot during an experiment.
+
+    Args:
+        robot (Robot): The robot object containing information about the robot's configuration and state.
+        step_record_list:
+        # loop_time_list (List[List[float]]): A list of lists containing timing information for each loop iteration.
+        # obs_list (List[Obs]): A list of observations recorded during the experiment.
+        # control_inputs_list (List[Mapping[str, float]]): A list of dictionaries containing control inputs applied to the robot.
+        # motor_angles_list (List[Mapping[str, float]]): A list of dictionaries containing motor angles recorded during the experiment.
+        plot_dir (Path): The path to the folder where the plots will be saved.
+    """
+    plt.switch_backend("Agg")
+
+    if not plot_dir.exists():
+        plot_dir.mkdir()
+
+    _plot_loop_time_helper(step_record_list, plot_dir)
+
+    time_obs_list: List[float] = []
+    # lin_vel_obs_list: List[npt.NDArray[np.float32]] = []
+    ang_vel_obs_list: List[npt.NDArray[np.float32]] = []
+    pos_obs_list: List[npt.NDArray[np.float32]] = []
+    euler_obs_list: List[npt.NDArray[np.float32]] = []
+    tor_obs_total_list: List[float] = []
+    # time_seq_dict: Mapping[str, List[float]] = {}
+    # time_seq_ref_dict: Mapping[str, List[float]] = {}
+    # motor_pos_dict: Mapping[str, List[float]] = {}
+    # motor_vel_dict: Mapping[str, List[float]] = {}
+    # motor_tor_dict: Mapping[str, List[float]] = {}
+    time_seq_dict: DefaultDict[str, List[float]] = defaultdict(list)
+    time_seq_ref_dict: DefaultDict[str, List[float]] = defaultdict(list)
+    motor_pos_dict: DefaultDict[str, List[float]] = defaultdict(list)
+    motor_vel_dict: DefaultDict[str, List[float]] = defaultdict(list)
+    motor_tor_dict: DefaultDict[str, List[float]] = defaultdict(list)
+
+    # for i, obs in enumerate(obs_list):
+    for _r in step_record_list:
+        obs = _r.obs
+        time_obs_list.append(obs.time)
+        # lin_vel_obs_list.append(obs.lin_vel)
+        # IMU state.
+        ang_vel_obs_list.append(obs.ang_vel)
+        pos_obs_list.append(obs.pos)
+        euler_obs_list.append(obs.euler)
+        tor_obs_total_list.append(sum(obs.motor_tor))
+
+        # motor state.
+        for _x, _n in enumerate(robot.motor_name_ordering):
+            # if _n not in time_seq_dict:
+            #     time_seq_ref_dict[_n] = []
+            #     time_seq_dict[_n] = []
+            #     motor_pos_dict[_n] = []
+            #     motor_vel_dict[_n] = []
+            #     motor_tor_dict[_n] = []
+
+            # Assume the state fetching is instantaneous
+            time_seq_dict[_n].append(obs.time)
+            time_seq_ref_dict[_n].append(obs.time)
+            # time_seq_ref_dict[_n].append(i * policy.control_dt)
+            motor_pos_dict[_n].append(obs.motor_pos[_x])
+            motor_vel_dict[_n].append(obs.motor_vel[_x])
+            motor_tor_dict[_n].append(obs.motor_tor[_x])
+
+    # action_dict: Dict[str, List[float]] = {}
+    action_dict: DefaultDict[str, List[float]] = defaultdict(list)
+    # joint_pos_ref_dict: Dict[str, List[float]] = {}
+    active_joint_pos_ref_dict: DefaultDict[str, List[float]] = defaultdict(list)
+    # for motor_angles in motor_angles_list:
+    for _r in step_record_list:
+        motor_act_arr: npt.NDArray[np.float32] = _r.motor_act
+        named_motor_act: OrderedDict[str, float] = OrderedDict()
+        # for motor_name, motor_angle in motor_angles.items():
+        #     if motor_name not in action_dict:
+        #         action_dict[motor_name] = []
+        #     action_dict[motor_name].append(motor_angle)
+
+        for _x, _n in enumerate(robot.motor_name_ordering):
+            action_dict[_n].append(motor_act_arr[_x])
+            named_motor_act[_n] = motor_act_arr[_x]
+
+        for _n, _a in robot.motor_to_active_joint_angles(named_motor_act).items():
+            active_joint_pos_ref_dict[_n].append(_a)
+
+        # joint_angle_ref = robot.motor_to_active_joint_angles(motor_angles)
+        # for joint_name, joint_angle in joint_angle_ref.items():
+        #     if joint_name not in joint_pos_ref_dict:
+        #         joint_pos_ref_dict[joint_name] = []
+        #     joint_pos_ref_dict[joint_name].append(joint_angle)
+
+    # control_inputs_dict: Dict[str, List[float]] = {}
+    ctrl_inputs_dict: DefaultDict[str, List[float]] = defaultdict(list)
+    # for control_inputs in control_inputs_list:
+    for _r in step_record_list:
+        # for control_name, control_input in control_inputs.items():
+        #     if control_name not in control_inputs_dict:
+        #         control_inputs_dict[control_name] = []
+        #     control_inputs_dict[control_name].append(control_input)
+        for _n, _c in _r.ctrl_input.items():
+            ctrl_inputs_dict[_n].append(_c)
+
+
+    _plot_obs_helper(robot=robot,
+                     time_obs_list=time_obs_list,
+                     ang_vel_obs_list=ang_vel_obs_list,
+                     euler_obs_list=euler_obs_list,
+                     tor_obs_total_list=tor_obs_total_list,
+                     motor_vel_dict=motor_vel_dict,
+                     motor_tor_dict=motor_tor_dict,
+                     plot_dir=plot_dir)
+
+    _plot_action_helper(robot=robot,
+                        time_seq_dict=time_seq_dict,
+                        time_seq_ref_dict=time_seq_ref_dict,
+                        motor_pos_dict=motor_pos_dict,
+                        motor_vel_dict=motor_vel_dict,
+                        motor_tor_dict=motor_tor_dict,
+                        action_dict=action_dict,
+                        plot_dir=plot_dir)
+
+    # plt.switch_backend("Agg")
+    #
+    # plot_loop_time(loop_time_dict, exp_folder_path)
+
+    # if "sysID" in robot.name:
+    #     plot_motor_vel_tor_mapping(
+    #         motor_vel_dict["joint_0"],
+    #         motor_tor_dict["joint_0"],
+    #         save_path=exp_folder.resolve().__str__(),
+    #     )
+
+    # if hasattr(policy, "com_pos_list"):
+    #     plot_len = min(len(policy.com_pos_list), len(time_obs_list))
+    #     plot_line_graph(
+    #         np.array(policy.com_pos_list).T[:2, :plot_len],
+    #         time_obs_list[:plot_len],
+    #         legend_labels=["COM X", "COM Y"],
+    #         title="Center of Mass Over Time",
+    #         x_label="Time (s)",
+    #         y_label="COM Position (m)",
+    #         save_config=True,
+    #         save_path=exp_folder,
+    #         file_name="com_tracking",
+    #     )()
+
+    # plot_line_graph(
+    #     tor_obs_total_list,
+    #     time_obs_list,
+    #     legend_labels=["Torque (Nm) or Current (mA)"],
+    #     title="Total Torque or Current  Over Time",
+    #     x_label="Time (s)",
+    #     y_label="Torque (Nm) or Current (mA)",
+    #     save_config=True,
+    #     save_path=exp_folder.resolve().__str__(),
+    #     file_name="total_tor_tracking",
+    # )()
+    # plot_line_graph(
+    #     np.array(ang_vel_obs_list).T,
+    #     time_obs_list,
+    #     legend_labels=["Roll (X)", "Pitch (Y)", "Yaw (Z)"],
+    #     title="Angular Velocities Over Time",
+    #     x_label="Time (s)",
+    #     y_label="Angular Velocity (rad/s)",
+    #     save_config=True,
+    #     save_path=exp_folder.resolve().__str__(),
+    #     file_name="ang_vel_tracking",
+    # )()
+    # plot_line_graph(
+    #     np.array(euler_obs_list).T,
+    #     time_obs_list,
+    #     legend_labels=["Roll (X)", "Pitch (Y)", "Yaw (Z)"],
+    #     title="Euler Angles Over Time",
+    #     x_label="Time (s)",
+    #     y_label="Euler Angles (rad)",
+    #     save_config=True,
+    #     save_path=exp_folder.resolve().__str__(),
+    #     file_name="euler_tracking",
+    # )()
+    # # if len(control_inputs_dict) > 0:
+    # #     plot_path_tracking(
+    # #         time_obs_list,
+    # #         pos_obs_list,
+    # #         euler_obs_list,
+    # #         control_inputs_dict,
+    # #         save_path=exp_folder.resolve().__str__(),
+    # #     )
+    # plot_joint_tracking(
+    #     time_seq_dict,
+    #     time_seq_ref_dict,
+    #     motor_pos_dict,
+    #     action_dict,
+    #     robot.joint_cfg_limits,
+    #     save_path=exp_folder.resolve().__str__(),
+    # )
+    # plot_joint_tracking_single(
+    #     time_seq_dict,
+    #     motor_tor_dict,
+    #     save_path=exp_folder.resolve().__str__(),
+    #     y_label="Torque (Nm) or Current (mA)",
+    #     file_name="motor_tor_tracking",
+    # )
+    # plot_joint_tracking_single(
+    #     time_seq_dict,
+    #     motor_vel_dict,
+    #     save_path=exp_folder.resolve().__str__(),
+    # )
+    # plot_joint_tracking_frequency(
+    #     time_seq_dict,
+    #     time_seq_ref_dict,
+    #     motor_pos_dict,
+    #     action_dict,
+    #     save_path=exp_folder.resolve().__str__(),
+    # )
+
 
 
 @dataclass(init=True)
@@ -375,16 +533,21 @@ def _toggle_motor(policy:BasePolicy, env:BaseEnv):
         policy.toggle_motor = False
 
 
-def _save_run_log(step_record_list: List[_StepRecord], exp_folder: Path):
-    log_dir = exp_folder / 'step_record'
-    log_dir.mkdir()
+def _save_run_log(step_record_list: List[_StepRecord], log_dir: Path):
+    # log_dir = exp_folder / 'step_record'
+    if not log_dir.exists():
+        log_dir.mkdir()
+
     with open(log_dir / 'step_record_list.pkl', 'wb') as _f:
         pickle.dump(step_record_list, _f)
 
 
-def _save_policy_log(policy:BasePolicy, robot:Robot, exp_folder: Path):
-    log_dir = exp_folder / policy.name
-    log_dir.mkdir()
+def _save_policy_log(*, policy:BasePolicy, robot:Robot,
+                     log_dir: Path,
+                     step_record_list: List[_StepRecord]):
+    # log_dir = exp_folder / policy.name
+    if not log_dir.exists():
+        log_dir.mkdir()
 
     if isinstance(policy, SysIDPolicy):
         with open(log_dir/'episode_motor_kp.pkl', "wb") as _f:
@@ -405,36 +568,56 @@ def _save_policy_log(policy:BasePolicy, robot:Robot, exp_folder: Path):
             pickle.dump(policy.keyframes, _f)
 
     if isinstance(policy, CalibratePolicy):
-        motor_config_path: Path = robot.root_path / 'config_motors.json'
-        if motor_config_path.exists():
-            motor_names = robot.get_joint_config_attrs("is_passive", False)
-            motor_pos_init = np.array(robot.get_joint_config_attrs("is_passive", False, "init_pos"),
-                                      dtype=np.float32)
-            motor_pos_delta = (
-                np.array(list(motor_angles_list[-1].values()), dtype=np.float32)
-                - policy.default_motor_pos
+        # TODO: after run_policy, call add_configs.py to update config_motors.json contents into config.json.
+        config_file: Path = robot.root_path / 'config_motors.json'
+        if config_file.exists():
+            # motor_names = robot.get_joint_config_attrs("is_passive", False)
+            # motor_pos_init = np.array(robot.get_joint_config_attrs("is_passive", False, "init_pos"),
+            #                           dtype=np.float32)
+
+            assert len(step_record_list[-1].motor_act ) == len(policy.default_motor_pos)
+
+            # last action of CalibratePolicy is the action to make robot `Stand` stable and nice, and
+            # has slight bias against `default_motor_pos` which represent `Stand` either. The bias comes
+            # from motor backlash. and we count this slightly `bias` into config_motor.json `init_pos`.
+            # NOTE: in CalibratePolicy, Integration controller is used, so the step_record_list[-1].motor_act
+            # include the `bias`.
+            motor_pos_bias = (
+                # np.array(list(motor_angles_list[-1].values()), dtype=np.float32)
+                step_record_list[-1].motor_act - policy.default_motor_pos
             )
-            motor_pos_delta[
-                np.logical_and(motor_pos_delta > -0.005, motor_pos_delta < 0.005)
-            ] = 0.0
+            motor_pos_bias = np.where(  abs(motor_pos_bias) < 0.005,
+                                        0.0,
+                                        motor_pos_bias
+                                        )
+            logger.info(f'after calibrate policy, motor_pos_bias:{motor_pos_bias:.3f}')
 
-            with open(motor_config_path, "r") as f:
-                motor_config = json.load(f)
+            # motor_pos_delta[
+            #     np.logical_and(motor_pos_delta > -0.005, motor_pos_delta < 0.005)
+            # ] = 0.0
 
-            for motor_name, init_pos in zip(
-                motor_names, motor_pos_init + motor_pos_delta
-            ):
-                motor_config[motor_name]["init_pos"] = float(init_pos)
+            with open(config_file, 'rt') as _f:
+                motor_config = json.load(_f)
 
-            with open(motor_config_path, "w") as f:
-                json.dump(motor_config, f, indent=4)
+            # for motor_name, init_pos in zip(
+            #     motor_names,  motor_pos_init + motor_pos_bias
+            # ):
+            for _x, _n in enumerate(robot.motor_name_ordering):
+                # NOTE: can add a new key, or update existing key.
+                motor_config[_n]["init_pos"] = robot.init_motor_angles[_n] + motor_pos_bias[_x]
+
+            with open(config_file, 'wt') as _f:
+                json.dump(motor_config, _f, indent=4)
+
+            logger.info(f'updated config_motors.json:  {json.dumps(motor_config, sort_keys=True, indent=4)}')
+
         else:
-            raise FileNotFoundError(f"Could not find {motor_config_path}")
+            raise FileNotFoundError(f"Could not find {config_file.resolve()}")
 
     if isinstance(policy, PushCartPolicy):
         video_path = log_dir / 'visual_obs.mp4'
         fps = int(1 / np.diff(policy.grasp_policy.camera_time_list).mean())
-        log(f"visual_obs fps: {fps}", header=header_name)
+        logger.info(f"visual_obs fps: {fps}")
         video_clip = ImageSequenceClip(policy.grasp_policy.camera_frame_list, fps=fps)
         video_clip.write_videofile(video_path, codec="libx264", fps=fps)
 
@@ -455,12 +638,9 @@ def _save_policy_log(policy:BasePolicy, robot:Robot, exp_folder: Path):
 
             video_path = log_dir / f'{task_name}_visual_obs.mp4'
             fps = int(1 / np.diff(task_policy.camera_time_list).mean())
-            log(f"{task_name} visual_obs fps: {fps}", header=header_name)
+            logger.info(f"{task_name} visual_obs fps: {fps}")
             video_clip = ImageSequenceClip(task_policy.camera_frame_list, fps=fps)
             video_clip.write_videofile(video_path, codec="libx264", fps=fps)
-
-
-
 
 
 # @profile()
@@ -476,7 +656,7 @@ def run_policy(*,
         vis_type (str): The type of visualization to use ('view', 'render', etc.).
         plot (bool): Whether to plot the results after execution.
     """
-    header_name = snake2camel(env.env_name)
+    # header_name = snake2camel(env.env_name)
 
     # TODO: use multi-thread solution to record the following running data into log files.
     step_record_list: List[_StepRecord] = []
@@ -609,14 +789,14 @@ def run_policy(*,
             # TODO: save recording file every n steps n seconds. ... not at the end of while loop.....
             exp_name = f"{robot.name}_{policy.name}_{env.env_name}"
             time_str = timelib.strftime("%Y%m%d_%H%M%S")
-            exp_folder_path = Path('run_policy_log') / f'{exp_name}_{time_str}'
-            exp_folder_path.mkdir(parents=False, exist_ok=True)
-            # os.makedirs(exp_folder_path, exist_ok=True)
+            exp_folder = Path('run_policy_log') / f'{exp_name}_{time_str}'
+            exp_folder.mkdir(parents=False, exist_ok=True)
+            # os.makedirs(exp_folder, exist_ok=True)
 
             # TODO: save recording file every n steps n seconds. ... not at the end of while loop.....
             if vis_type == "render" and isinstance(env, MuJoCoSim):   #hasattr(env, "save_recording"):
                 # assert isinstance(env, MuJoCoSim)
-                env.save_recording(exp_folder_path, policy.control_dt, 2)
+                env.save_recording(exp_folder, policy.control_dt, 2)
 
             # Using context mgr to close env, not use close() standalone.
             # close() also set torque off for all connected motors.
@@ -635,26 +815,32 @@ def run_policy(*,
     #     "motor_angles_list": motor_angles_list,
     # }
 
-    _save_run_log(step_record_list, exp_folder_path)
-    _save_policy_log(policy, exp_folder_path)
+    _save_run_log(step_record_list, exp_folder / 'step_record')
+    _save_policy_log(policy=policy,robot=robot,
+                     log_dir=exp_folder / policy.name,
+                     step_record_list=step_record_list)
 
-    dump_profiling_data(exp_folder_path / 'profile_output.lprof')
-
+    dump_profiling_data(exp_folder / 'profile_output.lprof')
     if plot:
-        log("Visualizing...", header=header_name)
-        plot_results(
+        logger.info("Plot policy run logg->")
+        _plot_run_log(
             robot,
-            loop_time_record_list,
-            obs_list,
-            control_inputs_list,
-            motor_angles_list,
-            exp_folder_path,
+            step_record_list,
+            exp_folder / 'plot'
         )
+        # plot_results(
+        #     robot,
+        #     loop_time_record_list,
+        #     obs_list,
+        #     control_inputs_list,
+        #     motor_angles_list,
+        #     exp_folder,
+        # )
 
 
 @contextmanager
 def _build_env(args: argparse.Namespace, robot: Robot)->Generator[Optional[BaseEnv]]:
-    env: BaseEnv | None = None
+    # env: BaseEnv | None = None
 
     if args.env == "mujoco":
         env = MuJoCoSim(robot, vis_type=args.vis, fixed_base="fixed" in args.policy)
@@ -691,8 +877,7 @@ def _build_env(args: argparse.Namespace, robot: Robot)->Generator[Optional[BaseE
 
 
 def _build_policy(args:argparse.Namespace, robot:Robot, init_motor_pos:npt.NDArray[np.float32] )->BasePolicy:
-
-    policy: BasePolicy | None = None
+    # policy: BasePolicy | None = None
 
     # TODO: confusing.  we can separate them into two fields:  --policy xxx  --fixed true/false.
     # `fixed` meas robot with a fixed base , e.g. fixed by a bench clamp.
