@@ -1,6 +1,6 @@
 import json
 # import os
-from typing import Any, List, Mapping, Tuple, OrderedDict, Sequence
+from typing import Any, List, Mapping, Tuple, OrderedDict, Sequence, Dict
 from collections import OrderedDict as OrdDictCls
 from dataclasses import dataclass, field
 import numpy as np
@@ -397,7 +397,7 @@ class Robot:
         return name
 
     @staticmethod
-    def waist_fk(*, motor_pos: Sequence[float|npt.NDArray[np.float32]], offsets: Mapping[str, float]) \
+    def waist_fk(*, motor_pos: Dict[str, float|npt.NDArray[np.float32]], offsets: Mapping[str, float]) \
             -> Tuple[float|npt.NDArray[np.float32],float|npt.NDArray[np.float32]]:
         """Calculates the forward kinematics for the waist joint based on motor positions.
 
@@ -409,12 +409,16 @@ class Robot:
             List[float]: A list containing the calculated waist roll and yaw angles.
         """
         # offsets = self.config["general"]["offsets"]
-        waist_roll = offsets["waist_roll_coef"] * (-motor_pos[0] + motor_pos[1])
-        waist_yaw = offsets["waist_yaw_coef"] * (motor_pos[0] + motor_pos[1])
+        # waist_roll = offsets["waist_roll_coef"] * (-motor_pos[0] + motor_pos[1])
+        # waist_yaw = offsets["waist_yaw_coef"] * (motor_pos[0] + motor_pos[1])
+
+        waist_roll = offsets["waist_roll_coef"] * (-motor_pos['waist_act_1'] + motor_pos['waist_act_2'])
+        waist_yaw = offsets["waist_yaw_coef"] * (motor_pos['waist_act_1'] + motor_pos['waist_act_2'])
+
         return waist_roll, waist_yaw
 
     @staticmethod
-    def waist_ik(*, offsets: Mapping[str, float], waist_pos: Sequence[float|npt.NDArray[np.float32]]) \
+    def waist_ik(*, offsets: Mapping[str, float], waist_pos: Dict[str, float|npt.NDArray[np.float32]]) \
             -> Tuple[float|npt.NDArray[np.float32], float|npt.NDArray[np.float32]]:
         """Calculates the inverse kinematics for the waist actuators based on the desired waist position.
 
@@ -426,14 +430,19 @@ class Robot:
             List[float]: A list containing the calculated positions for the two waist actuators.
         """
         # offsets = self.config["general"]["offsets"]
-        roll = waist_pos[0] / offsets["waist_roll_coef"]
-        yaw = waist_pos[1] / offsets["waist_yaw_coef"]
+        # roll = waist_pos[0] / offsets["waist_roll_coef"]
+        # yaw = waist_pos[1] / offsets["waist_yaw_coef"]
+
+        roll = waist_pos['waist_roll'] / offsets["waist_roll_coef"]
+        yaw = waist_pos['waist_yaw'] / offsets["waist_yaw_coef"]
+
         waist_act_1 = (-roll + yaw) / 2.
         waist_act_2 = (roll + yaw) / 2.
         return waist_act_1, waist_act_2
 
     def motor_to_active_joint_angles(self, #joints_config: Mapping[str, Any],
-                                     motor_angles: OrderedDict[str, float|npt.NDArray[np.float32]]) -> OrderedDict[str, float]:
+                                     motor_angles: OrderedDict[str, float|npt.NDArray[np.float32]])\
+            -> OrderedDict[str, float|npt.NDArray[np.float32]]:
         """Converts motor angles to joint angles based on the robot's configuration.
 
         Args:
@@ -445,7 +454,9 @@ class Robot:
         # joint_angels: float: single angle; npt.NDArray(np.float32): a sequence of angels.
         joint_angles: OrderedDict[str, float|npt.NDArray[np.float32]] = OrdDictCls()
 
-        waist_act_pos: List[float|npt.NDArray[np.float32]] = []
+        # waist_act_pos: List[float|npt.NDArray[np.float32]] = []
+        waist_act_pos: Dict[str, float|npt.NDArray[np.float32]] = {}
+
         # TODO: no use of ank ?
         left_ank_act_pos: List[float|npt.NDArray[np.float32]] = []
         right_ank_act_pos: List[float|npt.NDArray[np.float32]] = []
@@ -464,16 +475,21 @@ class Robot:
                 joint_angles[joint_name] = (
                         -motor_pos * self.config[motor_name]["gear_ratio"]
                 )
+
             elif transmission == "rack_and_pinion":
                 joint_pinion_name = motor_name.replace("_rack", "_pinion")
                 joint_angles[joint_pinion_name] = (
                         -motor_pos * self.config[motor_name]["gear_ratio"]
                 )
+
             elif transmission == "waist":   # motors: `waist_act_1` and `waist_act_2`
                 # Placeholder to ensure the correct order
                 joint_angles["waist_roll"] = 0.0
                 joint_angles["waist_yaw"] = 0.0
-                waist_act_pos.append(motor_pos)
+                # waist_act_pos.append(motor_pos)
+                # guarantee the correct value of `waist_act_1` and `waist_act_2`.
+                waist_act_pos[motor_name] = motor_pos
+
             elif transmission == "linkage":
                 joint_angles[motor_name.replace("_act", "")] = motor_pos
 
@@ -507,7 +523,9 @@ class Robot:
             OrderedDict[str, float]: A dictionary mapping motor names to their calculated angles.
         """
         motor_angles: OrderedDict[str, float|npt.NDArray[np.float32]] = OrdDictCls()
-        waist_pos: List[float|npt.NDArray[np.float32]] = []
+
+        # waist_pos: List[float|npt.NDArray[np.float32]] = []
+        waist_pos: Dict[str, float|npt.NDArray[np.float32]] = {}
 
         # TODO: no use of ank ?
         left_ankle_pos: List[float|npt.NDArray[np.float32]] = []
@@ -530,7 +548,9 @@ class Robot:
                 # Placeholder to ensure the correct order
                 motor_angles["waist_act_1"] = 0.0
                 motor_angles["waist_act_2"] = 0.0
-                waist_pos.append(joint_pos)
+                # waist_pos.append(joint_pos)
+                waist_pos[joint_name] = joint_pos
+
             elif transmission == "linkage":
                 motor_angles[joint_name + "_act"] = joint_pos
             elif transmission == "ankle":

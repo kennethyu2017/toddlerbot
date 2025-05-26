@@ -19,6 +19,7 @@ import optuna
 # from toddlerbot.sim.robot import Robot
 from ..sim import *
 from ..utils import config_logging
+from ..policies import RUN_POLICY_LOG_FOLDER_FMT, RUN_STEP_RECORD_PICKLE_FILE, RUN_EPISODE_MOTOR_KP_PICKLE_FILE, StepRecord
 
 # from toddlerbot.utils.misc_utils import log
 
@@ -35,12 +36,13 @@ from ._module_logger import logger
 # logger = _get_library_root_logger()
 
 
-def load_datasets(robot: Robot, data_path: str):
+def load_dataset(robot: Robot, data_file: Path)\
+        ->Tuple[Dict[str, List[npt.NDArray[np.float32]]],Dict[str, List[npt.NDArray[np.float32]]],Dict[str, List[float]]]:
     """Loads and processes datasets from a specified path for a given robot, extracting observation positions, actions, and motor gains.
 
     Args:
         robot (Robot): The robot instance containing motor and joint configurations.
-        data_path (str): The directory path where the dataset files are located.
+        data_file (str): The directory path where the dataset files are located.
 
     Returns:
         Tuple[Dict[str, List[npt.NDArray[np.float32]]], Dict[str, List[npt.NDArray[np.float32]]], Dict[str, List[float]]]:
@@ -54,19 +56,21 @@ def load_datasets(robot: Robot, data_path: str):
     """
 
     # Use glob to find all pickle files matching the pattern
-    pickle_file_path = os.path.join(data_path, "log_data.pkl")
-    if not os.path.exists(pickle_file_path):
-        raise ValueError("No data files found")
+    # pickle_file: Path = data_path /"log_data.pkl"
+    # if not pickle_file.exists():
+    #     raise ValueError(f"No pickle data file found: {pickle_file.resolve()} ")
 
-    with open(pickle_file_path, "rb") as f:
-        data_dict = pickle.load(f)
+    with open(data_file, "rb") as _f:
+        # List[StepRecord]
+        data_dict = pickle.load(_f)
 
-    obs_list: List[Obs] = data_dict["obs_list"]
-    motor_angles_list: List[Dict[str, float]] = data_dict["motor_angles_list"]
 
-    obs_pos_dict: Dict[str, List[npt.NDArray[np.float32]]] = {}
-    action_dict: Dict[str, List[npt.NDArray[np.float32]]] = {}
-    kp_dict: Dict[str, List[float]] = {}
+    # obs_list: List[Obs] = data_dict["obs_list"]
+    # motor_angles_list: List[Dict[str, float]] = data_dict["motor_angles_list"]
+    #
+    # obs_pos_dict: Dict[str, List[npt.NDArray[np.float32]]] = {}
+    # action_dict: Dict[str, List[npt.NDArray[np.float32]]] = {}
+    # kp_dict: Dict[str, List[float]] = {}
 
     def set_obs_and_action(
         joint_name: str, motor_kps: Dict[str, float], idx_range: slice
@@ -104,6 +108,8 @@ def load_datasets(robot: Robot, data_path: str):
         joint_names_list: List[List[str]] = []
         for d in list(ckpt_dict.values()):
             motor_kps_list.append(d)
+
+            TODO: joint name is motor name actually????
             joint_names_list.append(list(d.keys()))
 
         obs_time = [obs.time for obs in obs_list]
@@ -342,10 +348,8 @@ def optimize_parameters(
         callbacks=[partial(early_stop_check, early_stopping_rounds=early_stop_rounds)],
     )
 
-    log(
-        f"Best parameters: {study.best_params}; best value: {study.best_value}",
-        header="SysID",
-        level="info",
+    logger.info(
+        f"Best parameters: {study.best_params}; best value: {study.best_value}"
     )
 
     sim.close()
@@ -530,10 +534,8 @@ def evaluate(
 
         error = np.sqrt(np.mean((joint_pos_real - joint_pos_sim) ** 2))
 
-        log(
-            f"{joint_name} root mean squared error: {error}",
-            header="SysID",
-            level="info",
+        logger.info(
+            f"{joint_name} root mean squared error: {error}"
         )
 
         time_seq_ref_dict[joint_name] = list(
@@ -609,7 +611,7 @@ def evaluate(
     )
 
 
-def _main():
+def _main(args: argparse.Namespace):
     """Executes the SysID optimization process for a specified robot and simulator.
 
     This function parses command-line arguments to configure the optimization process,
@@ -621,26 +623,28 @@ def _main():
         ValueError: If the specified experiment folder path does not exist.
     """
 
-    # args = parser.parse_args()
+    # data_path = Path("results") / f'{args.robot}_{args.policy}_real_world_{args.time_str} '
+    data_folder:Path = Path( RUN_POLICY_LOG_FOLDER_FMT.format(robot_name=args.robot,
+                                                      policy_name=args.policy,
+                                                      env_name='real_world',
+                                                      cur_time=args.time_str))
+    data_file:Path = data_folder / RUN_STEP_RECORD_PICKLE_FILE
 
-    data_path = os.path.join(
-        "results", f"{args.robot}_{args.policy}_real_world_{args.time_str}"
-    )
-    if not os.path.exists(data_path):
-        raise ValueError("Invalid experiment folder path")
+    if not data_file.exists():
+        raise ValueError(f"Invalid data folder path:{data_file.resolve()}")
 
     robot = Robot(args.robot)
 
-    exp_name = f"{robot.name}_sysID_{args.sim}_optim"
-    time_str = time.strftime("%Y%m%d_%H%M%S")
-    exp_folder_path = f"results/{exp_name}_{time_str}"
+    exp_name = f'{robot.name}_sysID_{args.sim}_optim'
+    time_str = time.strftime('%Y%m%d_%H%M%S')
+    exp_folder = Path(f'run_sysID/{exp_name}_{time_str}')
 
-    os.makedirs(exp_folder_path, exist_ok=True)
+    exp_folder.mkdir(exist_ok=True)
 
-    with open(os.path.join(exp_folder_path, "opt_config.json"), "w") as f:
-        json.dump(vars(args), f, indent=4)
+    with open( exp_folder/'opt_config.json', 'wt') as _f:
+        json.dump(vars(args), _f, indent=4)
 
-    obs_pos_dict, action_dict, kp_dict = load_datasets(robot, data_path)
+    obs_pos_dict, action_dict, kp_dict = load_dataset(robot, data_file)
 
     ###### Optimize the hyperparameters ######
     # optimize_parameters(
@@ -673,7 +677,6 @@ def _main():
         opt_values_dict,
         exp_folder_path,
     )
-
 
 def _args_parsing() -> argparse.Namespace:
 
@@ -713,6 +716,7 @@ def _args_parsing() -> argparse.Namespace:
         type=str,
         default="",
         required=True,
+        dest='time_str',
         help="The name of the run.",
     )
 
@@ -727,7 +731,7 @@ if __name__ == "__main__":
                    root_date_fmt='%Y-%m-%d %H:%M:%S',
                    # log_file='/tmp/toddler/imitate_episode.log',
                    log_file=None,
-                   module_logger_config={'policies': logging.INFO,
+                   module_logger_config={'tools': logging.INFO,
                                          'main': logging.INFO})
     # use root logger for __main__.
     logger = logging.getLogger('root')
