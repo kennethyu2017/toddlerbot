@@ -19,15 +19,17 @@ from .mjx_policy import MJXPolicy
 from .push_cart import PushCartPolicy
 from .record import RecordPolicy
 from .replay import ReplayPolicy
-from .sysID import SysIDPolicy
+from .sysID import SysIDPolicy,EpisodeInfo
 from .teleop_follower_pd import TeleopFollowerPDPolicy
 from .teleop_joystick import TeleopJoystickPolicy
 from .teleop_leader import TeleopLeaderPolicy
-from .run_policy import RUN_POLICY_LOG_FOLDER_FMT, RUN_STEP_RECORD_PICKLE_FILE, RUN_EPISODE_MOTOR_KP_PICKLE_FILE, StepRecord
+from .run_policy import (RUN_POLICY_LOG_FOLDER_FMT, RUN_STEP_RECORD_PICKLE_FILE,
+                         RUN_EPISODE_MOTOR_KP_PICKLE_FILE, StepRecord)
 
 __all__ = ['BasePolicy', 'get_policy_class', 'get_policy_names','BalancePDPolicy', 'CalibratePolicy', 'DPPolicy', 'MJXPolicy', 'PushCartPolicy',
             'RecordPolicy','ReplayPolicy', 'SysIDPolicy', 'TeleopFollowerPDPolicy', 'TeleopJoystickPolicy', 'TeleopLeaderPolicy',
-           'RUN_POLICY_LOG_FOLDER_FMT','RUN_STEP_RECORD_PICKLE_FILE', 'RUN_EPISODE_MOTOR_KP_PICKLE_FILE', 'StepRecord'
+           'RUN_POLICY_LOG_FOLDER_FMT','RUN_STEP_RECORD_PICKLE_FILE', 'RUN_EPISODE_MOTOR_KP_PICKLE_FILE', 'StepRecord',
+           'EpisodeInfo'
            ]
 
 # Global registry to store policy names and their corresponding classes

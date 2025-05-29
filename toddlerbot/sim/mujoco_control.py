@@ -5,6 +5,7 @@ from toddlerbot.utils.array_utils import ArrayType
 from toddlerbot.utils.array_utils import array_lib as np
 
 
+TODO:  read MotorController....
 class MotorController:
     """A class for controlling the Dynamixel motors of a robot."""
 

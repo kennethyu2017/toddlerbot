@@ -49,7 +49,7 @@ def _build_jnt_sysID_spec(robot_name: str)->Mapping[str, _SysIDSpecs]:
     if "sysID" in robot_name:  # for single motor sysID.
         kp_list: List[float]|None = None
         if "330" in robot_name:
-            # will be divided by 128 in Dynamixel actuator's internal Position PD controller.
+            # TODO: will be divided by 128 in Dynamixel actuator's internal Position PD controller.
             kp_list = list(range(900, 2400, 300))
         elif 'sm40bl' in robot_name.casefold():
             kp_list = list(range(7, 40, 5))  # defualt kp is `32` for SM40BL.
@@ -178,8 +178,9 @@ def _build_jnt_sysID_spec(robot_name: str)->Mapping[str, _SysIDSpecs]:
     return specs
 
 
-class _EpisodeKp(NamedTuple):
+class EpisodeInfo(NamedTuple):
     ep_end_time_pnt: float
+    sysID_jnt_name: List[str]
     motor_kp: Dict[str, float]
 
 
@@ -226,7 +227,8 @@ class SysIDPolicy(BasePolicy, policy_name="sysID"):
         # self.episode_motor_kp: OrderedDict[float, Dict[str, float]] = OrderedDict()
         # self.episode_motor_kp: List[ Tuple[float, Dict[str, float]] ] = []
         # must be ordered list.
-        self.episode_motor_kp: List[_EpisodeKp] = []
+
+        self.episode_info: List[EpisodeInfo] = []
 
         # NOTE: `act` is motor control action, e.g., target pos of motor.
         # In prep duration, make all motors back to zero.
@@ -237,52 +239,51 @@ class SysIDPolicy(BasePolicy, policy_name="sysID"):
                                            duration=self.prep_duration )
 
         # for whole sysID procedure.
-        self.sysID_time_seq: npt.NDArray[np.float32] = prep_time_seq
-        self.sysID_motor_act_seq: npt.NDArray[np.float32] = prep_motor_act_seq
+        self._sysID_time_seq: npt.NDArray[np.float32] = prep_time_seq
+        self._sysID_motor_act_seq: npt.NDArray[np.float32] = prep_motor_act_seq
 
         # time_list.append(prep_time)
         # action_list.append(prep_action)
 
         logger.info(f'{init_motor_pos=:}')
 
+        # NOTE: guarantee only one sysID_joint per one episode. but one sysID_joint has multiple
+        # episode with different kp/ampl.
         for _symm_jnt_name, _sysID_specs in jnt_sysID_specs.items():
             # joint_idx: List[int] | None = None
-            active_jnt_name : List[str] | None = None
-            active_jnt_dir: Mapping[str, int] | None = None
+            sysID_jnt_name : List[str] | None = None
+            sysID_jnt_dir: Mapping[str, int] | None = None
 
             # warm_up_pos = np.zeros_like(init_motor_pos)
-            # include warm_up sysID motors and other accompany active joints.
-            active_jnt_warm_up_angle: OrderedDict[str, float] = OrderedDict()
-
             # active_jnt_warm_up_angles = np.full(shape= len(robot.active_joint_name_ordering),
             #                            fill_value=np.inf,
             #                            dtype=np.float32)
 
             if _symm_jnt_name in robot.active_joint_name_ordering:
-                active_jnt_name = [_symm_jnt_name]
+                sysID_jnt_name = [_symm_jnt_name]
                 # joint_idx = [robot.active_joint_name_ordering.index(joint_names[0])]
-                active_jnt_dir = {active_jnt_name[0]:1}
+                sysID_jnt_dir = {sysID_jnt_name[0]:1}
             else:
-                active_jnt_name = [f"left_{_symm_jnt_name}", f"right_{_symm_jnt_name}"]
-                assert active_jnt_name[0] in self.robot.active_joint_name_ordering
-                assert active_jnt_name[1] in self.robot.active_joint_name_ordering
+                sysID_jnt_name = [f"left_{_symm_jnt_name}", f"right_{_symm_jnt_name}"]
+                assert sysID_jnt_name[0] in self.robot.active_joint_name_ordering
+                assert sysID_jnt_name[1] in self.robot.active_joint_name_ordering
 
                 # TODO: `direction` is weired...
-                active_jnt_dir = {active_jnt_name[0]: 1,
-                           active_jnt_name[1]: _sysID_specs.direction}
+                sysID_jnt_dir = {sysID_jnt_name[0]: 1,
+                           sysID_jnt_name[1]: _sysID_specs.direction}
                 # joint_idx = [
                 #     robot.active_joint_name_ordering.index(joint_names[0]),
                 #     robot.active_joint_name_ordering.index(joint_names[1]),
                 # ]
 
-            logger.info(f'{_symm_jnt_name=:}, {active_jnt_name=:}')
+            logger.info(f'{_symm_jnt_name=:}, {sysID_jnt_name=:}, {sysID_jnt_dir=:}')
 
             # --- calc warm up action:
             mean_angle = (
-                robot.joint_cfg_limits[active_jnt_name[0]][0]
-                + robot.joint_cfg_limits[active_jnt_name[0]][1]
+                robot.joint_cfg_limits[sysID_jnt_name[0]][0]
+                + robot.joint_cfg_limits[sysID_jnt_name[0]][1]
             ) / 2.
-            amplitude_max = robot.joint_cfg_limits[active_jnt_name[0]][1] - mean_angle
+            amplitude_max = robot.joint_cfg_limits[sysID_jnt_name[0]][1] - mean_angle
             logger.info(f'{mean_angle=:}, {amplitude_max=:}')
 
             # warm up sysID motor:
@@ -291,11 +292,18 @@ class SysIDPolicy(BasePolicy, policy_name="sysID"):
             # if len(jnt_name) > 1:
             #     active_jnt_warm_up_angle[jnt_name[1]] = mean * _sysID_specs.direction
 
+            # NOTE: assign valid values for warm_up sysID joints and other accompany active joints.
+            active_jnt_warm_up_angle: OrderedDict[str, float] = OrderedDict(
+                (_n, 0.) for _n in robot.active_joint_name_ordering
+            )
+
             # warm up sysID motor:
-            for _n, _d in active_jnt_dir:
+            for _n, _d in sysID_jnt_dir:
                 active_jnt_warm_up_angle[_n] = mean_angle * _d
 
             # warm up other accompany joints:
+            # NOTE: `active_jnt_warm_up_angle` include not only the sysID joints, but also the
+            # accompany warm-up joints.
             if _sysID_specs.accompany_jnt_warm_up_angles is not None:
                 for _n, _a in _sysID_specs.accompany_jnt_warm_up_angles.items():
                     # active_jnt_warm_up_angles[robot.active_joint_name_ordering.index(_n)] = _a
@@ -339,20 +347,20 @@ class SysIDPolicy(BasePolicy, policy_name="sysID"):
             #             amplitude=_ratio * amplitude_max,
             #             decay_rate=_sysID_specs.decay_rate)
             #
-            #         ep_time_seq, ep_act_seq =self.build_episode(time_curr=self.sysID_time_seq[-1],
-            #                            action_curr=self.sysID_motor_act_seq[-1],
+            #         ep_time_seq, ep_act_seq =self.build_episode(time_curr=self._sysID_time_seq[-1],
+            #                            action_curr=self._sysID_motor_act_seq[-1],
             #                            sysID_jnt_direction=active_jnt_dir,
             #                            active_jnt_warm_up_angle=active_jnt_warm_up_angle,
             #                            duration_warm_up=_WARM_UP_DURATION,
             #                            duration_reset=_RESET_DURATION,
             #                            chirp_signal_param=chirp_param)
             #
-            #         self.sysID_time_seq = np.concatenate([self.sysID_time_seq, ep_time_seq], axis=0, dtype=np.float32)
-            #         self.sysID_motor_act_seq = np.concatenate([self.sysID_motor_act_seq, prep_motor_act_seq], axis=0, dtype=np.float32)
+            #         self._sysID_time_seq = np.concatenate([self._sysID_time_seq, ep_time_seq], axis=0, dtype=np.float32)
+            #         self._sysID_motor_act_seq = np.concatenate([self._sysID_motor_act_seq, prep_motor_act_seq], axis=0, dtype=np.float32)
             #
             #         # use kp=0.0, no feedback?
-            #         # TODO: episode_motor_kp indexed by episode start time index in `sysID_time_seq`.
-            #         self.episode_motor_kp[self.sysID_time_seq[-1]] = dict(
+            #         # TODO: episode_motor_kp indexed by episode start time index in `_sysID_time_seq`.
+            #         self.episode_motor_kp[self._sysID_time_seq[-1]] = dict(
             #             zip(active_jnt_name, [0.] * len(active_jnt_name))
             #         )
             # else:
@@ -367,10 +375,11 @@ class SysIDPolicy(BasePolicy, policy_name="sysID"):
             # for _kp in kp_list:
             #     for _ratio in _sysID_specs.amplitude_ratio_list:
 
-            motor_name: List[str] = []
-            for _n in active_jnt_name:
-                motor_name.extend(self.robot.active_joint_to_motor_name[_n])
+            sysID_motor_name: List[str] = []
+            for _n in sysID_jnt_name:
+                sysID_motor_name.extend(self.robot.active_joint_to_motor_name[_n])
 
+            # NOTE: in one episode, can have 1~2 sysID_joints
             for _kp, _ratio in product(kp_list, _sysID_specs.amplitude_ratio_list):
                 chirp_param = dict(
                     duration=_SIGNAL_DURATION,
@@ -381,35 +390,38 @@ class SysIDPolicy(BasePolicy, policy_name="sysID"):
                     amplitude=_ratio * amplitude_max,
                     decay_rate=_sysID_specs.decay_rate)
 
-                ep_time_seq, ep_act_seq = self.build_motor_act_episode(time_curr=self.sysID_time_seq[-1],
-                                                                       action_curr=self.sysID_motor_act_seq[-1],
-                                                                       sysID_jnt_direction=active_jnt_dir,
-                                                                       active_jnt_warm_up_angle=active_jnt_warm_up_angle,
-                                                                       duration_warm_up=_WARM_UP_DURATION,
-                                                                       duration_reset=_RESET_DURATION,
-                                                                       chirp_signal_param=chirp_param)
+                # NOTE: `active_jnt_warm_up_angle` include not only the sysID joints, but also the
+                # accompany warm-up joints.
+                ep_time_seq, ep_act_seq = self._build_motor_act_episode(time_curr=self._sysID_time_seq[-1],
+                                                                        action_curr=self._sysID_motor_act_seq[-1],
+                                                                        sysID_jnt_direction=sysID_jnt_dir,
+                                                                        active_jnt_warm_up_angle=active_jnt_warm_up_angle,
+                                                                        duration_warm_up=_WARM_UP_DURATION,
+                                                                        duration_reset=_RESET_DURATION,
+                                                                        chirp_signal_param=chirp_param)
 
-                self.sysID_time_seq = np.concatenate([self.sysID_time_seq, ep_time_seq], axis=0,
-                                                     dtype=np.float32)
-                self.sysID_motor_act_seq = np.concatenate([self.sysID_motor_act_seq, prep_motor_act_seq],
-                                                          axis=0, dtype=np.float32)
+                self._sysID_time_seq = np.concatenate([self._sysID_time_seq, ep_time_seq], axis=0,
+                                                      dtype=np.float32)
+                self._sysID_motor_act_seq = np.concatenate([self._sysID_motor_act_seq, prep_motor_act_seq],
+                                                           axis=0, dtype=np.float32)
 
                 # motor_name: List[str] = []
                 # for _n in active_jnt_name:
                 #     motor_name.extend(self.robot.active_joint_to_motor_name[_n])
 
-                # self.episode_motor_kp[self.sysID_time_seq[-1]] = { _n: _kp for _n in motor_name}
+                # self.episode_motor_kp[self._sysID_time_seq[-1]] = { _n: _kp for _n in motor_name}
                 # must be ordered list.
-                self.episode_motor_kp.append(_EpisodeKp(ep_end_time_pnt=self.sysID_time_seq[-1],
-                                                        motor_kp={ _n: _kp for _n in motor_name}))
+                self.episode_info.append(EpisodeInfo(ep_end_time_pnt=self._sysID_time_seq[-1],
+                                                     sysID_jnt_name=sysID_jnt_name,
+                                                     motor_kp={ _n: _kp for _n in sysID_motor_name}))
 
-                logger.info(f'--->build episode, end time: {self.sysID_time_seq[-1]}, end act: {self.sysID_motor_act_seq[-1]}'
-                            f'\n active jnt name: {active_jnt_name}, active jnt direction: {active_jnt_dir}, '
+                logger.info(f'--->build episode, end time: {self._sysID_time_seq[-1]}, end act: {self._sysID_motor_act_seq[-1]}'
+                            f'\n active jnt name: {sysID_jnt_name}, active jnt direction: {sysID_jnt_dir}, '
                             f'\n active jnt warm_up angle: {active_jnt_warm_up_angle}, amplitude ratio: {_ratio}'
-                            f'\n sysID_time_seq shape: {self.sysID_time_seq.shape}, sysID_act_seq shape: {self.sysID_motor_act_seq.shape} '
-                            f'\n kp for motors: {self.episode_motor_kp[-1]} ')
+                            f'\n sysID_time_seq shape: {self._sysID_time_seq.shape}, sysID_act_seq shape: {self._sysID_motor_act_seq.shape} '
+                            f'\n kp for motors: {self.episode_info[-1]} ')
 
-                # self.episode_motor_kp[self.sysID_time_seq[-1]] = dict(
+                # self.episode_motor_kp[self._sysID_time_seq[-1]] = dict(
                 #     zip(active_jnt_name, [kp] * len(active_jnt_name))
                 # )
 
@@ -417,13 +429,14 @@ class SysIDPolicy(BasePolicy, policy_name="sysID"):
         # self.action_arr = np.concatenate(action_list)
 
         # override the value set in BasePolicy.__init__()
-        self.n_steps_total = len(self.sysID_time_seq)
+        self.n_steps_total = len(self._sysID_time_seq)
         logger.info(f'finish building all the episodes: {self.n_steps_total=:}'
-                    f'sysID end time: {self.sysID_time_seq[-1]}, end act: {self.sysID_motor_act_seq[-1]}')
+                    f'sysID end time: {self._sysID_time_seq[-1]}, end act: {self._sysID_motor_act_seq[-1]}')
 
 
     # one episode: act_seq from action_curr -> warm_up -> chirp_signal -> reset_to_warm_up.
-    def build_motor_act_episode(self, *, time_curr: float,
+    # NOTE: in one episode, can have 1~2 sysID_joints.
+    def _build_motor_act_episode(self, *, time_curr: float,
                                 action_curr: npt.NDArray[np.float32],
                                 # action_warm_up: npt.NDArray[np.float32],
                                 # NOTE: only for sysID active jnt, not include the accompany
@@ -439,7 +452,11 @@ class SysIDPolicy(BasePolicy, policy_name="sysID"):
                                 chirp_signal_param: Dict[str, float],
                                 # kp: float
                                 ) -> Tuple[npt.NDArray[np.float32], npt.NDArray[np.float32]]:
+
         assert action_curr.shape[0] == self.robot.nu
+
+        # at most 2 sysID joint per episode.
+        assert len(sysID_jnt_direction) <= 2
 
         # including from action_curr -> warm_up -> chirp_signal -> reset_to_warm_up
         # shape: ( time_seq_len, robot.nu )
@@ -447,13 +464,19 @@ class SysIDPolicy(BasePolicy, policy_name="sysID"):
         episode_act_seq: npt.NDArray[np.float32] | None = None
 
         # --- warm up:
-        # TODO: len(active_jnt_warm_up_angles) != robot.nu......
-        act_warm_up = np.zeros_like(self.robot.motor_name_ordering, dtype=np.float32)
+        # act_warm_up = np.zeros_like(self.robot.motor_name_ordering, dtype=np.float32)
+
+        # for _n, _a in self.robot.active_joint_to_motor_angles(active_jnt_warm_up_angle):
+        #     idx = self.robot.motor_name_ordering.index(_n)
+        #     act_warm_up[idx] = _a
 
         # `active_jnt_warm_up_angle` include warm_up sysID motors and other accompany active joints.
-        for _n, _a in self.robot.active_joint_to_motor_angles(active_jnt_warm_up_angle):
-            idx = self.robot.motor_name_ordering.index(_n)
-            act_warm_up[idx] = _a
+        assert len(active_jnt_warm_up_angle) == len(self.robot.active_joint_name_ordering)
+        motor_warm_up_angle = self.robot.active_joint_to_motor_angles(active_jnt_warm_up_angle)
+        assert len(motor_warm_up_angle) == len(self.robot.motor_name_ordering)
+
+        act_warm_up: npt.NDArray[np.float32] = np.asarray( (motor_warm_up_angle[_n] for _n in self.robot.motor_name_ordering),
+                                  dtype=np.float32)
 
         if not np.allclose(act_warm_up, action_curr, 1e-06):  # self.action_arr[-1, :], 1e-6):
             warm_up_time_seq, warm_up_motor_act_seq = self.move(time_curr=time_curr,  # self.time[-1],
@@ -463,7 +486,9 @@ class SysIDPolicy(BasePolicy, policy_name="sysID"):
             episode_time_seq = warm_up_time_seq
             episode_act_seq = warm_up_motor_act_seq
 
-        # --- rotate joint angles by `chirp` signal:
+        # --- rotate joint angles by `chirp` signal.
+        # NOTE: only add chirp signal onto sysID joints, not add onto `active_jnt_warm_up_angle`...
+        chirp_signal_seq:npt.NDArray[np.float32]
         chirp_time_seq, chirp_signal_seq = get_chirp_signal(**chirp_signal_param)
 
         # if episode_time_seq is not None:
@@ -475,28 +500,54 @@ class SysIDPolicy(BasePolicy, policy_name="sysID"):
         # active_jnt_rotate_angle_seq = np.zeros((chirp_time_seq.shape[0], len(self.robot.active_joint_name_ordering), np.float32)
         # shape: ( time_seq_len, robot.nu )
 
-        # only for sysID joint, not include accompany active joints.
-        # TODO: add chirp to motor or active jnt???
-        sysID_jnt_chirp_angle = OrderedDict( (_n, chirp_signal_seq * _d)
-                                             for _n,_d in sysID_jnt_direction)
+        # NOTE: chirp signal only for sysID joint, not include accompany active joints.
+        # sysID_jnt_chirp_angle = OrderedDict( (_n, chirp_signal_seq * _d)
+        #                                      for _n,_d in sysID_jnt_direction)
+
+        # for _n, _d in sysID_jnt_direction:
+        #     sysID_jnt_chirp_angle[_n] = chirp_signal_seq * _d
+
         # at most 2 sysID joint per episode.
-        assert len(sysID_jnt_chirp_angle) <= 2
+        # assert len(sysID_jnt_chirp_angle) <= 2
 
         # chirp_motor_act_seq = np.zeros(shape=(chirp_time_seq.shape[0], len(self.robot.motor_name_ordering)),
         #                                dtype=np.float32)
 
         # chirp_motor_act_seq = np.repeat(act_warm_up[np.newaxis,:], repeats=chirp_time_seq.shape[0], axis=0)
-        chirp_motor_act_seq = np.tile(act_warm_up, reps=(chirp_time_seq.shape[0],1))  # shape: ( chirp_time_seq_len, robot.nu )
+
+        # chirp_motor_act_seq = np.tile(act_warm_up, reps=(chirp_time_seq.shape[0],1))  # shape: ( chirp_time_seq_len, robot.nu )
 
         # NOTE: add chirp signal as `active joint angle`, not direct `motor act`, so
         # we must convert it to motor_angle.
-        for _n, _a in self.robot.active_joint_to_motor_angles(sysID_jnt_chirp_angle):
-            idx = self.robot.motor_name_ordering.index(_n)
-            # add chirp onto warm_up act.
-            chirp_motor_act_seq[:, idx] += _a  # shape: len(chirp_time_seq)
+        # for _n, _a in self.robot.active_joint_to_motor_angles(sysID_jnt_chirp_angle):
+        #     idx = self.robot.motor_name_ordering.index(_n)
+        #     # add chirp onto warm_up act.
+        #     chirp_motor_act_seq[:, idx] += _a  # shape: len(chirp_time_seq)
+
+        # construct joint angle first:   {active_jnt_name: jnt_angle_seq ... }
+        active_jnt_chirp_angle_seq = OrderedDict(
+            (_n, chirp_signal_seq * sysID_jnt_direction[_n] if _n in sysID_jnt_direction
+                else np.zeros_like(chirp_signal_seq,dtype=np.float32) )
+            for _n in self.robot.active_joint_name_ordering )
+
+        motor_chirp_angle_seq: OrderedDict[str, npt.NDArray[np.float32]] = (
+            self.robot.active_joint_to_motor_angles(active_jnt_chirp_angle_seq)
+        )
+        assert len(motor_chirp_angle_seq) == len(self.robot.motor_name_ordering)
+
+        # shape: (robot.nu, len(chirp_time_seq) ) -> shape: (len(chirp_time_seq), robot.nu)
+        chirp_motor_act_seq: npt.NDArray[np.float32] = np.asarray(
+            (motor_chirp_angle_seq[_n] for _n in self.robot.motor_name_ordering),
+            dtype=np.float32).transpose()
+
+        assert chirp_motor_act_seq.shape == ( len(chirp_time_seq), self.robot.nu )
+
+        logger.info(f' {chirp_motor_act_seq.shape=:} ')
+
+        # chirp_motor_act_seq = chirp_motor_act_seq.transpose()
 
         # add chirp onto warm_up act.
-        # chirp_motor_act_seq[:] += act_warm_up  # shape: ( time_seq_len, robot.nu )
+        chirp_motor_act_seq[:] += act_warm_up  # shape: ( len(chirp_time_seq), robot.nu )
 
         # NOTE: add chirp signal as `active joint angle`, not `motor act`.
         # rotate_jnt_angle_seq[:, joint_idx[0]] = signal_seq
@@ -553,11 +604,11 @@ class SysIDPolicy(BasePolicy, policy_name="sysID"):
             Tuple[Dict[str, float], npt.NDArray[np.float32]]: A tuple containing an empty dictionary and the interpolated action as a NumPy array.
         """
         action = np.asarray(
-            interpolate_action(obs.time, self.sysID_time_seq, self.sysID_motor_act_seq)
+            interpolate_action(obs.time, self._sysID_time_seq, self._sysID_motor_act_seq)
         )
         return {}, action
 
 
     # @property
     # def n_steps_total(self):
-    #     return len(self.sysID_time_seq)
+    #     return len(self._sysID_time_seq)

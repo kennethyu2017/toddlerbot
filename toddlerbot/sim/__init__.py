@@ -10,10 +10,10 @@ from .mujoco_sim import MuJoCoSim
 from .robot import Robot
 
 __all__ = [
-    'MotorController','MuJoCoSim','Robot','Obs',
+    'MotorController','MuJoCoSim','Robot','Obs', 'BaseEnv'
           ]
 
-@dataclass(init=False)
+@dataclass(init=True)
 class Obs:
     """Observation data structure"""
 
@@ -33,6 +33,8 @@ class Obs:
     euler: npt.NDArray[np.float32] = field(
         default_factory=lambda: np.zeros(3, dtype=np.float32)
     )
+
+    # only Mujoco can fill qpos->joint_pos , qvel->joint_ve. `real_world` only reads motor_pos.
     joint_pos: Optional[npt.NDArray[np.float32]] = None
     joint_vel: Optional[npt.NDArray[np.float32]] = None
 

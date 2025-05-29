@@ -561,6 +561,7 @@
     <exclude body1="2xl430_gears_6" body2="hand_2"/>
   </contact>
   <actuator>
+<!--   all motor has same name as driven joint. -->
     <motor name="neck_yaw_drive" joint="neck_yaw_drive" class="XC330"/>
     <motor name="neck_pitch_act" joint="neck_pitch_act" class="XC330"/>
     <motor name="waist_act_1" joint="waist_act_1" class="XC330"/>

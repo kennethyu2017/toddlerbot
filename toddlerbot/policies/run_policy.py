@@ -490,19 +490,22 @@ class _MotorKpSetter:
         # always set first ep kp.
         if step_count == 0 or self._cur_ep_idx==-1:
             # we do not allow obs skip an episode.
-            assert obs_time <= policy.episode_motor_kp[0].ep_end_time_pnt
+            assert obs_time <= policy.episode_info[0].ep_end_time_pnt
             self._cur_ep_idx = 0
 
-            env.set_motor_kps(policy.episode_motor_kp[self._cur_ep_idx].motor_kp)
+            env.set_motor_kps(policy.episode_info[self._cur_ep_idx].motor_kp)
+
+            logger.info(f'update cur episode idx to {self._cur_ep_idx}, '
+                        f'and set motor kp: {policy.episode_info[self._cur_ep_idx].motor_kp}')
 
         # TODO: if len(ep) == 1?
-        elif self._cur_ep_idx == len(policy.episode_motor_kp) - 1:
+        elif self._cur_ep_idx == len(policy.episode_info) - 1:
             # already last episode, not set.
             pass
 
-        elif obs_time > policy.episode_motor_kp[self._cur_ep_idx].ep_end_time_pnt:
+        elif obs_time > policy.episode_info[self._cur_ep_idx].ep_end_time_pnt:
             # we do not allow obs skip an episode.
-            assert obs_time <= policy.episode_motor_kp[self._cur_ep_idx + 1].ep_end_time_pnt
+            assert obs_time <= policy.episode_info[self._cur_ep_idx + 1].ep_end_time_pnt
             self._cur_ep_idx += 1
 
             # TODO: if all kp are zero, not set ,keep kp value set previously? but episode_motor_kp
@@ -512,7 +515,11 @@ class _MotorKpSetter:
             #     env.set_motor_kps(motor_kps_updated)
             #     prev_ep_idx = ep_idx
 
-            env.set_motor_kps(policy.episode_motor_kp[self._cur_ep_idx].motor_kp)
+            env.set_motor_kps(policy.episode_info[self._cur_ep_idx].motor_kp)
+
+            logger.info(f'update cur episode idx to {self._cur_ep_idx}, '
+                        f'and set motor kp: {policy.episode_info[self._cur_ep_idx].motor_kp}')
+
         else:
             # kp no change, not set.
             pass
@@ -558,7 +565,7 @@ def _save_policy_log(*, policy:BasePolicy, robot:Robot,
     if isinstance(policy, SysIDPolicy):
         # with open(log_dir/'episode_motor_kp.pkl', "wb") as _f:
         with open(RUN_EPISODE_MOTOR_KP_PICKLE_FILE.format(policy_name=policy.name), "wb") as _f:
-            pickle.dump(policy.episode_motor_kp, _f)
+            pickle.dump(policy.episode_info, _f)
 
     if isinstance(policy, TeleopFollowerPDPolicy):
         policy.dataset_logger.move_files_to_folder(log_dir)
@@ -695,7 +702,7 @@ def run_policy(*,
 
     # for sysID only.
     # _cur_ep_idx :int = -1
-    motor_kp_setter: _MotorKpSetter = _MotorKpSetter()
+    motor_kp_setter: _MotorKpSetter | None = _MotorKpSetter() if isinstance(policy,SysIDPolicy) else None
 
     # TODO: for tqdm,  if total is float('inf'), Infinite iterations,
     #  behave same as `total-unknown`: can not show progress bar.
@@ -718,7 +725,8 @@ def run_policy(*,
                 _record.time_pnt.recv_obs = timelib.time()
 
                 # for sysID policy to change motor kp if kp changed.
-                motor_kp_setter.set_kp(policy=policy, env=env,step_count=_step_count,obs_time=obs.time)
+                if motor_kp_setter is not None:
+                    motor_kp_setter.set_kp(policy=policy, env=env,step_count=_step_count,obs_time=obs.time)
 
                 # for TeleopLeaderPolicy and RecordPolicy to toggle motor torque.
                 # # need to enable and disable motors according to logging state
