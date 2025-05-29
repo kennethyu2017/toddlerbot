@@ -10,6 +10,8 @@ from pathlib import Path
 
 from ._module_logger import logger
 
+TODO:::: if init= False, field no use.....
+
 @dataclass(init=False)
 class Robot:
     """This class defines some data structures, FK, IK of ToddlerBot."""
@@ -183,6 +185,7 @@ class Robot:
         logger.info(f' robot motor name ordering: {self.motor_name_ordering}  len:{len(self.motor_name_ordering)}')
         logger.info(f' robot motor id ordering: {self.motor_id_ordering} len:{len(self.motor_id_ordering)}')
 
+        # NOTE: `active joint` ordering must be same as Mujoco `qpos`, see: mujoco_sim.py: def get_joint_state(self).
         self.active_joint_name_ordering = tuple(self.init_active_joint_angles)
         logger.info(f' robot active joint name ordering: {self.active_joint_name_ordering} len:{len(self.active_joint_name_ordering)}')
 
@@ -433,6 +436,7 @@ class Robot:
         # roll = waist_pos[0] / offsets["waist_roll_coef"]
         # yaw = waist_pos[1] / offsets["waist_yaw_coef"]
 
+        # NOTE:input joints must contain 'waist_roll' and 'waist_yaw'.
         roll = waist_pos['waist_roll'] / offsets["waist_roll_coef"]
         yaw = waist_pos['waist_yaw'] / offsets["waist_yaw_coef"]
 
@@ -441,16 +445,22 @@ class Robot:
         return waist_act_1, waist_act_2
 
     def motor_to_active_joint_angles(self, #joints_config: Mapping[str, Any],
-                                     motor_angles: OrderedDict[str, float|npt.NDArray[np.float32]])\
+                                     motor_angles: OrderedDict[str, float|npt.NDArray[np.float32]],
+                                     partial:bool = False )\
             -> OrderedDict[str, float|npt.NDArray[np.float32]]:
         """Converts motor angles to joint angles based on the robot's configuration.
 
         Args:
-            motor_angles (OrderedDict[str, float]): A dictionary mapping motor names to their respective angles.
+            motor_angles (OrderedDict[str, float]): A dictionary mapping motor names to their respective angles or angles of time sequence.
+            partial(bool): allow input motor_angles contains only part of motors. defaults to False.
 
         Returns:
             OrderedDict[str, float]: A dictionary mapping joint names to their calculated angles.
         """
+
+        if not partial:
+            assert set(motor_angles) == set(self.motor_name_ordering)
+
         # joint_angels: float: single angle; npt.NDArray(np.float32): a sequence of angels.
         joint_angles: OrderedDict[str, float|npt.NDArray[np.float32]] = OrdDictCls()
 
@@ -463,48 +473,72 @@ class Robot:
 
         # NOTE: only transmission `ankle` will increase the len(joint_angles) more than len(motor_angles).
         # but we don't use `ankle` transmission till now. so, len(motor_name) == len(active_joint_name).
-        for motor_name, motor_pos in motor_angles.items():
-            transmission = self.config[motor_name]["transmission"]
+        for _m_name, _m_pos in motor_angles.items():
+            transmission = self.config[_m_name]["transmission"]
 
             if transmission == "gear":
                 # NOTE: a joint driven by gear, e.g., right_elbow_yaw_driven, even whose `is_passive` is true in config.json,
                 # is still one of self.active_joint, and is not `self.passive_joint` which only include
                 # `linkage` and `rack_and_pinion` transmission joints.
 
-                joint_name = motor_name.replace("_drive", "_driven")
+                joint_name = _m_name.replace("_drive", "_driven")
                 joint_angles[joint_name] = (
-                        -motor_pos * self.config[motor_name]["gear_ratio"]
+                        - _m_pos * self.config[_m_name]["gear_ratio"]
                 )
 
             elif transmission == "rack_and_pinion":
-                joint_pinion_name = motor_name.replace("_rack", "_pinion")
+                joint_pinion_name = _m_name.replace("_rack", "_pinion")
                 joint_angles[joint_pinion_name] = (
-                        -motor_pos * self.config[motor_name]["gear_ratio"]
+                        - _m_pos * self.config[_m_name]["gear_ratio"]
                 )
 
+            # input motors must contain 'waist_act_1' and 'waist_act_2'
             elif transmission == "waist":   # motors: `waist_act_1` and `waist_act_2`
+                if not ('waist_act_1' in motor_angles
+                        and 'waist_act_2' in motor_angles):
+                    raise ValueError(
+                        f'waist_act_1 and waist_act_2 must be provided together for converting from motor to active joint angles.'
+                        f'input motor_angles keys: {motor_angles.keys()}')
+
                 # Placeholder to ensure the correct order
                 joint_angles["waist_roll"] = 0.0
                 joint_angles["waist_yaw"] = 0.0
                 # waist_act_pos.append(motor_pos)
                 # guarantee the correct value of `waist_act_1` and `waist_act_2`.
-                waist_act_pos[motor_name] = motor_pos
+                waist_act_pos[_m_name] = _m_pos
 
             elif transmission == "linkage":
-                joint_angles[motor_name.replace("_act", "")] = motor_pos
+                joint_angles[_m_name.replace("_act", "")] = _m_pos
 
             # only transmission `ankle` will increase the len(joint_angles) more than len(motor_angles).
             elif transmission == "ankle":
-                if "left" in motor_name:
+                if "left" in _m_name:
+                    if not ('left_ank_act_1' in motor_angles
+                            and 'left_ank_act_2' in motor_angles):
+                        raise ValueError(
+                            f'left_ank_act_1 and left_ank_act_2 must be provided together for converting from motor to active joint angles.'
+                            f'input motor_angles keys: {motor_angles.keys()}')
+
                     joint_angles["left_ank_roll"] = 0.0
                     joint_angles["left_ank_pitch"] = 0.0
-                    left_ank_act_pos.append(motor_pos)
-                elif "right" in motor_name:
+
+                    left_ank_act_pos.append(_m_pos)
+
+                elif "right" in _m_name:
+                    if not ('right_ank_act_1' in motor_angles
+                            and 'right_ank_act_2' in motor_angles):
+                        raise ValueError(
+                            f'right_ank_act_1 and right_ank_act_2 must be provided together for converting from motor to active joint angles.'
+                            f'input motor_angles keys: {motor_angles.keys()}')
+
                     joint_angles["right_ank_roll"] = 0.0
                     joint_angles["right_ank_pitch"] = 0.0
-                    right_ank_act_pos.append(motor_pos)
+
+                    right_ank_act_pos.append(_m_pos)
+
             elif transmission == "none":
-                joint_angles[motor_name] = motor_pos
+                # in this case, active joint has same name as motor.
+                joint_angles[_m_name] = _m_pos
 
         if len(waist_act_pos) > 0:
             joint_angles["waist_roll"], joint_angles["waist_yaw"] = Robot.waist_fk(motor_pos=waist_act_pos,
@@ -513,15 +547,21 @@ class Robot:
         return joint_angles
 
     def active_joint_to_motor_angles(self, #joints_config: Mapping[str, Any],
-                                     joint_angles: OrderedDict[str, float|npt.NDArray[np.float32]]) -> OrderedDict[str, float]:
+                                     joint_angles: OrderedDict[str, float|npt.NDArray[np.float32]],
+                                     partial:bool = False) -> OrderedDict[str, float|npt.NDArray[np.float32]]:
         """Converts joint angles to motor angles based on the transmission type specified in the configuration.
 
         Args:
             joint_angles (OrderedDict[str, float]): A dictionary mapping joint names to their respective angles or angles of time sequence.
+            partial(bool): allow input joint_angles contains only part of active joints. defaults to False.
 
         Returns:
             OrderedDict[str, float]: A dictionary mapping motor names to their calculated angles.
         """
+
+        if not partial:
+            assert set(joint_angles) == set(self.active_joint_name_ordering)
+
         motor_angles: OrderedDict[str, float|npt.NDArray[np.float32]] = OrdDictCls()
 
         # waist_pos: List[float|npt.NDArray[np.float32]] = []
@@ -532,38 +572,54 @@ class Robot:
         right_ankle_pos: List[float|npt.NDArray[np.float32]] = []
 
         # joint_pos: float: single pos; npt.NDArray(np.float32): a sequence of pos.
-        for joint_name, joint_pos in joint_angles.items():
-            transmission = self.config[joint_name]["transmission"]
+        for _j_name, _j_pos in joint_angles.items():
+            transmission = self.config[_j_name]["transmission"]
             if transmission == "gear":
-                motor_name = joint_name.replace("_driven", "_drive")
+                motor_name = _j_name.replace("_driven", "_drive")
                 motor_angles[motor_name] = (
-                        -joint_pos / self.config[motor_name]["gear_ratio"]
+                        - _j_pos / self.config[motor_name]["gear_ratio"]
                 )
             elif transmission == "rack_and_pinion":
-                motor_name = joint_name.replace("_pinion", "_rack")
+                motor_name = _j_name.replace("_pinion", "_rack")
                 motor_angles[motor_name] = (
-                        -joint_pos / self.config[motor_name]["gear_ratio"]
+                        - _j_pos / self.config[motor_name]["gear_ratio"]
                 )
             elif transmission == "waist":
+                #  input joints must contain 'waist_roll' and 'waist_yaw'.
+                if not ('waist_roll' in joint_angles
+                        and 'waist_yaw' in joint_angles):
+                    raise ValueError(f'waist_roll and waist_yaw must be provided together for converting from active joint to motor angle.'
+                                     f'input joint_angles keys: {joint_angles.keys()}')
+
                 # Placeholder to ensure the correct order
                 motor_angles["waist_act_1"] = 0.0
                 motor_angles["waist_act_2"] = 0.0
                 # waist_pos.append(joint_pos)
-                waist_pos[joint_name] = joint_pos
+                waist_pos[_j_name] = _j_pos
 
             elif transmission == "linkage":
-                motor_angles[joint_name + "_act"] = joint_pos
+                motor_angles[_j_name + "_act"] = _j_pos
             elif transmission == "ankle":
-                if "left" in joint_name:
+                if "left" in _j_name:
+                    if not ('left_ank_roll' in joint_angles
+                            and 'left_ank_pitch' in joint_angles):
+                        raise ValueError(f'left_ank_roll and left_ank_pitch must be provided together for converting.'
+                                         f'input joint_angles keys: {joint_angles.keys()}')
+
                     motor_angles["left_ank_act_1"] = 0.0
                     motor_angles["left_ank_act_2"] = 0.0
-                    left_ankle_pos.append(joint_pos)
-                elif "right" in joint_name:
+                    left_ankle_pos.append(_j_pos)
+                elif "right" in _j_name:
+                    if not ('right_ank_roll' in joint_angles
+                            and 'right_ank_pitch' in joint_angles):
+                        raise ValueError(f'right_ank_roll and right_ank_pitch must be provided together for converting.'
+                                         f'input joint_angles keys: {joint_angles.keys()}')
                     motor_angles["right_ank_act_1"] = 0.0
                     motor_angles["right_ank_act_2"] = 0.0
-                    right_ankle_pos.append(joint_pos)
+                    right_ankle_pos.append(_j_pos)
+
             elif transmission == "none":
-                motor_angles[joint_name] = joint_pos
+                motor_angles[_j_name] = _j_pos
 
         if len(waist_pos) > 0:
             motor_angles["waist_act_1"], motor_angles["waist_act_2"] = Robot.waist_ik(waist_pos=waist_pos,

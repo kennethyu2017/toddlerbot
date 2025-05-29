@@ -399,12 +399,12 @@ class RealWorld(BaseEnv, env_name='real_world'):
         # results["_imu"] = self._imu.get_state()
 
         for _f in as_completed(future_seq):
-            read_name = future_seq[_f]
+            read_sensor = future_seq[_f]
             try:
                 ste: Mapping[str, float|npt.NDArray[np.float32]] = _f.result()
             except Exception as exc:
                 # let the corresponding attrs in obs be inited `None`.
-                logger.error(f' {read_name} generated an exception: {exc}')
+                logger.error(f' {read_sensor} generated an exception: {exc}')
             else:
                 for _k,_v in ste:
                     if hasattr(obs, _k):
@@ -412,7 +412,7 @@ class RealWorld(BaseEnv, env_name='real_world'):
                     else:
                         raise ValueError(f'read state key: {_k} not in obs.')
 
-                logger.debug(f' {read_name} succeed, got obs keys: {ste.keys()} ')
+                logger.debug(f' {read_sensor} succeed, got obs keys: {ste.keys()} ')
 
         # # start_times = {key: time.time() for key in futures.keys()}
         # for future in as_completed(futures.values()):

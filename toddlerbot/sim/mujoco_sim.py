@@ -1,5 +1,6 @@
 import time
-from typing import Any, Dict, List
+from typing import Any, Dict, List, OrderedDict
+from collections import OrderedDict
 
 import mujoco
 import mujoco.rollout
@@ -167,20 +168,24 @@ class MuJoCoSim(BaseEnv, env_name="mujoco"):
         transformation[:3, 3] = site_pos
         return transformation
 
-    def get_motor_state(self) -> Dict[str, JointState]:
+    def get_motor_state(self) -> OrderedDict[str, JointState]:
         """Retrieve the current state of each motor in the robot.
 
         Returns:
             Dict[str, JointState]: A dictionary mapping each motor's name to its
             current state, including position, velocity, and torque.
         """
-        motor_state_dict: Dict[str, JointState] = {}
+        # motor_state_dict: Dict[str, JointState] = {}
+        motor_state_dict: OrderedDict[str, JointState] = OrderedDict()
         for name in self.robot.motor_name_ordering:
             motor_state_dict[name] = JointState(
                 time=time.time(),
-                pos=self.data.joint(name).qpos.item(),
-                vel=self.data.joint(name).qvel.item(),
-                tor=self.data.actuator(name).force.item(),
+                # pos=self.data.joint(name).qpos.item(),
+                # vel=self.data.joint(name).qvel.item(),
+                # tor=self.data.actuator(name).force.item(),
+                pos=self.data.joint(name).qpos.copy().item(),
+                vel=self.data.joint(name).qvel.copy().item(),
+                tor=self.data.actuator(name).force.copy().item(),
             )
 
         return motor_state_dict
@@ -210,19 +215,23 @@ class MuJoCoSim(BaseEnv, env_name="mujoco"):
         else:
             return motor_angles
 
-    def get_joint_state(self) -> Dict[str, JointState]:
+    def get_joint_state(self) -> OrderedDict[str, JointState]:
         """Retrieves the current state of each joint in the robot.
 
         Returns:
             Dict[str, JointState]: A dictionary mapping each joint's name to its current state,
             which includes the timestamp, position, and velocity.
         """
-        joint_state_dict: Dict[str, JointState] = {}
+        # joint_state_dict: Dict[str, JointState] = {}
+        joint_state_dict: OrderedDict[str, JointState] = OrderedDict()
+        # NOTE: ordering is important.
         for name in self.robot.active_joint_name_ordering:
             joint_state_dict[name] = JointState(
                 time=time.time(),
-                pos=self.data.joint(name).qpos.item(),
-                vel=self.data.joint(name).qvel.item(),
+                # pos=self.data.joint(name).qpos.item(),
+                # vel=self.data.joint(name).qvel.item(),
+                pos=self.data.joint(name).qpos.copy().item(),
+                vel=self.data.joint(name).qvel.copy().item(),
             )
 
         return joint_state_dict
@@ -269,7 +278,10 @@ class MuJoCoSim(BaseEnv, env_name="mujoco"):
                 - joint_vel (np.ndarray): Array of joint velocities.
         """
         motor_state_dict = self.get_motor_state()
+        assert len(motor_state_dict)==len(self.robot.nu)
+
         joint_state_dict = self.get_joint_state()
+        assert len(joint_state_dict)==len(self.robot.active_joint_name_ordering)
 
         time = list(motor_state_dict.values())[0].time
 
@@ -277,7 +289,10 @@ class MuJoCoSim(BaseEnv, env_name="mujoco"):
         motor_pos: List[float] = []
         motor_vel: List[float] = []
         motor_tor: List[float] = []
-        for motor_name in motor_state_dict:
+
+        # for motor_name in motor_state_dict:
+        # keep ordering.
+        for motor_name in self.robot.motor_name_ordering:
             motor_pos.append(motor_state_dict[motor_name].pos)
             motor_vel.append(motor_state_dict[motor_name].vel)
             motor_tor.append(motor_state_dict[motor_name].tor)
@@ -288,7 +303,9 @@ class MuJoCoSim(BaseEnv, env_name="mujoco"):
 
         joint_pos: List[float] = []
         joint_vel: List[float] = []
-        for joint_name in joint_state_dict:
+        # for joint_name in joint_state_dict:
+        # keep ordering.
+        for joint_name in self.robot.active_joint_name_ordering:
             joint_pos.append(joint_state_dict[joint_name].pos)
             joint_vel.append(joint_state_dict[joint_name].vel)
 
@@ -392,7 +409,11 @@ class MuJoCoSim(BaseEnv, env_name="mujoco"):
                 # <actuator/motor>
                 # kp value is the control TBL value of Dynamixel actuators,
                 # i.e., 128 times the used kp value of PD controller.
+
+                TODO: for feite actuator, not divide 128....
+
                 self.controller.kp[self.model.actuator(name).id] = kp / 128
+
             else:
                 self.model.actuator(name).gainprm[0] = kp / 128
                 self.model.actuator(name).biasprm[1] = -kp / 128
