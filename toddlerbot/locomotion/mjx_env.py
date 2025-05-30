@@ -467,11 +467,11 @@ class MJXEnv(PipelineEnv):
         state_info["butter_past_outputs"] = jnp.tile(
             last_action_target, (self.filter_order, 1)
         )
-        state_info["controller_kp"] = self.controller.kp.copy()
-        state_info["controller_kd"] = self.controller.kd.copy()
-        state_info["controller_tau_max"] = self.controller.tau_max.copy()
-        state_info["controller_q_dot_tau_max"] = self.controller.q_dot_tau_max.copy()
-        state_info["controller_q_dot_max"] = self.controller.q_dot_max.copy()
+        state_info["controller_kp"] = self.controller._kp.copy()
+        state_info["controller_kd"] = self.controller._kd.copy()
+        state_info["controller_tau_max"] = self.controller._tau_max.copy()
+        state_info["controller_q_dot_tau_max"] = self.controller._q_dot_tau_max.copy()
+        state_info["controller_q_dot_max"] = self.controller._q_dot_max.copy()
         state_info["default_action"] = self.default_action.copy() + jax.random.uniform(
             rng_action,
             (self.num_action,),

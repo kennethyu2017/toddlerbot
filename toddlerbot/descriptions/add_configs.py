@@ -8,6 +8,9 @@ from typing import Any, Dict
 import numpy as np
 
 
+_DYNAMIXEL_MODEL_CASEFOLD = {'2xc430', '2xl430', 'xc330', 'xc430', 'xm430',}
+_FEITE_MODEL_CASEFOLD = {'sm40bl', }
+
 def get_default_config(
     robot_name: str,
     root: ET.Element,
@@ -155,9 +158,18 @@ def get_default_config(
             if joint_name not in motor_config:
                 raise ValueError(f"{joint_name} not found in the motor config!")
 
-            motor_name = motor_config[joint_name]["motor"]
+            motor_name:str = motor_config[joint_name]["motor"]
             joint_dict["id"] = list(motor_config.keys()).index(joint_name) + init_id
-            joint_dict["type"] = "dynamixel"
+
+            if motor_name.casefold() in _DYNAMIXEL_MODEL_CASEFOLD:
+                joint_dict["type"] = "dynamixel"
+
+            elif motor_name.casefold() in _FEITE_MODEL_CASEFOLD:
+                joint_dict["type"] = "feite"
+
+            else:
+                raise ValueError(f'motor name is neither dynamixel, nor feite:  {motor_name} ')
+
             joint_dict["spec"] = motor_name
             # joint_dict["control_mode"] = "extended_position"
             joint_dict["control_mode"] = (
@@ -180,7 +192,19 @@ def get_default_config(
             joint_dict["kd_real"] = motor_config[joint_name]["kd"]
             joint_dict["kff2_real"] = motor_config[joint_name]["kff2"]
             joint_dict["kff1_real"] = motor_config[joint_name]["kff1"]
-            joint_dict["kp_sim"] = motor_config[joint_name]["kp"] / 128
+
+            if  joint_dict["type"] == "dynamixel":
+                # kp value is the control TBL value of Dynamixel actuators,
+                # i.e., 128 times the used kp value of PD controller.
+                joint_dict["kp_sim"] = motor_config[joint_name]["kp"] / 128.
+
+            elif joint_dict["type"] == "feite":
+                joint_dict["kp_sim"] = motor_config[joint_name]["kp"]
+
+            else:
+                raise ValueError(f'motor type error: {joint_dict["type"]} ')
+
+
             joint_dict["kd_sim"] = 0.0
 
             if motor_name in joint_dyn_config:
@@ -211,7 +235,7 @@ def get_default_config(
     return config_dict
 
 
-def main() -> None:
+def _main() -> None:
     """Main function to generate and save configuration files for a specified robot.
 
     This function parses command-line arguments to determine the robot's name and sets up
@@ -359,4 +383,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    _main()

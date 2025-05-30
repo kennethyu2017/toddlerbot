@@ -10,29 +10,27 @@ from pathlib import Path
 
 from ._module_logger import logger
 
-TODO:::: if init= False, field no use.....
-
-@dataclass(init=False)
-class Robot:
-    """This class defines some data structures, FK, IK of ToddlerBot."""
-    """    
-    init_motor_angles (OrderedDict[str, float]): Initial motor angles for active joints.
-    init_active_joint_angles (OrderedDict[str, float]): Initial joint angles derived from motor angles.
-    motor_name_ordering (List[str]): Order of motors name based on initial configuration.
-    motor_id_ordering (List[str]): Order of motors id based on initial configuration.
-    active_joint_name_ordering (List[str]): Order of joints based on initial configuration.
-    default_motor_angles (OrderedDict[str, float]): Default motor angles for active joints.
-    default_active_joint_angles (OrderedDict[str, float]): Default joint angles derived from motor angles.
-    motor_to_active_joint_name (OrderedDict[str, List[str]]): Mapping from motor names to joint names.
-    active_joint_to_motor_name (OrderedDict[str, List[str]]): Mapping from joint names to motor names.
-    passive_joint_names (List[str]): Names of passive joints.
-    foot_name (str): Name of the foot, if specified in the configuration.
-    has_gripper (bool): Indicates if the robot has a gripper.
-    collider_names (List[str]): Names of links with collision enabled.
-    nu (int): Number of active motors.
-    joint_cfg_groups (OrderedDict[str, str]): Group classification for each joint.
-    joint_cfg_limits (OrderedDict[str, List[float]]): Lower and upper limits for each joint.
+@dataclass(init=True)
+class _RobotCfgData:
     """
+    only define data attributes.
+      init_motor_angles (OrderedDict[str, float]): Initial motor angles for active joints.
+      init_active_joint_angles (OrderedDict[str, float]): Initial joint angles derived from motor angles.
+      motor_name_ordering (List[str]): Order of motors name based on initial configuration.
+      motor_id_ordering (List[str]): Order of motors id based on initial configuration.
+      active_joint_name_ordering (List[str]): Order of joints based on initial configuration.
+      default_motor_angles (OrderedDict[str, float]): Default motor angles for active joints.
+      default_active_joint_angles (OrderedDict[str, float]): Default joint angles derived from motor angles.
+      motor_to_active_joint_name (OrderedDict[str, List[str]]): Mapping from motor names to joint names.
+      active_joint_to_motor_name (OrderedDict[str, List[str]]): Mapping from joint names to motor names.
+      passive_joint_names (List[str]): Names of passive joints.
+      foot_name (str): Name of the foot, if specified in the configuration.
+      has_gripper (bool): Indicates if the robot has a gripper.
+      collider_names (List[str]): Names of links with collision enabled.
+      nu (int): Number of active motors.
+      joint_cfg_groups (OrderedDict[str, str]): Group classification for each joint.
+      joint_cfg_limits (OrderedDict[str, List[float]]): Lower and upper limits for each joint.
+      """
     # id: int
     name: str = ''
     # nu: int
@@ -43,27 +41,46 @@ class Robot:
     joint_cfg_groups: OrderedDict[str, List[float]] = field(default_factory=OrdDictCls)
     joint_cfg_limits: OrderedDict[str, List[float]] = field(default_factory=OrdDictCls)
 
-    passive_joint_names:List[str] = field(default_factory=list)
-    active_joint_to_motor_name:OrderedDict[str, List[str]] = field(default_factory=OrdDictCls)
-    motor_to_active_joint_name:OrderedDict[str, List[str]] = field(default_factory=OrdDictCls)
+    passive_joint_names: List[str] = field(default_factory=list)
+    active_joint_to_motor_name: OrderedDict[str, List[str]] = field(default_factory=OrdDictCls)
+    motor_to_active_joint_name: OrderedDict[str, List[str]] = field(default_factory=OrdDictCls)
 
     # for actuators. not passive.
-    motor_name_to_id: OrderedDict[str,int] = field(default_factory=OrdDictCls)
-    id_to_motor_name: OrderedDict[int,str] = field(default_factory=OrdDictCls)
+    motor_name_to_id: OrderedDict[str, int] = field(default_factory=OrdDictCls)
+    id_to_motor_name: OrderedDict[int, str] = field(default_factory=OrdDictCls)
 
-    default_motor_angles :OrderedDict[str, float] = field(default_factory=OrdDictCls)
-    default_active_joint_angles :OrderedDict[str, float] = field(default_factory=OrdDictCls)
+    default_motor_angles: OrderedDict[str, float] = field(default_factory=OrdDictCls)
+    default_active_joint_angles: OrderedDict[str, float] = field(default_factory=OrdDictCls)
 
     # keep motor_name and motor_id as same order.
-    motor_name_ordering: Tuple[str,...] = field(default_factory=tuple)
-    motor_id_ordering: Tuple[int,...] = field(default_factory=tuple)
+    motor_name_ordering: Tuple[str, ...] = field(default_factory=tuple)
+    motor_id_ordering: Tuple[int, ...] = field(default_factory=tuple)
 
-    active_joint_name_ordering: Tuple[str,...] = field(default_factory=tuple)
+    active_joint_name_ordering: Tuple[str, ...] = field(default_factory=tuple)
 
-    init_active_joint_angles: OrderedDict[str,float] = field(default_factory=OrdDictCls)
-    init_motor_angles: OrderedDict[str,float] = field(default_factory=OrdDictCls)
+    init_active_joint_angles: OrderedDict[str, float] = field(default_factory=OrdDictCls)
+    init_motor_angles: OrderedDict[str, float] = field(default_factory=OrdDictCls)
+
     config: Mapping[str, Any] = None
     collision_config: Mapping[str, Any] = None
+
+    # TODO: motor params.integrate into one struct.
+    motor_type: OrderedDict[str, str] = field(default_factory=OrderedDict)
+    motor_kp_real: OrderedDict[str, float] = field(default_factory=OrderedDict)
+    motor_kd_real: OrderedDict[str, float] = field(default_factory=OrderedDict)
+    motor_ki_real: OrderedDict[str, float] = field(default_factory=OrderedDict)
+
+    motor_kp_sim: OrderedDict[str, float] = field(default_factory=OrderedDict)
+    motor_kd_sim: OrderedDict[str, float] = field(default_factory=OrderedDict)
+
+    motor_tau_max: OrderedDict[str, float] = field(default_factory=OrderedDict)
+    motor_q_dot_tau_max: OrderedDict[str, float] = field(default_factory=OrderedDict)
+    motor_q_dot_max: OrderedDict[str, float] = field(default_factory=OrderedDict)
+
+
+class Robot(_RobotCfgData):
+    """This class defines some data structures, FK, IK of ToddlerBot."""
+
 
     def __init__(self, robot_name: str):
         """Initializes a robot with specified configurations and paths.
@@ -71,6 +88,7 @@ class Robot:
         Args:
             robot_name (str): The name of the robot, used to set up directory paths and configurations.
         """
+        super().__init__()
         self.name = robot_name
         self.root_path: Path = Path('toddlerbot')/'descriptions'/self.name  #  os.path.join("toddlerbot", "descriptions", self.name)
         self.config_path: Path = self.root_path / 'config.json'
@@ -105,6 +123,26 @@ class Robot:
             raise FileNotFoundError(
                 f"No collision config file found for robot '{self.name}'."
             )
+
+
+    def _parse_motor_param_helper(self, name: str, cfg: Mapping[str, float|str])->None:
+
+        # TODO: motor params.integrate into one struct.
+
+        #  'dynamixel' or 'feite'
+        self.motor_type[name] = cfg['type']
+
+        self.motor_kp_real[name] = cfg['kp_real']
+        self.motor_kd_real[name] = cfg['kd_real']
+        self.motor_ki_real[name] = cfg['ki_real']
+
+        self.motor_kp_sim[name] = cfg['kp_sim']
+        self.motor_kd_sim[name] = cfg['kd_sim']
+
+        self.motor_tau_max[name] = cfg['tau_max']
+        self.motor_q_dot_tau_max[name] = cfg['q_dot_tau_max']
+        self.motor_q_dot_max[name] = cfg['q_dot_max']
+
 
     def initialize(self) -> None:
         """Initializes the robot's joint and motor configurations based on the provided configuration data.
@@ -161,7 +199,9 @@ class Robot:
                 # self.init_motor_angles[_name] = 0.0
                 self.init_motor_angles[_name] = _cfg['init_pos']
 
-                self.default_motor_angles[_name] = _cfg["default_pos"]
+                self.default_motor_angles[_name] = _cfg['default_pos']
+
+                self._parse_motor_param_helper(_name,_cfg)
 
         # generate joints based on motors.
         # NOTE: the keys in `init_active_joint_angles` maybe more than the `joint` and motors in config.

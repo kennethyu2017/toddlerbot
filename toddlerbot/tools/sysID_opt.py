@@ -344,6 +344,33 @@ def _build_early_stop(early_stop_rounds: int)\
 
 
 
+def _sim_run_sysID_episode_helper(*, ep_list:List[_SysIDEpisodeData],
+                                  jnt_name:str,
+                                  jnt_ordering_idx:int,
+                                  sim:MuJoCoSim,
+                                  )->npt.NDArray[np.float32]:
+    jnt_pos_sim_list: List[float] = []
+    # each `action` is a sequence belongs to one episode with a kp value.
+    # for action, kp in zip(action_list, kp):
+    for _ep in ep_list:
+        # TODO: why not adjust joint pos in Mujoco at beginning of each episode ?
+        # sim.set_motor_kps(dict(zip(motor_names, [kp] * len(motor_names))))
+        sim.set_motor_kps(_ep.motor_kp )
+        logger.info(f'set jnt: {jnt_name} kp: {_ep.motor_kp}')
+
+        # for a in action:
+        for _act in _ep.motor_act:
+            obs = sim.get_observation(1)
+            sim.set_motor_target(_act)
+            sim.step()
+
+            assert obs.joint_pos is not None
+            jnt_pos_sim_list.append(obs.joint_pos[jnt_ordering_idx])
+
+    jnt_pos_sim_arr = np.asarray(jnt_pos_sim_list,dtype=np.float32)
+    logger.info(f'jnt: {jnt_name} joint_pos_sim_arr shape:{jnt_pos_sim_arr.shape}')
+
+    return jnt_pos_sim_arr
 
 
 def _build_objective(*,
@@ -404,34 +431,32 @@ def _build_objective(*,
             q_dot_max = trial.suggest_float(
                 "q_dot_max", *q_dot_max_range[:2], step=q_dot_max_range[2]
             )
+
+            # TODO: tau_max, q_dot_max, q_dot_tqu_max is array in mujoco_controller.....
+            # sim.set_motor_dynamics(
+            #     dict(tau_max=tau_max, q_dot_tau_max=q_dot_tau_max, q_dot_max=q_dot_max)
+            # )
+            # TODO: for SysID, wo only allow one motor now.
+            motor_name: List[str] = robot.active_joint_to_motor_name[jnt_name]
+            # this joint has more than one corresponding motors, e.g. , waist_roll  -> waist_act_1, waist_act_2.
+            if not len(motor_name) == 1:
+                raise ValueError(f'TBD: we do not support more than one motor name for sysID.'
+                                 f'corresponding motor name: {motor_name}')
+
             sim.set_motor_dynamics(
-                dict(tau_max=tau_max, q_dot_tau_max=q_dot_tau_max, q_dot_max=q_dot_max)
+                dict(
+                    tau_max={motor_name[0]: tau_max},
+                    q_dot_tau_max={motor_name[0]: q_dot_tau_max},
+                    q_dot_max={motor_name[0]: q_dot_max},
+                )
             )
 
         # joint_pos_sim: List[npt.NDArray[np.float32]] = []
-
-        jnt_pos_sim_list: List[float] = []
-
-        # each `action` is a sequence belongs to one episode with a kp value.
-        # for action, kp in zip(action_list, kp):
-        for _ep in ep_list:
-            # TODO: why not adjust joint pos in Mujoco at beginning of each episode ?
-            # sim.set_motor_kps(dict(zip(motor_names, [kp] * len(motor_names))))
-            sim.set_motor_kps(_ep.motor_kp )
-            logger.info(f'set jnt: {jnt_name} kp: {_ep.motor_kp}')
-
-            # for a in action:
-            for _act in _ep.motor_act:
-                obs = sim.get_observation(1)
-                sim.set_motor_target(_act)
-                sim.step()
-
-                assert obs.joint_pos is not None
-                jnt_pos_sim_list.append(obs.joint_pos[jnt_ordering_idx])
-
-        jnt_pos_sim_arr = np.asarray(jnt_pos_sim_list,dtype=np.float32)
-        logger.info(f'jnt: {jnt_name} joint_pos_sim_arr shape:{jnt_pos_sim_arr.shape}')
-
+        jnt_pos_sim_arr:npt.NDArray[np.float32] = _sim_run_sysID_episode_helper(ep_list=ep_list,
+                                      jnt_name=jnt_name,
+                                      jnt_ordering_idx=jnt_ordering_idx,
+                                      sim=sim,
+                                      )
         assert jnt_pos_real_arr.shape == jnt_pos_sim_arr.shape
 
         # RMSE
@@ -528,12 +553,14 @@ def _optimize_for_one_jnt_with_multiple_episodes(*,
         raise ValueError("Invalid simulator")
 
     tau_max_range: Tuple[float, float, float] |None = None
-    if "sysID" in robot.name:
+    if "sysID".casefold() in robot.name.casefold():
         tau_max_range: Tuple[float, float, float] = (0.0, 2.0, 1e-2)
-        if "XC330" in robot.name:
+        if "XC330".casefold() in robot.name.casefold():
             tau_max_range = (0.0, 1.0, 1e-2)
-        elif "XM430" in robot.name:
+        elif "XM430".casefold() in robot.name.casefold():
             tau_max_range = (0.0, 3.0, 1e-2)
+        elif 'SM40BL'.casefold() in robot.name.casefold():
+            tau_max_range = (0.0, 4.0, 1e-2)
 
     # motor_names = robot.active_joint_to_motor_name[jnt_name]
     # joint_idx = robot.active_joint_name_ordering.index(jnt_name)
@@ -572,11 +599,19 @@ def _optimize_for_one_jnt_with_multiple_episodes(*,
     )
     if "sysID" in robot.name:
         assert isinstance(sim.controller, MotorController)
+        motor_name: List[str] = robot.active_joint_to_motor_name[jnt_name]
+        # this joint has more than one corresponding motors, e.g. , waist_roll  -> waist_act_1, waist_act_2.
+        if not len(motor_name) == 1:
+            raise ValueError(f'TBD: we do not support more than one motor name for sysID.'
+                             f'corresponding motor name: {motor_name}')
+
+        motor_idx:int = robot.motor_name_ordering.index(motor_name[0])
+
         initial_trial.update(
             dict(
-                tau_max=float(sim.controller.tau_max),
-                q_dot_tau_max=float(sim.controller.q_dot_tau_max),
-                q_dot_max=float(sim.controller.q_dot_max),
+                tau_max=float(sim.controller._tau_max[motor_idx]),
+                q_dot_tau_max=float(sim.controller._q_dot_tau_max[motor_idx]),
+                q_dot_max=float(sim.controller._q_dot_max[motor_idx]),
             )
         )
 
@@ -781,12 +816,21 @@ def _evaluate(
         }
         sim.set_joint_dynamics(joint_dyn)
 
+        # TODO: for SysID, wo only allow one motor now.
+        motor_name: List[str] = robot.active_joint_to_motor_name[_jnt_name]
+        # this joint has more than one corresponding motors, e.g. , waist_roll  -> waist_act_1, waist_act_2.
+        if not len(motor_name) == 1:
+            raise ValueError(f'TBD: we do not support more than one motor name for sysID.'
+                             f'corresponding motor name: {motor_name}')
+
         if "sysID" in robot.name:
+            # TODO: for SysID, wo only allow one motor now.
+            assert len(motor_name) == 1
             sim.set_motor_dynamics(
                 dict(
-                    tau_max=opt_params_dict[_jnt_name]["tau_max"],
-                    q_dot_tau_max=opt_params_dict[_jnt_name]["q_dot_tau_max"],
-                    q_dot_max=opt_params_dict[_jnt_name]["q_dot_max"],
+                    tau_max= { motor_name[0] : opt_params_dict[_jnt_name]["tau_max"] },
+                    q_dot_tau_max= { motor_name[0] : opt_params_dict[_jnt_name]["q_dot_tau_max"] },
+                    q_dot_max= {motor_name[0] : opt_params_dict[_jnt_name]["q_dot_max"] },
                 )
             )
 
@@ -804,28 +848,32 @@ def _evaluate(
         #
         # joint_pos_sim = np.array(joint_pos_sim_list)
 
-        jnt_pos_sim_list: List[float] = []
-
+        # jnt_pos_sim_list: List[float] = []
         # each `action` is a sequence belongs to one episode with a kp value.
         # for action, kp in zip(action_list, kp):
-        for _ep in _ep_list:
-            # TODO: why not adjust joint pos in Mujoco at beginning of each episode ?
-            # sim.set_motor_kps(dict(zip(motor_names, [kp] * len(motor_names))))
-            sim.set_motor_kps(_ep.motor_kp)
-            logger.info(f'set jnt: {_jnt_name} kp: {_ep.motor_kp}')
+        # for _ep in _ep_list:
+        #     # TODO: why not adjust joint pos in Mujoco at beginning of each episode ?
+        #     # sim.set_motor_kps(dict(zip(motor_names, [kp] * len(motor_names))))
+        #     sim.set_motor_kps(_ep.motor_kp)
+        #     logger.info(f'set jnt: {_jnt_name} kp: {_ep.motor_kp}')
+        #
+        #     # for a in action:
+        #     for _act in _ep.motor_act:
+        #         obs = sim.get_observation(1)
+        #         sim.set_motor_target(_act)
+        #         sim.step()
+        #
+        #         assert obs.joint_pos is not None
+        #         jnt_pos_sim_list.append(obs.joint_pos[jnt_ordering_idx])
+        #
+        # jnt_pos_sim_arr = np.asarray(jnt_pos_sim_list, dtype=np.float32)
+        # logger.info(f'jnt: {_jnt_name} joint_pos_sim_arr shape:{jnt_pos_sim_arr.shape}')
 
-            # for a in action:
-            for _act in _ep.motor_act:
-                obs = sim.get_observation(1)
-                sim.set_motor_target(_act)
-                sim.step()
-
-                assert obs.joint_pos is not None
-                jnt_pos_sim_list.append(obs.joint_pos[jnt_ordering_idx])
-
-        jnt_pos_sim_arr = np.asarray(jnt_pos_sim_list, dtype=np.float32)
-        logger.info(f'jnt: {_jnt_name} joint_pos_sim_arr shape:{jnt_pos_sim_arr.shape}')
-
+        jnt_pos_sim_arr: npt.NDArray[np.float32] = _sim_run_sysID_episode_helper(ep_list=_ep_list,
+                                                                                 jnt_name=_jnt_name,
+                                                                                 jnt_ordering_idx=jnt_ordering_idx,
+                                                                                 sim=sim,
+                                                                                 )
         assert jnt_pos_real_arr.shape == jnt_pos_sim_arr.shape
 
         error = np.sqrt(np.mean( (jnt_pos_real_arr - jnt_pos_sim_arr) ** 2) )
@@ -834,21 +882,39 @@ def _evaluate(
             f"{_jnt_name} root mean squared error: {error}"
         )
 
-        time_seq_ref_dict[_jnt_name] = list(
-            np.arange(sum([len(action) for action in action_list]))
-            * (sim.n_frames * sim.dt)
+        time_seq_ref_dict[_jnt_name] = (
+            # np.arange(sum([len(action) for action in action_list]))
+            ( np.arange(sum( len(_ep.sysID_jnt_pos) for _ep in _ep_list ))
+            * (sim.n_frames * sim.dt) ).tolist()
         )
+
         time_seq_sim_dict[_jnt_name] = time_seq_ref_dict[_jnt_name]
         time_seq_real_dict[_jnt_name] = time_seq_ref_dict[_jnt_name]
 
         jnt_pos_sim_dict[_jnt_name] = jnt_pos_sim_arr.tolist()
         jnt_pos_real_dict[_jnt_name] = jnt_pos_real_arr.tolist()
 
-        action_all = np.concatenate(
-            [action[:, jnt_ordering_idx] for action in action_list]
-        ).tolist()
-        action_sim_dict[_jnt_name] = action_all
-        action_real_dict[_jnt_name] = action_all
+
+        # motor_name : List[str] = robot.active_joint_to_motor_name[_jnt_name]
+        # # this joint has more than one corresponding motors, e.g. , waist_roll  -> waist_act_1, waist_act_2.
+        # if not len(motor_name) == 1:
+        #     raise ValueError(f'TBD: we do not support more than one motor name for plot joint track.'
+        #                      f'corresponding motor name: {motor_name}')
+
+        motor_ordering_idx = robot.motor_name_ordering.index(motor_name[0])
+        motor_act_real_list:List[float] = []
+        for _ep in _ep_list:
+            motor_act_real_list.extend( _a[motor_ordering_idx] for _a in _ep.motor_act )
+
+        # motor_act_real_arr = np.concatenate(
+            # [action[:, jnt_ordering_idx] for action in action_list]
+        # ).tolist()
+
+        # action_sim_dict[_jnt_name] = action_all
+        # action_real_dict[_jnt_name] = action_all
+
+        action_sim_dict[_jnt_name] = motor_act_real_list
+        action_real_dict[_jnt_name] = motor_act_real_list
 
         sim.close()
 
@@ -973,7 +1039,7 @@ def _main(args: argparse.Namespace):
 
     opt_values_dict: Dict[str, float] = {}
 
-    # _jnt_name : single sysID_jnt,  _ep_list:  all the episodes of the single sysID_jnt.
+    # _jnt_name : single sysID_jnt,  _ep_list:  all the episodes belong to the single sysID_jnt.
     for _jnt_name, _ep_list in sysID_jnt_ep_dict.items():
         # opt_params, opt_values = _optimize_parameters(*args)
         # opt_params_dict[args[2]] = opt_params
