@@ -52,7 +52,7 @@ def _build_jnt_sysID_spec(robot_name: str)->Mapping[str, _SysIDSpecs]:
             # TODO: will be divided by 128 in Dynamixel actuator's internal Position PD controller.
             kp_list = list(range(900, 2400, 300))
         elif 'sm40bl' in robot_name.casefold():
-            kp_list = list(range(7, 40, 5))  # defualt kp is `32` for SM40BL.
+            kp_list = list(range(17, 47, 4))  # defualt kp is `32` for SM40BL.
         else:
             kp_list = list(range(1500, 3600, 300))
 

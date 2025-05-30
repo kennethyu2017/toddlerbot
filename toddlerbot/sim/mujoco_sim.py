@@ -19,6 +19,7 @@ from toddlerbot.sim.mujoco_utils import MuJoCoRenderer, MuJoCoViewer
 from toddlerbot.sim.robot import Robot
 from toddlerbot.utils.file_utils import find_robot_file_path
 from toddlerbot.utils.math_utils import quat2euler, quat_inv, rotate_vec
+from ._module_logger import logger
 
 
 class MuJoCoSim(BaseEnv, env_name="mujoco"):
@@ -103,6 +104,7 @@ class MuJoCoSim(BaseEnv, env_name="mujoco"):
 
         self.controller: MotorController | PositionController
         # Check if the actuator is a motor or position actuator
+        # TODO: or check gain-term is 'fixed' bias-term is 'none' --> motor mode.
         if (
             self.model.actuator(0).gainprm[0] == 1
             and self.model.actuator(0).biasprm[1] == 0
@@ -278,7 +280,7 @@ class MuJoCoSim(BaseEnv, env_name="mujoco"):
                 - joint_vel (np.ndarray): Array of joint velocities.
         """
         motor_state_dict = self.get_motor_state()
-        assert len(motor_state_dict)==len(self.robot.nu)
+        assert len(motor_state_dict)==self.robot.nu
 
         joint_state_dict = self.get_joint_state()
         assert len(joint_state_dict)==len(self.robot.active_joint_name_ordering)
@@ -404,19 +406,43 @@ class MuJoCoSim(BaseEnv, env_name="mujoco"):
         Args:
             motor_kps (Dict[str, float]): A dictionary where keys are motor names and values are the Kp values to be set.
         """
-        for name, kp in motor_kps.items():
+
+
+        for _name, _kp in motor_kps.items():
+            write_kp:float = 0.
+
+            if self.robot.motor_type[_name].casefold() == 'dynamixel':
+                # kp value is the control TBL value of Dynamixel actuators,
+                # i.e., 128 times the used kp value of PD controller.
+                assert _kp > 128
+                write_kp = _kp / 128.
+
+            elif self.robot.motor_type[_name].casefold() == 'feite':
+                # TODO: for feite actuator, not divide 128. maybe need some co-eff after sysID?
+                write_kp = _kp
+
+            else:
+                write_kp = _kp
+
             if isinstance(self.controller, MotorController):
                 # <actuator/motor>
                 # kp value is the control TBL value of Dynamixel actuators,
                 # i.e., 128 times the used kp value of PD controller.
+                # self.controller.kp[self.model.actuator(_name).id] = _kp / 128
 
-                TODO: for feite actuator, not divide 128....
-
-                self.controller.kp[self.model.actuator(name).id] = kp / 128
+                # TODO: actuator id ???? should use motor name ordering idx......
+                # self.controller._kp[self.model.actuator(_name).id] = write_kp
+                motor_idx :int = self.robot.motor_name_ordering.index(_name)
+                logger.info(f' set kp for motor name:{_name}  motor idx: {motor_idx}, '
+                            f'Mujoco model actuator id: {self.model.actuator(_name).id=:}')
+                self.controller._kp[motor_idx] = write_kp
 
             else:
-                self.model.actuator(name).gainprm[0] = kp / 128
-                self.model.actuator(name).biasprm[1] = -kp / 128
+                self.model.actuator(_name).gainprm[0] = write_kp
+                self.model.actuator(_name).biasprm[1] = - write_kp
+
+                # self.model.actuator(_name).gainprm[0] = _kp / 128
+                # self.model.actuator(_name).biasprm[1] = - _kp / 128
 
     def set_motor_target(
         self, motor_angles: Dict[str, float] | npt.NDArray[np.float32]
@@ -498,12 +524,25 @@ class MuJoCoSim(BaseEnv, env_name="mujoco"):
             for key, value in dyn.items():
                 setattr(self.model.joint(joint_name), key, value)
 
-    def set_motor_dynamics(self, motor_dyn: Dict[str, float]):
+
+    TODO: make
+    a
+    more
+    abstract
+    API
+    not use
+    setattr
+    directly....
+
+    def set_motor_dynamics(self, motor_dyn: Dict[str, Dict[str,float]]):
         """Sets the motor dynamics by updating the controller's attributes.
 
         Args:
             motor_dyn (Dict[str, float]): A dictionary where keys are attribute names and values are the corresponding dynamics values to be set on the controller.
         """
+
+        TODO:  motor dyn  is Dict now.....
+
         for key, value in motor_dyn.items():
             setattr(self.controller, key, value)
 
