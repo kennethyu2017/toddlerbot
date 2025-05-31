@@ -444,11 +444,11 @@ def _build_objective(*,
                                  f'corresponding motor name: {motor_name}')
 
             sim.set_motor_dynamics(
-                dict(
-                    tau_max={motor_name[0]: tau_max},
-                    q_dot_tau_max={motor_name[0]: q_dot_tau_max},
-                    q_dot_max={motor_name[0]: q_dot_max},
-                )
+                { motor_name[0] : dict(
+                    tau_max= tau_max,
+                    q_dot_tau_max= q_dot_tau_max,
+                    q_dot_max= q_dot_max, )
+                }
             )
 
         # joint_pos_sim: List[npt.NDArray[np.float32]] = []
@@ -609,9 +609,9 @@ def _optimize_for_one_jnt_with_multiple_episodes(*,
 
         initial_trial.update(
             dict(
-                tau_max=float(sim.controller._tau_max[motor_idx]),
-                q_dot_tau_max=float(sim.controller._q_dot_tau_max[motor_idx]),
-                q_dot_max=float(sim.controller._q_dot_max[motor_idx]),
+                tau_max= sim.controller.tau_max[motor_idx],
+                q_dot_tau_max= sim.controller.q_dot_tau_max[motor_idx],
+                q_dot_max= sim.controller.q_dot_max[motor_idx],
             )
         )
 
@@ -827,11 +827,11 @@ def _evaluate(
             # TODO: for SysID, wo only allow one motor now.
             assert len(motor_name) == 1
             sim.set_motor_dynamics(
-                dict(
-                    tau_max= { motor_name[0] : opt_params_dict[_jnt_name]["tau_max"] },
-                    q_dot_tau_max= { motor_name[0] : opt_params_dict[_jnt_name]["q_dot_tau_max"] },
-                    q_dot_max= {motor_name[0] : opt_params_dict[_jnt_name]["q_dot_max"] },
-                )
+                { motor_name[0]: dict(
+                    tau_max= opt_params_dict[_jnt_name]["tau_max"],
+                    q_dot_tau_max= opt_params_dict[_jnt_name]["q_dot_tau_max"],
+                    q_dot_max= opt_params_dict[_jnt_name]["q_dot_max"] )
+                }
             )
 
         # jnt_pos_sim_list: List[npt.NDArray[np.float32]] = []

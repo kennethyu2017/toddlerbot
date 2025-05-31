@@ -1,42 +1,136 @@
-from typing import Optional,List
+from typing import Optional,Mapping
 
-from toddlerbot.sim.robot import Robot
+# from toddlerbot.sim.robot import Robot
 from toddlerbot.utils.array_utils import ArrayType
 from toddlerbot.utils.array_utils import array_lib as np
+from dataclasses import dataclass
 
+
+@dataclass(init=True)
 class MotorController:
     """A class for controlling the Dynamixel motors of a robot."""
+    _kp: ArrayType
+    _kd: ArrayType
+    _tau_max: ArrayType
+    _q_dot_tau_max: ArrayType
+    _q_dot_max: ArrayType
 
-    def __init__(self, robot: Robot):
-        """Initializes the control parameters for a robot's joints using attributes specific to "dynamixel" type actuators.
+    # def __init__(self, kp:ArrayType, kd:ArrayType, tau_max:ArrayType, q_dot_tau_max:ArrayType, q_dot_max:ArrayType):
+    # def __init__(self, robot: Robot):
+    """Initializes the control parameters for a robot's joints using attributes specific to "dynamixel" type actuators.
 
-        Args:
-            robot (Robot): An instance of the Robot class from which joint attributes are retrieved.
+    Args:
+        robot (Robot): An instance of the Robot class from which joint attributes are retrieved.
+    """
+    # TODO: if motor is dynamixel, kp_sim is divided by 128.
+    # self.kp = np.array(robot.get_joint_config_attrs("type", "dynamixel", "kp_sim"))
+    # self.kd = np.array(robot.get_joint_config_attrs("type", "dynamixel", "kd_sim"))
+    # self.tau_max = np.array(robot.get_joint_config_attrs("type", "dynamixel", "tau_max"))
+    # self.q_dot_tau_max = np.array(
+    #     robot.get_joint_config_attrs("type", "dynamixel", "q_dot_tau_max")
+    # )
+    # self.q_dot_max = np.array(
+    #     robot.get_joint_config_attrs("type", "dynamixel", "q_dot_max")
+    # )
+
+    # # NOTE: use kp_sim instead kp_real.
+    # TODO: add setter/getter for _kp, _kd, .... not allow modify directly.
+
+    # self._kp: List[float] = np.asarray([robot.motor_kp_sim[_n] for _n in robot.motor_name_ordering], dtype=np.float32)
+    #
+    # self._kd: List[float] = np.asarray([robot.motor_kd_sim[_n] for _n in robot.motor_name_ordering], dtype=np.float32)
+    #
+    # self._tau_max: List[float] = np.asarray([robot.motor_tau_max[_n] for _n in robot.motor_name_ordering], dtype=np.float32)
+    #
+    # self._q_dot_tau_max: List[float] = np.asarray([robot.motor_q_dot_tau_max[_n] for _n in robot.motor_name_ordering], dtype=np.float32)
+    #
+    # self._q_dot_max: List[float] = np.asarray([robot.motor_q_dot_max[_n] for _n in robot.motor_name_ordering], dtype=np.float32)
+
+    def _set_param_helper(self, param_name: str, set_value: Mapping[int, float]):
+        param_value:ArrayType = getattr(self, param_name)
+
+        for _idx, _v in set_value:
+            # _idx is the index of motor/actuator.
+            assert 0 <= _idx < len(param_value)
+            param_value[_idx] = _v
+
+        setattr(self, param_name, param_value)
+
+    def set_kp(self, set_value: Mapping[int, float]):
         """
-        # TODO: if motor is dynamixel, kp_sim is divided by 128.
-        # self.kp = np.array(robot.get_joint_config_attrs("type", "dynamixel", "kp_sim"))
-        # self.kd = np.array(robot.get_joint_config_attrs("type", "dynamixel", "kd_sim"))
-        # self.tau_max = np.array(robot.get_joint_config_attrs("type", "dynamixel", "tau_max"))
-        # self.q_dot_tau_max = np.array(
-        #     robot.get_joint_config_attrs("type", "dynamixel", "q_dot_tau_max")
-        # )
-        # self.q_dot_max = np.array(
-        #     robot.get_joint_config_attrs("type", "dynamixel", "q_dot_max")
-        # )
+        Args:
+            set_value: key is the index of motor/actuator.
+        """
+        self._set_param_helper('_kp',set_value)
 
-        # NOTE: use kp_sim instead kp_real.
+    def set_kd(self, set_value: Mapping[int, float]):
+        self._set_param_helper('_kd',set_value)
 
-        TODO: add setter/getter for _kp, _kd, .... not allow modify directly.
+    def set_tau_max(self, set_value: Mapping[int, float]):
+        self._set_param_helper('_tau_max',set_value)
 
-        self._kp: List[float] = np.asarray([robot.motor_kp_sim[_n] for _n in robot.motor_name_ordering], dtype=np.float32)
+    def set_q_dot_tau_max(self, set_value: Mapping[int, float]):
+        self._set_param_helper('_q_dot_tau_max',set_value)
 
-        self._kd: List[float] = np.asarray([robot.motor_kd_sim[_n] for _n in robot.motor_name_ordering], dtype=np.float32)
+    def set_q_dot_max(self, set_value: Mapping[int, float]):
+        self._set_param_helper('_q_dot_max',set_value)
 
-        self._tau_max: List[float] = np.asarray([robot.motor_tau_max[_n] for _n in robot.motor_name_ordering], dtype=np.float32)
+    @property
+    def tau_max(self)->ArrayType:
+        return self._tau_max
 
-        self._q_dot_tau_max: List[float] = np.asarray([robot.motor_q_dot_tau_max[_n] for _n in robot.motor_name_ordering], dtype=np.float32)
+    @property
+    def q_dot_tau_max(self) ->ArrayType:
+        return self._q_dot_tau_max
 
-        self._q_dot_max: List[float] = np.asarray([robot.motor_q_dot_max[_n] for _n in robot.motor_name_ordering], dtype=np.float32)
+    @property
+    def q_dot_max(self)->ArrayType:
+        return self._q_dot_max
+
+    # def set_(self, set_value: Mapping[int, float]):
+    #     self._set_param_helper('_',set_value)
+
+
+    # @property
+    # def kp(self)->ArrayType:
+    #     return self._kp
+    #
+    # @kp.setter
+    # def kp(self, value:ArrayType)->ArrayType:
+    #     self._kp = value
+    #
+    # @property
+    # def kd(self) -> ArrayType:
+    #     return self._kd
+    #
+    # @kd.setter
+    # def kd(self, value: ArrayType) -> ArrayType:
+    #     self._kd = value
+    #
+    # @property
+    # def tau_max(self) -> ArrayType:
+    #     return self._tau_max
+    #
+    # @tau_max.setter
+    # def tau_max(self, value: ArrayType) -> ArrayType:
+    #     self._tau_max = value
+    #
+    # @property
+    # def q_dot_tau_max(self) -> ArrayType:
+    #     return self._q_dot_tau_max
+    #
+    # @q_dot_tau_max.setter
+    # def q_dot_tau_max(self, value: ArrayType) -> ArrayType:
+    #     self._q_dot_tau_max = value
+    #
+    # @property
+    # def q_dot_max(self) -> ArrayType:
+    #     return self._q_dot_max
+    #
+    # @q_dot_max.setter
+    # def q_dot_max(self, value: ArrayType) -> ArrayType:
+    #     self._q_dot_max = value
+
 
     def step(
         self,
