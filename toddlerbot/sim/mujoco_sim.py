@@ -5,6 +5,8 @@ from collections import OrderedDict
 import mujoco
 import mujoco.rollout
 import mujoco.viewer
+from mujoco._structs import _MjModelJointViews
+
 import numpy as np
 import numpy.typing as npt
 from pathlib import Path
@@ -109,7 +111,23 @@ class MuJoCoSim(BaseEnv, env_name="mujoco"):
             self.model.actuator(0).gainprm[0] == 1
             and self.model.actuator(0).biasprm[1] == 0
         ):
-            self.controller = MotorController(robot)
+            # self.controller = MotorController(robot)
+            _kp = np.asarray((robot.motor_kp_sim[_n] for _n in robot.motor_name_ordering), dtype=np.float32)
+
+            _kd = np.asarray((robot.motor_kd_sim[_n] for _n in robot.motor_name_ordering), dtype=np.float32)
+
+            _tau_max = np.asarray((robot.motor_tau_max[_n] for _n in robot.motor_name_ordering), dtype=np.float32)
+
+            _q_dot_tau_max = np.asarray((robot.motor_q_dot_tau_max[_n] for _n in robot.motor_name_ordering), dtype=np.float32)
+
+            _q_dot_max = np.asarray((robot.motor_q_dot_max[_n] for _n in robot.motor_name_ordering), dtype=np.float32)
+
+            self.controller = MotorController(_kp=_kp,
+                                              _kd=_kd,
+                                              _tau_max=_tau_max,
+                                              _q_dot_max=_q_dot_max,
+                                              _q_dot_tau_max=_q_dot_tau_max)
+
         else:
             self.controller = PositionController()
 
@@ -514,37 +532,89 @@ class MuJoCoSim(BaseEnv, env_name="mujoco"):
         """
         self.data.qpos = qpos
 
-    def set_joint_dynamics(self, joint_dyn: Dict[str, Dict[str, float]]):
+    def set_joint_dynamics(self,
+                           # damping: Dict[str, float],
+                           # armature: Dict[str, float],
+                           # frictionloss: Dict[str, float],
+                           dyn: Dict[str, Dict[str, float]]
+                           ):
         """Sets the dynamics parameters for specified joints in the model.
 
         Args:
-            joint_dyn (Dict[str, Dict[str, float]]): A dictionary where each key is a joint name and the value is another dictionary containing dynamics parameters and their corresponding values to be set for that joint.
+             dyn (Dict[str, Dict[str, float]]): A dictionary where each key is a joint name and the
+             value is another dictionary containing dynamics parameters and their corresponding values
+              to be set for that joint.
+              #damping
+              #armature
+              #frictionloss
+
         """
-        for joint_name, dyn in joint_dyn.items():
-            for key, value in dyn.items():
-                setattr(self.model.joint(joint_name), key, value)
+        for _jnt_name, _param in dyn.items():
+            # TODO: self.model.joint() will return a mujoco::python::MjModelJointViews, but mjtModel
+            # holding model constants, can be set directly, and will not be changed by step().
+            mjc_jnt: _MjModelJointViews = self.model.joint(_jnt_name)
+
+            mjc_jnt.damping = _param['damping']
+            mjc_jnt.armature = _param['armature']
+            mjc_jnt.frictionloss = _param['frictionloss']
+
+        # for _jnt_name, _v in damping:
+        #     mjc_jnt : _MjModelJointViews = self.model.joint(_jnt_name)
+        #     mjc_jnt.damping = _v
+        #
+        # for _jnt_name, _v in armature:
+        #     mjc_jnt : _MjModelJointViews = self.model.joint(_jnt_name)
+        #     mjc_jnt.armature = _v
+        #
+        # for _jnt_name, _v in frictionloss:
+        #     mjc_jnt : _MjModelJointViews = self.model.joint(_jnt_name)
+        #     mjc_jnt.frictionloss = _v
+
+        # for _jnt_name, _param in dyn.items():
+            # for key, value in _param.items():
+                # TODO: self.model.joint() will return a mujoco::python::MjModelJointViews, but mjtModel
+                # holding model constants, can be set directly, will not be changed by step().
+                # setattr(self.model.joint(joint_name), key, value)
 
 
-    TODO: make
-    a
-    more
-    abstract
-    API
-    not use
-    setattr
-    directly....
-
-    def set_motor_dynamics(self, motor_dyn: Dict[str, Dict[str,float]]):
+    # set for controller. in Mujoco, there is no corresponding params.
+    def set_motor_dynamics(self,
+                           dyn: Dict[str, Dict[str,float]],
+                           # tau_max: Dict[str,float],
+                           # q_dot_tau_max: Dict[str,float],
+                           # q_dot_max: Dict[str,float]
+                           ):
+        # def set_motor_dynamics(self, motor_dyn: Dict[str, float]):
         """Sets the motor dynamics by updating the controller's attributes.
 
         Args:
-            motor_dyn (Dict[str, float]): A dictionary where keys are attribute names and values are the corresponding dynamics values to be set on the controller.
+            #motor_dyn (Dict[str, float]): A dictionary where keys are attribute names and values are the corresponding dynamics values to be set on the controller.
+            #tau_max
+            #q_dot_max
+            #q_dot_tau_max
+            dyn
         """
+        # for key, value in motor_dyn.items():
+        #     setattr(self.controller, key, value)
+        if isinstance(self.controller, MotorController):
+            for _mtr_name, _param in dyn.items():
+                mtr_idx: int = self.robot.motor_name_ordering.index(_mtr_name)
+                self.controller.set_tau_max({mtr_idx: _param['tau_max']} )
+                self.controller.set_q_dot_tau_max({mtr_idx: _param['q_dot_tau_max']})
+                self.controller.set_q_dot_max({mtr_idx: _param['q_dot_max']})
 
-        TODO:  motor dyn  is Dict now.....
+            # self.controller.set_tau_max( { self.robot.motor_name_ordering.index(_n) : _v
+            #                                for _n,_v in tau_max.items() })
+            #
+            # self.controller.set_q_dot_tau_max( { self.robot.motor_name_ordering.index(_n) : _v
+            #                                for _n,_v in q_dot_tau_max.items() })
+            #
+            # self.controller.set_q_dot_max( { self.robot.motor_name_ordering.index(_n) : _v
+            #                                for _n,_v in q_dot_max.items() })
 
-        for key, value in motor_dyn.items():
-            setattr(self.controller, key, value)
+        else:
+            raise NotImplemented(f'only MotorController support set_motor_dynamics.')
+
 
     def forward(self):
         """Advances the simulation forward by a specified number of frames and visualizes the result if a visualizer is available.
