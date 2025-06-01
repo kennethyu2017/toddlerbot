@@ -274,6 +274,9 @@ def _main() -> None:
         "has_imu": False,
         "has_dynamixel": True,
         "dynamixel_baudrate": baud * 1000000,
+
+        TODO: feitei_baudrate:
+
         "solref": [0.004, 1],
     }
     if "sysID" not in args.robot and "arms" not in args.robot:
