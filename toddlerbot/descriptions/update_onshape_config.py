@@ -2,6 +2,7 @@ import os
 import sys
 import shutil
 import platform
+from onshape_to_robot import export
 
 
 def get_env_path():

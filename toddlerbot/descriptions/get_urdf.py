@@ -57,6 +57,7 @@ class OnShapeConfig:
     """Data class for storing OnShape configuration parameters."""
 
     doc_id_list: List[str]
+    workspace_id_list: List[str]
     assembly_list: List[str]
     # The following are the default values for the config.json file
     mergeSTLs: str = "all"
@@ -157,27 +158,45 @@ def run_onshape_to_robot(onshape_config: OnShapeConfig):
     assembly_dir = os.path.join("toddlerbot", "descriptions", "assemblies")
 
     # Process each assembly in series
-    for doc_id, assembly_name in zip(
-        onshape_config.doc_id_list, onshape_config.assembly_list
+    for doc_id, workspace_id, assembly_name, in zip(
+        onshape_config.doc_id_list, onshape_config.workspace_id_list, onshape_config.assembly_list,
     ):
         assembly_path = os.path.join(assembly_dir, assembly_name)
 
         if os.path.exists(assembly_path):
             shutil.rmtree(assembly_path)
 
+        print(f'make assembly path: {assembly_path}')
         os.makedirs(assembly_path)
+        if not os.path.exists(assembly_path):
+            raise FileNotFoundError
+
         json_file_path = os.path.join(assembly_path, "config.json")
         # Map the URDFConfig to the desired JSON structure
         json_data = {
-            "documentId": doc_id,
-            "outputFormat": "urdf",
-            "assemblyName": assembly_name,
-            "robotName": assembly_name,
-            "mergeSTLs": onshape_config.mergeSTLs,
-            "mergeSTLsCollisions": onshape_config.mergeSTLsCollisions,
-            "simplifySTLs": onshape_config.simplifySTLs,
-            "maxSTLSize": onshape_config.maxSTLSize,
+            "document_id": doc_id,
+            'workspace_id': workspace_id,
+            "output_format": "urdf",
+            "assembly_name": assembly_name,
+            "robot_name": assembly_name,
+            "merge_stls": onshape_config.mergeSTLs,
+            # "merge_stls_collisions": onshape_config.mergeSTLsCollisions,
+            "simplify_stls": onshape_config.simplifySTLs,
+            "max_stl_size": onshape_config.maxSTLSize,
         }
+
+        # json_data = {
+        #     "documentId": doc_id,
+        #     "outputFormat": "urdf",
+        #     "assemblyName": assembly_name,
+        #     "robotName": assembly_name,
+        #     "mergeSTLs": onshape_config.mergeSTLs,
+        #     "mergeSTLsCollisions": onshape_config.mergeSTLsCollisions,
+        #     "simplifySTLs": onshape_config.simplifySTLs,
+        #     "maxSTLSize": onshape_config.maxSTLSize,
+        # }
+
+
 
         # Write the JSON data to a file
         with open(json_file_path, "w") as json_file:
@@ -203,7 +222,14 @@ def main():
         type=str,
         nargs="+",  # Indicates that one or more arguments will be consumed.
         required=True,
-        help="The names of the documents. Need to match the names in OnShape.",
+        help="The document id of the documents. Need to match the names in OnShape.",
+    )
+    parser.add_argument(
+        "--workspace-id-list",
+        type=str,
+        nargs="+",  # Indicates that one or more arguments will be consumed.
+        required=True,
+        help="The workspace id of the documents. Need to match the names in OnShape.",
     )
     parser.add_argument(
         "--assembly-list",
@@ -212,10 +238,13 @@ def main():
         required=True,
         help="The names of the assemblies. Need to match the names in OnShape.",
     )
+
     args = parser.parse_args()
 
     run_onshape_to_robot(
-        OnShapeConfig(doc_id_list=args.doc_id_list, assembly_list=args.assembly_list)
+        OnShapeConfig(doc_id_list=args.doc_id_list,
+                      workspace_id_list=args.workspace_id_list,
+                      assembly_list=args.assembly_list)
     )
 
 

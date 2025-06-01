@@ -82,7 +82,9 @@ def update_link_names_and_references(body_root: ET.Element, part_root: ET.Elemen
 def assemble_urdf(urdf_config: URDFConfig):
     """Assembles a URDF file for a robot based on the provided configuration.
 
-    This function constructs a complete URDF (Unified Robot Description Format) file by combining a base body URDF with optional arm and leg components specified in the configuration. It updates mesh file paths and ensures the correct structure for simulation.
+    This function constructs a complete URDF (Unified Robot Description Format) file by combining a base body URDF
+    with optional arm and leg components specified in the configuration.
+    It updates mesh file paths and ensures the correct structure for simulation.
 
     Args:
         urdf_config (URDFConfig): Configuration object containing the names of the robot, body, arms, and legs to be assembled.

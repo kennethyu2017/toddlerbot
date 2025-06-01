@@ -69,6 +69,12 @@ while [[ $# -gt 0 ]]; do
             DOC_ID_LIST="1fb5d9a88ac086a053c4340b"
             ASSEMBLY_LIST="sysID_XM430"
             ;;
+            # -------- feite ---------
+            sysID_SM40BL)
+            DOC_ID_LIST=4eead3e2f69aeca38dc2c804
+            WORKSPACE_ID_LIST=b0a9fe02cd9deb301fa36b12
+            ASSEMBLY_LIST="使用长U支架_SM40BL_sysID_assembly"
+            ;;
             *)
             echo -e "${YELLOW}Unknown robot name: $ROBOT_NAME.${NC}"
             ;;
@@ -104,11 +110,11 @@ if [ "$run_onshape" == "y" ]; then
     if [[ "$(uname)" == "Darwin" ]]; then
         echo "Running update_onshape_config.py on macOS..."
         # Run the Python script
-        python $REPO_NAME/descriptions/update_onshape_config.py
+        python3.11 $REPO_NAME/descriptions/update_onshape_config.py
     fi
 
     printf "Exporting...\n\n"
-    python $REPO_NAME/descriptions/get_urdf.py --doc-id-list $DOC_ID_LIST --assembly-list $ASSEMBLY_LIST
+    python3.11 $REPO_NAME/descriptions/get_urdf.py --doc-id-list $DOC_ID_LIST --workspace-id-list $WORKSPACE_ID_LIST  --assembly-list $ASSEMBLY_LIST
 else
     printf "Export skipped.\n\n"
 fi
@@ -119,7 +125,7 @@ if [ -n "$BODY_NAME" ]; then
     if [ "$run_process" == "y" ]; then
         printf "Processing...\n\n"
         # Construct the command with mandatory arguments
-        cmd="python $REPO_NAME/descriptions/assemble_urdf.py --robot $ROBOT_NAME --body-name $BODY_NAME"
+        cmd="python3.11 $REPO_NAME/descriptions/assemble_urdf.py --robot $ROBOT_NAME --body-name $BODY_NAME"
         if [ -n "$ARM_NAME" ]; then
             cmd+=" --arm-name $ARM_NAME"
         fi
@@ -138,20 +144,20 @@ if [ -f "$CONFIG_PATH" ]; then
     read -r -p " > " overwrite_config
     if [ "$overwrite_config" == "y" ]; then
         printf "Overwriting the configuration file...\n\n"
-        python $REPO_NAME/descriptions/add_configs.py --robot $ROBOT_NAME
+        python3.11 $REPO_NAME/descriptions/add_configs.py --robot $ROBOT_NAME
     else
         printf "Configuration file not written.\n\n"
     fi
 else
     printf "Generating the configuration file...\n\n"
-    python $REPO_NAME/descriptions/add_configs.py --robot $ROBOT_NAME
+    python3.11 $REPO_NAME/descriptions/add_configs.py --robot $ROBOT_NAME
 fi
 
 printf "Do you want to update the collision files? If so, make sure you have edited config_collision.json! (y/n)"
 read -r -p " > " update_collision
 if [ "$update_collision" == "y" ]; then
     printf "Generating the collision files...\n\n"
-    python $REPO_NAME/descriptions/update_collisions.py --robot $ROBOT_NAME
+    python3.11 $REPO_NAME/descriptions/update_collisions.py --robot $ROBOT_NAME
 else
     printf "Collision files not updated.\n\n"
 fi
@@ -161,10 +167,10 @@ printf "Do you want to convert to MJCF (y/n)"
 read -r -p " > " run_convert
 if [ "$run_convert" == "y" ]; then
     printf "Converting... \n1. Click the button save_xml to save the model to mjmodel.xml to the current directory.\n2. Close MuJoCo.\n\n"
-    python -m mujoco.viewer --mjcf=$URDF_PATH
+    python3.11 -m mujoco.viewer --mjcf=$URDF_PATH
 
     printf "Processing...\n\n"
-    python $REPO_NAME/descriptions/process_mjcf.py --robot $ROBOT_NAME
+    python3.11 $REPO_NAME/descriptions/process_mjcf.py --robot $ROBOT_NAME
 else
     printf "Process skipped.\n\n"
 fi
@@ -174,7 +180,7 @@ read -r -p " > " run_mujoco
 
 if [ "$run_mujoco" == "y" ]; then
     printf "Simulation running...\n\n"
-    python -m mujoco.viewer --mjcf=$MJCF_VIS_SCENE_PATH
+    python3.11 -m mujoco.viewer --mjcf=$MJCF_VIS_SCENE_PATH
 else
     printf "Simulation skipped.\n\n"
 fi
