@@ -1,6 +1,6 @@
 import platform
 from concurrent.futures import ThreadPoolExecutor, as_completed, Future
-from typing import Dict, List, Optional, Mapping, Set
+from typing import Dict, List, Optional, Mapping, Set, Any
 from collections import OrderedDict
 
 import numpy as np
@@ -107,6 +107,11 @@ def _init_feite_actuators(*, robot:Robot, executor: ThreadPoolExecutor)-> Option
     control_mode = robot.get_motor_ordered_config_attrs("type", "feite", "control_mode")
     assert len(control_mode) == len(feite_ids)
 
+
+
+    TODO: use .....  _kp = np.asarray((robot.motor_kp_real[_n] for _n in robot.motor_name_ordering), dtype=np.float32)
+
+
     kP = robot.get_motor_ordered_config_attrs("type", "feite", "kp_real")
     assert len(kP) == len(feite_ids)
 
@@ -193,20 +198,22 @@ class RealWorld(BaseEnv, env_name='real_world'):
         This method sets up a thread pool _executor to initialize the IMU and Dynamixel controllers asynchronously. It checks the operating system type to determine the appropriate port description for Dynamixel communication. If the robot is configured with an IMU, it initializes the IMU in a separate thread. Similarly, if the robot has Dynamixel actuators, it configures and initializes the Dynamixel controller using the specified port, baud rate, and control parameters. After initialization, it retrieves the results of the asynchronous operations and assigns them to the respective attributes. Finally, it performs a series of observations to ensure the components are functioning correctly.
         """
         future_seq: Dict[Future, str] = {}
+        general_cfg: Dict[str, Any] = self.robot.config["general"]
         # only allow one type actuator existing.
-        assert (self.robot.config["general"]["has_dynamixel"] ^ self.robot.config["general"]["has_feite"])
+        assert ( ('has_dynamixel' in general_cfg and general_cfg['has_dynamixel']) ^
+                 ( "has_feite" in general_cfg and general_cfg["has_feite"] ))
 
-        if self.robot.config["general"]["has_dynamixel"]:
+        if 'has_dynamixel' in general_cfg and general_cfg["has_dynamixel"]:
             dyn_f = _init_dynamixel_actuators(robot=self.robot, executor=self._executor)
             if dyn_f is not None:
                 future_seq[dyn_f] = 'actuator_controller'  # attr name.
 
-        if self.robot.config["general"]["has_feite"]:
+        if 'has_feite' in general_cfg and general_cfg["has_feite"]:
             ft_f = _init_feite_actuators(robot=self.robot, executor=self._executor)
             if ft_f is not None:
                 future_seq[ft_f] = 'actuator_controller'  # attr name.
                 
-        if self.robot.config["general"]["has_imu"]:
+        if general_cfg["has_imu"]:
             imu_f = _init_imu(self._executor)
             if imu_f is not None:
                 future_seq[imu_f] = '_imu'  # attr name.

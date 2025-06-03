@@ -93,7 +93,7 @@ class TeleopLeaderPolicy(BasePolicy, policy_name="teleop_leader"):
             self.manip_motor_pos = self.default_motor_pos.copy()
 
     # note: calibrate zero at: toddlerbot/tools/calibration/calibrate_zero.py --robot toddlerbot_arms
-    # note: zero points can be accessed in config_motors.json
+    # note: zero points can be accessed in joint_motor_mapping.json
 
     def step(
         self, obs: Obs, is_real: bool = False

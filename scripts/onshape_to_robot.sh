@@ -71,9 +71,14 @@ while [[ $# -gt 0 ]]; do
             ;;
             # -------- feite ---------
             sysID_SM40BL)
-            DOC_ID_LIST=4eead3e2f69aeca38dc2c804
-            WORKSPACE_ID_LIST=b0a9fe02cd9deb301fa36b12
-            ASSEMBLY_LIST="使用长U支架_SM40BL_sysID_assembly"
+#            DOC_ID_LIST='4eead3e2f69aeca38dc2c804 4eead3e2f69aeca38dc2c804'
+#            WORKSPACE_ID_LIST='b0a9fe02cd9deb301fa36b12 b0a9fe02cd9deb301fa36b12'
+            DOC_ID_LIST='4eead3e2f69aeca38dc2c804'
+            WORKSPACE_ID_LIST='b0a9fe02cd9deb301fa36b12'
+            #  TODO: make use of element_id.
+            #ELEMENT_ID_LIST=...
+#            ASSEMBLY_LIST='使用长U支架_SM40BL_sysID_assembly 仅带长U型支架_SM40BL_Actuator_Sub_Assembly'
+            ASSEMBLY_LIST='使用长U支架_SM40BL_sysID_assembly'
             ;;
             *)
             echo -e "${YELLOW}Unknown robot name: $ROBOT_NAME.${NC}"
@@ -114,7 +119,8 @@ if [ "$run_onshape" == "y" ]; then
     fi
 
     printf "Exporting...\n\n"
-    python3.11 $REPO_NAME/descriptions/get_urdf.py --doc-id-list $DOC_ID_LIST --workspace-id-list $WORKSPACE_ID_LIST  --assembly-list $ASSEMBLY_LIST
+    python3.11 $REPO_NAME/descriptions/get_urdf.py --doc-id-list $DOC_ID_LIST --workspace-id-list $WORKSPACE_ID_LIST \
+      --assembly-list $ASSEMBLY_LIST  --robot-name $ROBOT_NAME
 else
     printf "Export skipped.\n\n"
 fi
@@ -144,20 +150,20 @@ if [ -f "$CONFIG_PATH" ]; then
     read -r -p " > " overwrite_config
     if [ "$overwrite_config" == "y" ]; then
         printf "Overwriting the configuration file...\n\n"
-        python3.11 $REPO_NAME/descriptions/add_configs.py --robot $ROBOT_NAME
+        python3.11 $REPO_NAME/descriptions/add_configs.py --robot-name $ROBOT_NAME
     else
         printf "Configuration file not written.\n\n"
     fi
 else
     printf "Generating the configuration file...\n\n"
-    python3.11 $REPO_NAME/descriptions/add_configs.py --robot $ROBOT_NAME
+    python3.11 $REPO_NAME/descriptions/add_configs.py --robot-name $ROBOT_NAME
 fi
 
 printf "Do you want to update the collision files? If so, make sure you have edited config_collision.json! (y/n)"
 read -r -p " > " update_collision
 if [ "$update_collision" == "y" ]; then
     printf "Generating the collision files...\n\n"
-    python3.11 $REPO_NAME/descriptions/update_collisions.py --robot $ROBOT_NAME
+    python3.11 $REPO_NAME/descriptions/update_collisions.py --robot-name $ROBOT_NAME
 else
     printf "Collision files not updated.\n\n"
 fi
@@ -170,7 +176,7 @@ if [ "$run_convert" == "y" ]; then
     python3.11 -m mujoco.viewer --mjcf=$URDF_PATH
 
     printf "Processing...\n\n"
-    python3.11 $REPO_NAME/descriptions/process_mjcf.py --robot $ROBOT_NAME
+    python3.11 $REPO_NAME/descriptions/process_mjcf.py --robot-name $ROBOT_NAME
 else
     printf "Process skipped.\n\n"
 fi

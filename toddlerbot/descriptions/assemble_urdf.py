@@ -124,7 +124,7 @@ def assemble_urdf(urdf_config: URDFConfig):
         if child_link is None:
             continue
 
-        child_link_name = child_link.attrib.get("link")
+        child_link_name = child_link.get("link")
         if child_link_name is None:
             continue
 
@@ -134,7 +134,7 @@ def assemble_urdf(urdf_config: URDFConfig):
             continue
 
         for link in body_root.findall("link"):
-            if link.attrib.get("name") == child_link_name.lower():
+            if link.get("name") == child_link_name.lower():
                 body_root.remove(link)
 
         source_urdf_path = None
@@ -192,7 +192,7 @@ def main():
     """
     parser = argparse.ArgumentParser(description="Assemble the urdf.")
     parser.add_argument(
-        "--robot",
+        "--robot-name",
         type=str,
         default="toddlerbot",
         help="The name of the robot. Need to match the name in descriptions.",
@@ -217,7 +217,7 @@ def main():
     )
     args = parser.parse_args()
 
-    assemble_urdf(URDFConfig(args.robot, args.body_name, args.arm_name, args.leg_name))
+    assemble_urdf(URDFConfig(args.robot_name, args.body_name, args.arm_name, args.leg_name))
 
 
 if __name__ == "__main__":

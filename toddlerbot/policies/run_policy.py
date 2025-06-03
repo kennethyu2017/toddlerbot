@@ -583,7 +583,7 @@ def _save_policy_log(*, policy:BasePolicy, robot:Robot,
 
     if isinstance(policy, CalibratePolicy):
         # TODO: after run_policy, call add_configs.py to update config_motors.json contents into config.json.
-        config_file: Path = robot.root_path / 'config_motors.json'
+        config_file: Path = robot.root_path / 'joint_motor_mapping.json'
         if config_file.exists():
             # motor_names = robot.get_joint_config_attrs("is_passive", False)
             # motor_pos_init = np.array(robot.get_joint_config_attrs("is_passive", False, "init_pos"),
@@ -623,7 +623,7 @@ def _save_policy_log(*, policy:BasePolicy, robot:Robot,
             with open(config_file, 'wt') as _f:
                 json.dump(motor_config, _f, indent=4)
 
-            logger.info(f'updated config_motors.json:  {json.dumps(motor_config, sort_keys=True, indent=4)}')
+            logger.info(f'updated joint_motor_mapping.json:  {json.dumps(motor_config, sort_keys=True, indent=4)}')
 
         else:
             raise FileNotFoundError(f"Could not find {config_file.resolve()}")
