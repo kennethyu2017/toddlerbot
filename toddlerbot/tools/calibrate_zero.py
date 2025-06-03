@@ -118,7 +118,9 @@ def main(args: argparse.Namespace): # robot: Robot, parts: List[str]):
     has_dynamixel = robot.config["general"]["has_dynamixel"]
 
     future_dynamixel: Future|None = None
-    # TODO: Feite....
+
+    TODO: Feite....
+
     if has_dynamixel:
         dynamixel_ports: List[str] = find_ports("USB <-> Serial Converter")
 
@@ -143,7 +145,7 @@ def main(args: argparse.Namespace): # robot: Robot, parts: List[str]):
     robot.set_joint_config_attrs("type", "dynamixel", "init_pos", motor_init_pos, 'all')
 
     # Generate the motor mask based on the specified parts
-    # only update motor init pos corresponding to `all_parts`, into config_motors.json
+    # only update motor init pos corresponding to `all_parts`, into joint_motor_mapping.json
     motor_ordering_idx_mask: set[int]
     # TODO: the number in list is ID or index of ordering? should be index, has value `0`.
     all_parts = {
@@ -186,7 +188,7 @@ def main(args: argparse.Namespace): # robot: Robot, parts: List[str]):
     # logger.info(f"Motor angles for selected parts: {motor_angles}")
 
     # motor_config_path = os.path.join(robot.root_path, "config_motors.json")
-    motor_config_file = robot.root_path / 'config_motors.json'
+    motor_config_file = robot.root_path / 'joint_motor_mapping.json'
     if motor_config_file.exists():
         with open(motor_config_file, "rt") as f:
             motor_config = json.load(f)

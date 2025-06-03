@@ -189,6 +189,9 @@ def update_collisons(robot_name: str):
     """
     robot_dir = os.path.join("toddlerbot", "descriptions", robot_name)
     collision_config_file_path = os.path.join(robot_dir, "config_collision.json")
+    if not os.path.exists(collision_config_file_path):
+        raise FileNotFoundError(f'config_collision.json can not be found: {collision_config_file_path} ')
+
     urdf_path = os.path.join(robot_dir, f"{robot_name}.urdf")
 
     # Ensure the collision directory exists
@@ -298,11 +301,11 @@ def update_collisons(robot_name: str):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Update the collisions.")
     parser.add_argument(
-        "--robot",
+        "--robot-name",
         type=str,
         default="toddlerbot",
         help="The name of the robot. Need to match the name in descriptions.",
     )
     args = parser.parse_args()
 
-    update_collisons(args.robot)
+    update_collisons(args.robot_name)

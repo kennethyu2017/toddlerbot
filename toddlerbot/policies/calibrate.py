@@ -118,7 +118,7 @@ class CalibratePolicy(BasePolicy, policy_name="calibrate"):
 
         # Update joint positions based on the PID controller command.
         # so the motor_target is slightly different against default joint_pos, and after the running loop of
-        # Calibrate policy, we update this `bias` into config_motors.json` `init_pos`.
+        # Calibrate policy, we update this `bias` into joint_motor_mapping.json` `init_pos`.
         joint_pos = self.default_joint_pos.copy()
         # NOTE: Integration controller is used, so the joint_pos even when idea `Stand` pose is reached,
         # joint_pos contains the `bias`.

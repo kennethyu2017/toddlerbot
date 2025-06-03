@@ -46,6 +46,9 @@ class _RobotCfgData:
     motor_to_active_joint_name: OrderedDict[str, List[str]] = field(default_factory=OrdDictCls)
 
     # for actuators. not passive.
+
+    TODO: rename it to motor_joint_name_to_id....
+
     motor_name_to_id: OrderedDict[str, int] = field(default_factory=OrdDictCls)
     id_to_motor_name: OrderedDict[int, str] = field(default_factory=OrdDictCls)
 

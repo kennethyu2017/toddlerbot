@@ -1364,14 +1364,14 @@ def main():
     """
     parser = argparse.ArgumentParser(description="Process the MJCF.")
     parser.add_argument(
-        "--robot",
+        "--robot-name",
         type=str,
         default="toddlerbot",
         help="The name of the robot. Need to match the name in descriptions.",
     )
     args = parser.parse_args()
 
-    get_mjcf_files(args.robot)
+    get_mjcf_files(args.robot_name)
 
 
 if __name__ == "__main__":

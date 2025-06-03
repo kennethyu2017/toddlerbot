@@ -7,6 +7,7 @@ import xml.dom.minidom
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from typing import List, Set
+from pathlib import Path
 
 
 def is_xml_pretty_printed(file_path: str) -> bool:
@@ -59,6 +60,7 @@ class OnShapeConfig:
     doc_id_list: List[str]
     workspace_id_list: List[str]
     assembly_list: List[str]
+    robot_name: str
     # The following are the default values for the config.json file
     mergeSTLs: str = "all"
     mergeSTLsCollisions: bool = True
@@ -66,7 +68,7 @@ class OnShapeConfig:
     maxSTLSize: int = 1
 
 
-def process_urdf_and_stl_files(assembly_path: str):
+def process_urdf_and_stl_files(*, assembly_dir: Path, robot_name: str):
     """Processes URDF and STL files within a specified assembly directory.
 
     This function performs several operations on URDF and STL files located in the given assembly path:
@@ -78,26 +80,33 @@ def process_urdf_and_stl_files(assembly_path: str):
     6. Renames the URDF file to match the base directory name if needed.
 
     Args:
-        assembly_path (str): The path to the directory containing the URDF and STL files.
+        assembly_dir (Path): The path to the directory containing the URDF and STL files.
+        robot_name:
 
     Raises:
         ValueError: If no URDF file is found in the specified directory.
     """
-    urdf_path = os.path.join(assembly_path, "robot.urdf")
-    if not os.path.exists(urdf_path):
-        raise ValueError("No URDF file found in the robot directory.")
+
+    urdf_file = assembly_dir / "robot.urdf"
+    if not urdf_file.exists():
+        raise ValueError(f"No URDF file found in the robot directory: {urdf_file.resolve()}")
 
     # Parse the URDF file
-    tree = ET.parse(urdf_path)
+    tree = ET.parse(urdf_file)
     root = tree.getroot()
 
-    robot_name = os.path.basename(assembly_path)
+    assembly_name = assembly_dir.resolve().name
+    # if root.attrib["name"] != assembly_name:
+    #     root.attrib["name"] = assembly_name
+
+    # robot_name = os.path.basename(assembly_path)
     # Update robot name to match URDF file name
     if root.attrib["name"] != robot_name:
         root.attrib["name"] = robot_name
 
     # Find and update all mesh filenames
     referenced_stls: Set[str] = set()
+
     for mesh in root.findall(".//mesh"):
         filename_attr = mesh.get("filename")
         if filename_attr and filename_attr.startswith("package:///"):
@@ -105,23 +114,26 @@ def process_urdf_and_stl_files(assembly_path: str):
             referenced_stls.add(filename)
 
     # Delete STL and PART files if not referenced
-    for entry in os.scandir(assembly_path):
+    for entry in os.scandir(assembly_dir):
         if entry.is_file():  # Check if the entry is a file
             file = entry.name
             if file.endswith((".stl", ".part")) and file not in referenced_stls:
-                file_path = os.path.join(assembly_path, file)
-                os.remove(file_path)
+                file_path = assembly_dir / file
+                file_path.unlink()
+                # os.remove(file_path)
 
     # Create 'meshes' directory if not exists
-    meshes_dir = os.path.join(assembly_path, "meshes")
-    if not os.path.exists(meshes_dir):
-        os.makedirs(meshes_dir)
+    meshes_dir = assembly_dir / "meshes"
+    if not meshes_dir.exists():
+        meshes_dir.mkdir()
 
     # Move referenced STL files to 'meshes' directory
     for stl in referenced_stls:
-        if "left" in robot_name and "left" not in stl:
+        # if "left" in robot_name and "left" not in stl:
+        if "left" in assembly_name and "left" not in stl:
             new_stl = "left_" + stl
-        elif "right" in robot_name and "right" not in stl:
+        # elif "right" in robot_name and "right" not in stl:
+        elif "right" in assembly_name and "right" not in stl:
             new_stl = "right_" + stl
         else:
             new_stl = stl
@@ -132,19 +144,32 @@ def process_urdf_and_stl_files(assembly_path: str):
             if filename_attr and filename_attr.endswith(stl):
                 mesh.set("filename", f"package:///meshes/{new_stl}")
 
-        source_path = os.path.join(assembly_path, stl)
-        if os.path.exists(source_path):
-            shutil.move(source_path, os.path.join(meshes_dir, new_stl))
+        source_path = assembly_dir / stl
+        if source_path.exists():
+            shutil.move(source_path, meshes_dir/new_stl )
 
-    pretty_xml = prettify(root, urdf_path)
+    pretty_xml = prettify(root, urdf_file)
     # Write the modified XML back to the URDF file
-    with open(urdf_path, "w") as urdf_file:
-        urdf_file.write(pretty_xml)
+    with open(urdf_file, "w") as _f:
+        _f.write(pretty_xml)
 
     # Rename URDF file to match the base directory name if necessary
-    new_urdf_path = os.path.join(assembly_path, robot_name + ".urdf")
-    if urdf_path != new_urdf_path:
-        os.rename(urdf_path, new_urdf_path)
+    # new_urdf_path = os.path.join(assembly_path, robot_name + ".urdf")
+    new_urdf_path = assembly_dir / (assembly_name + ".urdf")
+    if urdf_file.resolve() != new_urdf_path.resolve():
+        # os.rename(urdf_file, new_urdf_path)
+        urdf_file.rename(new_urdf_path.resolve())
+
+    # for sysID, there is just one single assembly, so without running assemble_urdf.py,
+    # final urdf will not be moved to description/sysID_xx/sysID_xx.urdf.
+    if "sysID" in robot_name:
+        sysID_result_folder = Path('toddlerbot') / 'descriptions' / f'{robot_name}'
+        if not sysID_result_folder.exists():
+            sysID_result_folder.mkdir(parents=False)
+
+        print(f'copy {new_urdf_path} to {sysID_result_folder.resolve()}/"{robot_name}.urdf" ')
+
+        shutil.copy(src=new_urdf_path, dst=sysID_result_folder / f'{robot_name}.urdf' )
 
 
 def run_onshape_to_robot(onshape_config: OnShapeConfig):
@@ -155,30 +180,36 @@ def run_onshape_to_robot(onshape_config: OnShapeConfig):
     Args:
         onshape_config (OnShapeConfig): Configuration object containing lists of document IDs and assembly names, along with settings for STL merging, collision handling, simplification, and maximum STL size.
     """
-    assembly_dir = os.path.join("toddlerbot", "descriptions", "assemblies")
+    print(f'onshape_config: {onshape_config.__str__()}')
+
+    assemblies_folder: Path = Path("toddlerbot") / "descriptions" / "assemblies"
 
     # Process each assembly in series
+    #  TODO: make use of element_id.
     for doc_id, workspace_id, assembly_name, in zip(
         onshape_config.doc_id_list, onshape_config.workspace_id_list, onshape_config.assembly_list,
     ):
-        assembly_path = os.path.join(assembly_dir, assembly_name)
+        print(f'{doc_id=:}, {workspace_id=:}, {assembly_name=:} ')
+        assembly_dir = assemblies_folder/ str(assembly_name)
 
-        if os.path.exists(assembly_path):
-            shutil.rmtree(assembly_path)
+        if assembly_dir.exists():
+            shutil.rmtree(assembly_dir)
 
-        print(f'make assembly path: {assembly_path}')
-        os.makedirs(assembly_path)
-        if not os.path.exists(assembly_path):
-            raise FileNotFoundError
+        print(f'make assembly dir: {assembly_dir.resolve()}')
+        assembly_dir.mkdir()
+        if not assembly_dir.exists():
+            raise FileNotFoundError(f'create assembly dir failed: {assembly_dir.resolve()}')
 
-        json_file_path = os.path.join(assembly_path, "config.json")
+        config_json_file = assembly_dir / "config.json"
         # Map the URDFConfig to the desired JSON structure
         json_data = {
             "document_id": doc_id,
             'workspace_id': workspace_id,
             "output_format": "urdf",
             "assembly_name": assembly_name,
-            "robot_name": assembly_name,
+            # TODO: robot_name should be args.robot_name?
+            # "robot_name": assembly_name,
+            "robot_name": onshape_config.robot_name,
             "merge_stls": onshape_config.mergeSTLs,
             # "merge_stls_collisions": onshape_config.mergeSTLsCollisions,
             "simplify_stls": onshape_config.simplifySTLs,
@@ -196,16 +227,16 @@ def run_onshape_to_robot(onshape_config: OnShapeConfig):
         #     "maxSTLSize": onshape_config.maxSTLSize,
         # }
 
-
-
         # Write the JSON data to a file
-        with open(json_file_path, "w") as json_file:
+        with open(config_json_file, "w") as json_file:
             json.dump(json_data, json_file, indent=4)
 
         # Execute the command
-        subprocess.run(f"onshape-to-robot {assembly_path}", shell=True)
+        subprocess.run(f"onshape-to-robot {assembly_dir}", shell=True)
 
-        process_urdf_and_stl_files(assembly_path)
+        process_urdf_and_stl_files(assembly_dir=assembly_dir,
+                                   robot_name=onshape_config.robot_name)
+
 
 
 def main():
@@ -231,6 +262,9 @@ def main():
         required=True,
         help="The workspace id of the documents. Need to match the names in OnShape.",
     )
+
+    #  TODO: make use of element_id.
+
     parser.add_argument(
         "--assembly-list",
         type=str,
@@ -239,12 +273,20 @@ def main():
         help="The names of the assemblies. Need to match the names in OnShape.",
     )
 
+    parser.add_argument(
+        "--robot-name",
+        type=str,
+        required=True,
+        help="The names of the robot.",
+    )
+
     args = parser.parse_args()
 
     run_onshape_to_robot(
         OnShapeConfig(doc_id_list=args.doc_id_list,
                       workspace_id_list=args.workspace_id_list,
-                      assembly_list=args.assembly_list)
+                      assembly_list=args.assembly_list,
+                      robot_name=args.robot_name )
     )
 
 
