@@ -13,7 +13,7 @@ import mujoco.rollout
 import mujoco.viewer
 import numpy as np
 import numpy.typing as npt
-from moviepy.editor import VideoFileClip, clips_array
+from moviepy import VideoFileClip, clips_array
 
 from toddlerbot.sim.robot import Robot
 

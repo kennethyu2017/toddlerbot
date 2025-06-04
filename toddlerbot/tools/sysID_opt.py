@@ -560,6 +560,7 @@ def _optimize_for_one_jnt_with_multiple_episodes(*,
         elif "XM430".casefold() in robot.name.casefold():
             tau_max_range = (0.0, 3.0, 1e-2)
         elif 'SM40BL'.casefold() in robot.name.casefold():
+            # TODO: keep same value as add_default_settings() in process_mjcf.py
             tau_max_range = (0.0, 4.0, 1e-2)
 
     # motor_names = robot.active_joint_to_motor_name[jnt_name]

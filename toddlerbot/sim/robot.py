@@ -1,4 +1,5 @@
 import json
+import time
 # import os
 from typing import Any, List, Mapping, Tuple, OrderedDict, Sequence, Dict
 from collections import OrderedDict as OrdDictCls
@@ -6,7 +7,6 @@ from dataclasses import dataclass, field
 import numpy as np
 import numpy.typing as npt
 from pathlib import Path
-
 
 from ._module_logger import logger
 
@@ -47,7 +47,7 @@ class _RobotCfgData:
 
     # for actuators. not passive.
 
-    TODO: rename it to motor_joint_name_to_id....
+    # TODO: rename it to motor_joint_name_to_id....
 
     motor_name_to_id: OrderedDict[str, int] = field(default_factory=OrdDictCls)
     id_to_motor_name: OrderedDict[int, str] = field(default_factory=OrdDictCls)
@@ -206,6 +206,10 @@ class Robot(_RobotCfgData):
 
                 self._parse_motor_param_helper(_name,_cfg)
 
+        # NOTE: keep same ordering.
+        self.motor_name_ordering = tuple(self.motor_name_to_id)
+        self.motor_id_ordering = tuple(self.motor_name_to_id.values())
+
         # generate joints based on motors.
         # NOTE: the keys in `init_active_joint_angles` maybe more than the `joint` and motors in config.
         # NOTE: here, the `active joint` is derived from motor, not same as in config, not self.passive_joints which
@@ -220,10 +224,6 @@ class Robot(_RobotCfgData):
         # immutable.
         # self.motor_name_ordering = tuple(self.init_motor_angles)  #  list(self.init_motor_angles) #.keys())
         # self.active_joint_name_ordering = tuple(self.init_active_joint_angles)  #  list(self.init_active_joint_angles) #.keys())
-
-        # NOTE: keep same ordering.
-        self.motor_name_ordering = tuple(self.motor_name_to_id)
-        self.motor_id_ordering = tuple(self.motor_name_to_id.values())
 
         logger.info(f' robot motor name ordering: {self.motor_name_ordering}  len:{len(self.motor_name_ordering)}')
         logger.info(f' robot motor id ordering: {self.motor_id_ordering} len:{len(self.motor_id_ordering)}')
@@ -502,7 +502,8 @@ class Robot(_RobotCfgData):
         """
 
         if not partial:
-            assert set(motor_angles) == set(self.motor_name_ordering)
+            if set(motor_angles) != set(self.motor_name_ordering):
+                raise ValueError(f'{motor_angles=:} not equals {self.motor_name_ordering=:}')
 
         # joint_angels: float: single angle; npt.NDArray(np.float32): a sequence of angels.
         joint_angles: OrderedDict[str, float|npt.NDArray[np.float32]] = OrdDictCls()
@@ -516,8 +517,9 @@ class Robot(_RobotCfgData):
 
         # NOTE: only transmission `ankle` will increase the len(joint_angles) more than len(motor_angles).
         # but we don't use `ankle` transmission till now. so, len(motor_name) == len(active_joint_name).
+        # joints_cfg :Dict[str, Any] = self.config['joints']
         for _m_name, _m_pos in motor_angles.items():
-            transmission = self.config[_m_name]["transmission"]
+            transmission = self.config['joints'][_m_name]["transmission"]
 
             if transmission == "gear":
                 # NOTE: a joint driven by gear, e.g., right_elbow_yaw_driven, even whose `is_passive` is true in config.json,
@@ -526,13 +528,13 @@ class Robot(_RobotCfgData):
 
                 joint_name = _m_name.replace("_drive", "_driven")
                 joint_angles[joint_name] = (
-                        - _m_pos * self.config[_m_name]["gear_ratio"]
+                        - _m_pos * self.config['joints'][_m_name]["gear_ratio"]
                 )
 
             elif transmission == "rack_and_pinion":
                 joint_pinion_name = _m_name.replace("_rack", "_pinion")
                 joint_angles[joint_pinion_name] = (
-                        - _m_pos * self.config[_m_name]["gear_ratio"]
+                        - _m_pos * self.config['joints'][_m_name]["gear_ratio"]
                 )
 
             # input motors must contain 'waist_act_1' and 'waist_act_2'
@@ -616,16 +618,16 @@ class Robot(_RobotCfgData):
 
         # joint_pos: float: single pos; npt.NDArray(np.float32): a sequence of pos.
         for _j_name, _j_pos in joint_angles.items():
-            transmission = self.config[_j_name]["transmission"]
+            transmission = self.config['joints'][_j_name]["transmission"]
             if transmission == "gear":
                 motor_name = _j_name.replace("_driven", "_drive")
                 motor_angles[motor_name] = (
-                        - _j_pos / self.config[motor_name]["gear_ratio"]
+                        - _j_pos / self.config['joints'][motor_name]["gear_ratio"]
                 )
             elif transmission == "rack_and_pinion":
                 motor_name = _j_name.replace("_pinion", "_rack")
                 motor_angles[motor_name] = (
-                        - _j_pos / self.config[motor_name]["gear_ratio"]
+                        - _j_pos / self.config['joints'][motor_name]["gear_ratio"]
                 )
             elif transmission == "waist":
                 #  input joints must contain 'waist_roll' and 'waist_yaw'.
@@ -685,7 +687,7 @@ class Robot(_RobotCfgData):
         """
         passive_angles: OrderedDict[str, float] = OrdDictCls()
         for joint_name, joint_pos in joint_angles.items():
-            transmission = self.config[joint_name]["transmission"]
+            transmission = self.config['joints'][joint_name]["transmission"]
             if transmission == "linkage":
                 sign = 1 if "knee" in joint_name else -1
                 for suffix in [

@@ -40,20 +40,6 @@ class PosVelLoadRead(NamedTuple):
     vel: npt.NDArray[np.float32]
     load: npt.NDArray[np.float32]
 
-def _feite_cleanup_handler():
-    """Handles cleanup of open Feite clients by forcibly closing active connections.
-
-    Iterates over all open Feite clients and checks if their port handlers are in use.
-    If a port handler is active, logs a warning message and forces the client to close
-    by setting the port handler's `is_using` attribute to False and disconnecting the client.
-    """
-    open_clients: List[FeiteClient] = list(FeiteClient.OPEN_CLIENTS)  # type: ignore
-    for open_client in open_clients:
-        if open_client.port_handler.is_using:
-            logger.warning("Forcing client to close.")
-        open_client.port_handler.is_using = False
-        open_client.disconnect()
-
 
 
 # # TODO: for feite protocol, the Two’s complement is not applied for the negative value. Use the BIT15 instead...
@@ -905,6 +891,20 @@ class FeiteGroupClient:
         """Automatically disconnect on destruction."""
         self.disconnect()
 
+
+def _feite_cleanup_handler():
+    """Handles cleanup of open Feite clients by forcibly closing active connections.
+
+    Iterates over all open Feite clients and checks if their port handlers are in use.
+    If a port handler is active, logs a warning message and forces the client to close
+    by setting the port handler's `is_using` attribute to False and disconnecting the client.
+    """
+    open_clients: List[FeiteClient] = list(FeiteGroupClient.OPEN_CLIENTS)  # type: ignore
+    for open_client in open_clients:
+        if open_client.port_handler.is_using:
+            logger.warning("Forcing client to close.")
+        open_client.port_handler.is_using = False
+        open_client.disconnect()
 
 # Register global cleanup function.
 atexit.register(_feite_cleanup_handler)
