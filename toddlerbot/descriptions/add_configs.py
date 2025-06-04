@@ -204,13 +204,13 @@ def _parse_dynamics(*, robot_name: str,
             joint_dict_dyn_part.update(passive_joint_dynamics[jnt_name])
         else:
             # default to zero.
-            # TODO: set    "tau_max": .0,
-            #         "q_dot_tau_max": .0,
-            #         "q_dot_max": .0
             joint_dict_dyn_part.update({
                 "damping": 0.0,
                 "armature": 0.0,
-                "frictionloss": 0.0, }
+                "frictionloss": 0.0,
+                "tau_max": 0.0,
+                "q_dot_tau_max": 0.0,
+                "q_dot_max": 0.0   }
             )
     else:
         # For sysID task, the motor_dynamics is None .... keep the default zero in joint_dict_dyn_part....
@@ -223,13 +223,13 @@ def _parse_dynamics(*, robot_name: str,
 
         elif "sysID" in robot_name:
             # default to zero.
-            # TODO: set    "tau_max": .0,
-            #         "q_dot_tau_max": .0,
-            #         "q_dot_max": .0
             joint_dict_dyn_part.update({
                 "damping": 0.0,
                 "armature": 0.0,
-                "frictionloss": 0.0, }
+                "frictionloss": 0.0,
+                "tau_max": 0.0,
+                "q_dot_tau_max": 0.0,
+                "q_dot_max": 0.0  }
             )
 
             print(f'robot: {robot_name} is a sysID task, not have motor dynamics till now. '

@@ -7,12 +7,14 @@ from xml.dom.minidom import parseString
 
 from transforms3d.euler import euler2quat
 
-from toddlerbot.sim.robot import Robot
-from toddlerbot.utils.math_utils import round_to_sig_digits
+# from toddlerbot.sim.robot import Robot
+# from toddlerbot.utils.math_utils import round_to_sig_digits
+from toddlerbot.utils import round_to_sig_digits
+from toddlerbot.sim import Robot
 
 # This script contains utility functions for modifying and writing MJCF XML files.
 
-
+# TODO: use ET.indent() instead?
 def pretty_write_xml(root: ET.Element, file_path: str):
     """Formats an XML Element into a pretty-printed XML string and writes it to a specified file.
 
@@ -398,9 +400,18 @@ def add_default_settings(
     # Group 3's visualization is diabled by default
     ET.SubElement(collision_default, "geom", {"group": "3"})
 
-    for motor_name, torque_limit in zip(
-        ["XM430", "XC430", "2XC430", "XL430", "2XL430", "XC330"], [3, 2, 2, 2, 2, 1]
-    ):
+    # for motor_name, torque_limit in zip(
+        # ["XM430", "XC430", "2XC430", "XL430", "2XL430", "XC330"], [3, 2, 2, 2, 2, 1]
+    for motor_name, torque_limit in(
+            {"XM430":3,
+             "XC430": 2,
+             "2XC430":2,
+             "XL430":2,
+             "2XL430":2,
+             "XC330":1,
+             'SM40BL':4 }.items()) :
+        # TODO: keep same value as () in _optimize_for_one_jnt_with_multiple_episodes() in sysID_opt.py
+
         has_motor = False
         for joint_config in joints_config.values():
             if "spec" not in joint_config:

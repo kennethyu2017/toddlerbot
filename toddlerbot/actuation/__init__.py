@@ -2,14 +2,6 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Dict, List, Sequence
 from contextlib import contextmanager
-from .feite_control import FeiteController, FeiteConfig
-from .dynamixel_control import DynamixelController, DynamixelConfig
-
-
-__all__ = ['FeiteController', 'FeiteConfig', 'DynamixelController', 'DynamixelConfig',
-           'BaseController',]
-
-
 
 @dataclass
 class JointState:
@@ -78,4 +70,14 @@ class BaseController(ABC):
         finally:
             if controller is not None:
                 controller.close_motors()
+
+
+
+from .feite_control import FeiteController, FeiteConfig
+from .dynamixel_control import DynamixelController, DynamixelConfig
+
+
+__all__ = ['FeiteController', 'FeiteConfig', 'DynamixelController', 'DynamixelConfig',
+           'BaseController', 'JointState',]
+
 

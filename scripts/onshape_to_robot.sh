@@ -148,7 +148,7 @@ fi
 
 # Check if the config file exists
 if [ -f "$CONFIG_PATH" ]; then
-    printf "Configuration file already exists. Do you want to overwrite it? (y/n)"
+    printf "configuration file: %s already exists. Do you want to overwrite it? (y/n)" "$CONFIG_PATH"
     read -r -p " > " overwrite_config
     if [ "$overwrite_config" == "y" ]; then
         printf "Overwriting the configuration file...\n\n"

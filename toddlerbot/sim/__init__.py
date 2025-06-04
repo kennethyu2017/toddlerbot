@@ -5,14 +5,6 @@ from typing import Dict, Optional
 import numpy as np
 import numpy.typing as npt
 
-from .mujoco_control import MotorController
-from .mujoco_sim import MuJoCoSim
-from .robot import Robot
-
-__all__ = [
-    'MotorController','MuJoCoSim','Robot','Obs', 'BaseEnv'
-          ]
-
 @dataclass(init=True)
 class Obs:
     """Observation data structure"""
@@ -87,3 +79,14 @@ class BaseEnv(ABC):
     @property
     def env_name(self):
         return self._env_name  # class variable of subclass.
+
+
+from .mujoco_control import MotorController,PositionController
+from .robot import Robot
+from .mujoco_sim import MuJoCoSim
+
+
+__all__ = [
+    'MotorController','MuJoCoSim','Robot','Obs', 'BaseEnv', 'PositionController'
+          ]
+
