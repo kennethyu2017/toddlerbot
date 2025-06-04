@@ -75,6 +75,8 @@ while [[ $# -gt 0 ]]; do
 #            WORKSPACE_ID_LIST='b0a9fe02cd9deb301fa36b12 b0a9fe02cd9deb301fa36b12'
             DOC_ID_LIST='4eead3e2f69aeca38dc2c804'
             WORKSPACE_ID_LIST='b0a9fe02cd9deb301fa36b12'
+            # BODY_NAME should be the assembly name.
+            BODY_NAME="使用长U支架_SM40BL_sysID_assembly"
             #  TODO: make use of element_id.
             #ELEMENT_ID_LIST=...
 #            ASSEMBLY_LIST='使用长U支架_SM40BL_sysID_assembly 仅带长U型支架_SM40BL_Actuator_Sub_Assembly'
@@ -126,7 +128,7 @@ else
 fi
 
 if [ -n "$BODY_NAME" ]; then
-    printf "Do you want to process the urdf? (y/n)"
+    printf "Do you want to assemble the urdf? if yes, remember to specify --body-name. (y/n)"
     read -r -p " > " run_process
     if [ "$run_process" == "y" ]; then
         printf "Processing...\n\n"

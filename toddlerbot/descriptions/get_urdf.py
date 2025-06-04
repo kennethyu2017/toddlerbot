@@ -1,6 +1,5 @@
 import argparse
 import json
-import os
 import shutil
 import subprocess
 import xml.dom.minidom
@@ -50,6 +49,7 @@ def prettify(elem: ET.Element, file_path: str):
     if is_xml_pretty_printed(file_path):
         return reparsed.toxml()
     else:
+        # TODO: Use ET.indent() for automatic XML formatting.
         return reparsed.toprettyxml(indent="  ", newl="")
 
 
@@ -95,7 +95,7 @@ def process_urdf_and_stl_files(*, assembly_dir: Path, robot_name: str):
     tree = ET.parse(urdf_file)
     root = tree.getroot()
 
-    assembly_name = assembly_dir.resolve().name
+    # assembly_name = assembly_dir.resolve().name
     # if root.attrib["name"] != assembly_name:
     #     root.attrib["name"] = assembly_name
 
@@ -105,48 +105,80 @@ def process_urdf_and_stl_files(*, assembly_dir: Path, robot_name: str):
         root.attrib["name"] = robot_name
 
     # Find and update all mesh filenames
-    referenced_stls: Set[str] = set()
+    stl_name_referred: Set[str] = set()
+    # stl_file_path_referred: Set[Path] = set()
 
-    for mesh in root.findall(".//mesh"):
-        filename_attr = mesh.get("filename")
-        if filename_attr and filename_attr.startswith("package:///"):
-            filename = os.path.basename(filename_attr)
-            referenced_stls.add(filename)
-
-    # Delete STL and PART files if not referenced
-    for entry in os.scandir(assembly_dir):
-        if entry.is_file():  # Check if the entry is a file
-            file = entry.name
-            if file.endswith((".stl", ".part")) and file not in referenced_stls:
-                file_path = assembly_dir / file
-                file_path.unlink()
-                # os.remove(file_path)
+    # for mesh in root.findall(".//mesh"):
+    for _mesh in root.iter("mesh"):
+        filename_attr = _mesh.get("filename")
+        # if filename_attr and filename_attr.startswith("package:///"):
+        if filename_attr and filename_attr.startswith("package://"):
+            # filename = os.path.basename(filename_attr)
+            # filename_attr.lstrip('packages:').lstrip('/')  --> get `relative_path/file_name`
+            # only use basename.
+            stl_name_referred.add( Path(filename_attr).name )
 
     # Create 'meshes' directory if not exists
     meshes_dir = assembly_dir / "meshes"
     if not meshes_dir.exists():
         meshes_dir.mkdir()
 
-    # Move referenced STL files to 'meshes' directory
-    for stl in referenced_stls:
-        # if "left" in robot_name and "left" not in stl:
-        if "left" in assembly_name and "left" not in stl:
-            new_stl = "left_" + stl
-        # elif "right" in robot_name and "right" not in stl:
-        elif "right" in assembly_name and "right" not in stl:
-            new_stl = "right_" + stl
-        else:
-            new_stl = stl
+    # Delete STL and PART files if not referenced, else move the new path as new name.
 
-        # Update the filename attribute in the URDF file
-        for mesh in root.findall(".//mesh"):
-            filename_attr = mesh.get("filename")
-            if filename_attr and filename_attr.endswith(stl):
-                mesh.set("filename", f"package:///meshes/{new_stl}")
+    assembly_name = assembly_dir.resolve().name
 
-        source_path = assembly_dir / stl
-        if source_path.exists():
-            shutil.move(source_path, meshes_dir/new_stl )
+    for _f in {*assembly_dir.rglob('*.stl'), *assembly_dir.rglob('*.part')}:
+        _f: Path
+        if _f.is_file():
+            base_name: str = _f.name
+
+            # TODO: remove the empty directory, e.g., `./assets/merged/`.
+            if base_name not in stl_name_referred:
+                _f.unlink()
+
+            else:
+                # stl_file_path_referred.add(_f)
+                # Move referenced STL files to 'meshes' directory
+
+                new_stl: str | None = None
+                # if "left" in robot_name and "left" not in stl:
+                if "left" in assembly_name and "left" not in base_name:
+                    new_stl = "left_" + base_name
+                # elif "right" in robot_name and "right" not in stl:
+                elif "right" in assembly_name and "right" not in base_name:
+                    new_stl = "right_" + base_name
+                else:
+                    new_stl = base_name
+
+                # Update the filename attribute in the URDF file
+                # for mesh in root.findall(".//mesh"):
+                for _mesh in root.iter("mesh"):
+                    filename_attr = _mesh.get("filename")
+                    if filename_attr and filename_attr.endswith(base_name):
+                        _mesh.set("filename", f"package:///meshes/{new_stl}")
+
+                # source_stl_file: Path = assembly_dir / base_name
+                # print(f'source stl file: {source_stl_file.resolve()}')
+
+                # if source_stl_file.exists():
+                shutil.move(_f, meshes_dir / new_stl)
+                print(f'move {_f.resolve()} to {(meshes_dir / new_stl).resolve()}')
+
+                # else:
+                #     raise FileNotFoundError(f'can not find source stl file: {source_stl_file.resolve()}')
+
+
+    # Delete STL and PART files if not referenced
+    # for entry in os.scandir(assembly_dir):
+    #     if entry.is_file():  # Check if the entry is a file
+    #         file = entry.name
+    #         if file.endswith((".stl", ".part")) and file not in referenced_stls:
+    #             file_path = assembly_dir / file
+    #             file_path.unlink()
+                # os.remove(file_path)
+
+
+
 
     pretty_xml = prettify(root, urdf_file)
     # Write the modified XML back to the URDF file
@@ -155,21 +187,24 @@ def process_urdf_and_stl_files(*, assembly_dir: Path, robot_name: str):
 
     # Rename URDF file to match the base directory name if necessary
     # new_urdf_path = os.path.join(assembly_path, robot_name + ".urdf")
-    new_urdf_path = assembly_dir / (assembly_name + ".urdf")
-    if urdf_file.resolve() != new_urdf_path.resolve():
+    # NOTE: if using assemble_urdf.py to merge body/part links, the `assembly_name`
+    # should be the body/part urdf stem name.
+    new_urdf_file = assembly_dir / (assembly_name + ".urdf")
+    if urdf_file.resolve() != new_urdf_file.resolve():
         # os.rename(urdf_file, new_urdf_path)
-        urdf_file.rename(new_urdf_path.resolve())
+        urdf_file.rename(new_urdf_file.resolve())
 
+    # Let the assemble_urdf.py update urdf file.
     # for sysID, there is just one single assembly, so without running assemble_urdf.py,
     # final urdf will not be moved to description/sysID_xx/sysID_xx.urdf.
-    if "sysID" in robot_name:
-        sysID_result_folder = Path('toddlerbot') / 'descriptions' / f'{robot_name}'
-        if not sysID_result_folder.exists():
-            sysID_result_folder.mkdir(parents=False)
-
-        print(f'copy {new_urdf_path} to {sysID_result_folder.resolve()}/"{robot_name}.urdf" ')
-
-        shutil.copy(src=new_urdf_path, dst=sysID_result_folder / f'{robot_name}.urdf' )
+    # if "sysID" in robot_name:
+    #     sysID_result_folder = Path('toddlerbot') / 'descriptions' / f'{robot_name}'
+    #     if not sysID_result_folder.exists():
+    #         sysID_result_folder.mkdir(parents=False)
+    #
+    #     print(f'copy {new_urdf_path} to {sysID_result_folder.resolve()}/"{robot_name}.urdf" ')
+    #
+    #     shutil.copy(src=new_urdf_path, dst=sysID_result_folder / f'{robot_name}.urdf' )
 
 
 def run_onshape_to_robot(onshape_config: OnShapeConfig):
