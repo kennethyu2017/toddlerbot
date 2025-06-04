@@ -67,7 +67,8 @@ def replace_mesh_file(root: ET.Element, old_file: str, new_file: str):
         new_file (str): The new file name to replace the old file name with.
     """
     # Find all mesh elements
-    for mesh in root.findall(".//mesh"):
+    # for mesh in root.findall(".//mesh"):
+    for mesh in root.iter("mesh"):
         # Check if the file attribute matches the old file name
         if mesh.get("file") == old_file:
             # Replace with the new file name
@@ -220,7 +221,8 @@ def update_joint_params(root: ET.Element, joints_config: Dict[str, Any]):
         joints_config (Dict[str, Any]): A dictionary mapping joint names to their configuration attributes and values. Attributes can include 'damping', 'armature', and 'frictionloss'.
     """
     # Iterate over all joints in the XML
-    for joint in root.findall(".//joint"):
+    # for joint in root.findall(".//joint"):
+    for joint in root.iter("joint"):
         joint_name = joint.get("name")
 
         # Check if the "actuatorfrcrange" attribute exists
@@ -247,7 +249,8 @@ def update_geom_classes(root: ET.Element, geom_keys: List[str]):
     Raises:
         ValueError: If a geometry element's name does not contain "visual" or "collision".
     """
-    for geom in root.findall(".//geom"):
+    # for geom in root.findall(".//geom"):
+    for geom in root.iter("geom"):
         name: str | None = geom.get("name")
         if name is None:
             name = geom.get("mesh")
@@ -450,7 +453,8 @@ def exclude_all_contacts(root: ET.Element):
     contact = ET.SubElement(root, "contact")
 
     collision_bodies: List[str] = []
-    for body in root.findall(".//body"):
+    # for body in root.findall(".//body"):
+    for body in root.iter("body"):
         body_name = body.get("name")
         if body_name and body.find("./geom[@class='collision']") is not None:
             collision_bodies.append(body_name)
@@ -480,7 +484,8 @@ def add_contacts(root: ET.Element, collision_config: Dict[str, Dict[str, Any]]):
     contact = ET.SubElement(root, "contact")
 
     collision_bodies: Dict[str, ET.Element] = {}
-    for body in root.findall(".//body"):
+    # for body in root.findall(".//body"):
+    for body in root.iter("body"):
         body_name = body.get("name")
         geom = body.find("./geom[@class='collision']")
         if body_name and geom is not None:
