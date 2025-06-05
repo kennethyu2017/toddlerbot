@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
-from typing import Dict, List, Tuple, Type
+from typing import Dict, List, Tuple, Type, ClassVar
+from collections import OrderedDict
 
 import numpy as np
 import numpy.typing as npt
@@ -9,7 +10,7 @@ from ..utils import ( interpolate, snake2camel )
 
 # Global registry to store policy names and their corresponding classes
 # TODO: move into BasePolicy as class variable.
-__policy_registry: Dict[str, Type["BasePolicy"]] = {}
+# __policy_registry: Dict[str, Type["BasePolicy"]] = {}
 
 def get_policy_class(policy_name: str) -> Type["BasePolicy"]:
     """Retrieves the policy class associated with the given policy name.
@@ -23,10 +24,10 @@ def get_policy_class(policy_name: str) -> Type["BasePolicy"]:
     Raises:
         ValueError: If the policy name is not found in the policy registry.
     """
-    if policy_name not in __policy_registry:
+    if policy_name not in BasePolicy.policy_registry:
         raise ValueError(f"Unknown policy: {policy_name}")
 
-    return __policy_registry[policy_name]
+    return BasePolicy.policy_registry[policy_name]
 
 
 def get_policy_names() -> List[str]:
@@ -40,15 +41,18 @@ def get_policy_names() -> List[str]:
         List[str]: A list containing the original and modified policy names.
     """
     policy_names: List[str] = []
-    for key in __policy_registry.keys():
+    for key in BasePolicy.policy_registry.keys():
         policy_names.append(key)
         policy_names.append(key + "_fixed")
 
     return policy_names
 
-
 class BasePolicy(ABC):
     """Base class for all policies."""
+
+    # Global registry to store policy names and their corresponding classes
+    # TODO: move into BasePolicy as class variable.
+    policy_registry: ClassVar[ OrderedDict[str, Type["BasePolicy"]]] = OrderedDict()
 
     @abstractmethod
     def __init__(
@@ -126,8 +130,12 @@ class BasePolicy(ABC):
         """
         super().__init_subclass__(**kwargs)
         if len(policy_name) > 0:
-            global __policy_registry
-            __policy_registry[policy_name] = cls
+            # global __policy_registry
+            # if not hasattr(BasePolicy, '__policy_registry'):
+            #     setattr(BasePolicy,'__policy_registry', OrderedDict())
+            # getattr(BasePolicy, '__policy_registry').update({policy_name:cls})
+
+            BasePolicy.policy_registry[policy_name] = cls
 
     def reset(self):...
 

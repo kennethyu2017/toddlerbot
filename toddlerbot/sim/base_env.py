@@ -42,7 +42,7 @@ class BaseEnv(ABC):
 
     @abstractmethod
     def __init__(self, *args, **kwargs):
-        super().__init__(args, kwargs)
+        super().__init__()
 
     # def __init__(self, name: str):
     #     self.name = name

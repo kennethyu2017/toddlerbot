@@ -293,7 +293,7 @@ class SysIDPolicy(BasePolicy, policy_name="sysID"):
             )
 
             # warm up sysID motor:
-            for _n, _d in sysID_jnt_dir:
+            for _n, _d in sysID_jnt_dir.items():
                 active_jnt_warm_up_angle[_n] = mean_angle * _d
 
             # warm up other accompany joints:
@@ -470,7 +470,7 @@ class SysIDPolicy(BasePolicy, policy_name="sysID"):
         motor_warm_up_angle = self.robot.active_joint_to_motor_angles(active_jnt_warm_up_angle)
         assert len(motor_warm_up_angle) == len(self.robot.motor_name_ordering)
 
-        act_warm_up: npt.NDArray[np.float32] = np.asarray( (motor_warm_up_angle[_n] for _n in self.robot.motor_name_ordering),
+        act_warm_up: npt.NDArray[np.float32] = np.asarray( [motor_warm_up_angle[_n] for _n in self.robot.motor_name_ordering],
                                   dtype=np.float32)
 
         if not np.allclose(act_warm_up, action_curr, 1e-06):  # self.action_arr[-1, :], 1e-6):

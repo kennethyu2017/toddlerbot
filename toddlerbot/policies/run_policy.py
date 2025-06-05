@@ -829,7 +829,7 @@ def run_policy(*,
 
 
 @contextmanager
-def _build_env(args: argparse.Namespace, robot: Robot)->Generator[Optional[BaseEnv]]:
+def _build_env(args: argparse.Namespace, robot: Robot)->Generator[Optional[BaseEnv],None, None]:
     # env: BaseEnv | None = None
 
     if args.env == "mujoco":
@@ -966,7 +966,7 @@ def _main(args:argparse.Namespace):
 
     # env: BaseEnv = _build_env(args, robot)
     with _build_env(args, robot) as env:
-        logger.info(f'create env: {env.__name__}')
+        logger.info(f'create env: {env.env_name}')
 
         # t2 = timelib.time()
 

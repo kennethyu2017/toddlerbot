@@ -13,8 +13,7 @@ import numpy.typing as npt
 from .base_controller import BaseController, JointState
 from .dynamixel_client import DynamixelClient
 
-# from toddlerbot.utils.math_utils import interpolate_pos
-from ..utils import log  # profile
+from ._module_logger import logger
 
 CONTROL_MODE_DICT: Dict[str, int] = {
     "current": 0,
@@ -169,20 +168,16 @@ class DynamixelController(BaseController):
             result = subprocess.run(
                 command, shell=True, text=True, check=True, stdout=subprocess.PIPE
             )
-            log(f"Latency Timer set: {result.stdout.strip()}", header="Dynamixel")
+            logger.info(f"Latency Timer set: {result.stdout.strip()}")
 
         except Exception as e:
             if os_type == "Windows":
-                log(
-                    "Make sure you're set the latency in the device manager!",
-                    header="Dynamixel",
-                    level="warning",
+                logger.warning(
+                    "Make sure you're set the latency in the device manager!"
                 )
             else:
-                log(
-                    f"Failed to set latency timer: {e}",
-                    header="Dynamixel",
-                    level="error",
+                logger.error(
+                    f"Failed to set latency timer: {e}"
                 )
 
         time.sleep(0.1)
@@ -192,7 +187,7 @@ class DynamixelController(BaseController):
                 self.motor_ids, self.config.port, self.config.baudrate
             )
             self.client.connect()
-            log(f"Connected to the port: {self.config.port}", header="Dynamixel")
+            logger.info(f"Connected to the port: {self.config.port}")
 
         except Exception:
             raise ConnectionError("Could not connect to the Dynamixel port.")
@@ -209,12 +204,12 @@ class DynamixelController(BaseController):
         Raises:
             ValueError: If the input voltage is below 10V, indicating a potential power supply issue.
         """
-        log("Initializing motors...", header="Dynamixel")
+        logger.info("Initializing motors...")
         self.client.reboot(self.motor_ids)
         time.sleep(0.2)
 
         _, v_in = self.client.read_vin()
-        log(f"Voltage (V): {v_in}", header="Dynamixel")
+        logger.info(f"Voltage (V): {v_in}")
         if np.any(v_in < 10):
             raise ValueError(
                 "Voltage too low. Please check the power supply or charge the batteries."
@@ -268,7 +263,7 @@ class DynamixelController(BaseController):
         open_clients: List[DynamixelClient] = list(DynamixelClient.OPEN_CLIENTS)  # type: ignore
         for open_client in open_clients:
             if open_client.port_handler.is_using:
-                log("Forcing client to close.", header="Dynamixel")
+                logger.error("Forcing client to close.")
             open_client.port_handler.is_using = False
             open_client.disconnect()
 
@@ -331,7 +326,7 @@ class DynamixelController(BaseController):
             kp (float): The proportional gain to be set for the motor.
             kd (float): The derivative gain to be set for the motor.
         """
-        log(f"Setting motor kp={kp} kd={kd}", header="Dynamixel")
+        logger.info(f"Setting motor kp={kp} kd={kd}")
         with self.lock:
             self.client.sync_write(self.motor_ids, [kd] * len(self.motor_ids), 80, 2)
             self.client.sync_write(self.motor_ids, [kp] * len(self.motor_ids), 84, 2)
@@ -350,7 +345,7 @@ class DynamixelController(BaseController):
             kff2 (int, optional): Second feedforward gain. If None, the parameter is not updated.
             ids (list of int, optional): List of motor IDs to update. If None, no motors are updated.
         """
-        log("Setting motor parameters", header="Dynamixel")
+        logger.info("Setting motor parameters")
         with self.lock:
             if kp is not None:
                 self.client.sync_write(ids, [kp], 84, 2)
