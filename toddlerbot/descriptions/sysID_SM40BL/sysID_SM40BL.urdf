@@ -1,0 +1,45 @@
+<?xml version="1.0" ?>
+<robot name="sysID_SM40BL">
+  <mujoco>
+    <compiler strippath="false" balanceinertia="true" discardvisual="false"/>
+  </mujoco>
+  <link name="mount_sm40bl">
+    <inertial>
+      <origin xyz="0.061853 0.0606422 0.0785395" rpy="0 0 0"/>
+      <mass value="0.113746"/>
+      <inertia ixx="8.41104e-05" ixy="6.81899e-08" ixz="-1.98862e-05" iyy="0.000109658" iyz="3.30358e-08" izz="4.31852e-05"/>
+    </inertial>
+    <visual>
+      <origin xyz="0.061853 0.0606422 0.0785395" rpy="0 -0 0"/>
+      <geometry>
+        <mesh filename="../assemblies/使用长U支架_SM40BL_sysID_assembly/meshes/mount_sm40bl_visual.stl"/>
+      </geometry>
+      <material name="mount_sm40bl_parts_material">
+        <color rgba="0.597754 0.750234 0.577238 1.0"/>
+      </material>
+    </visual>
+  </link>
+  <link name="sm40bl_mu_20190118">
+    <inertial>
+      <origin xyz="-1.18458e-11 0.0859302 0.0209496" rpy="0 0 0"/>
+      <mass value="0.544624"/>
+      <inertia ixx="0.00103372" ixy="-1.02972e-14" ixz="-1.88626e-12" iyy="0.000609139" iyz="-1.76478e-08" izz="0.000598089"/>
+    </inertial>
+    <visual>
+      <origin xyz="-1.18458e-11 0.0859302 0.0209496" rpy="0 -0 -6.45317e-16"/>
+      <geometry>
+        <mesh filename="../assemblies/使用长U支架_SM40BL_sysID_assembly/meshes/sm40bl_mu_20190118_visual.stl"/>
+      </geometry>
+      <material name="sm40bl_mu_20190118_parts_material">
+        <color rgba="0.614787 0.725509 0.801025 1.0"/>
+      </material>
+    </visual>
+  </link>
+  <joint name="joint_0" type="revolute">
+    <origin xyz="0.0470055 0.0606694 0.0528278" rpy="0 -0 6.45317e-16"/>
+    <parent link="mount_sm40bl"/>
+    <child link="sm40bl_mu_20190118"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="10" velocity="10" lower="0" upper="3.14159"/>
+  </joint>
+</robot>

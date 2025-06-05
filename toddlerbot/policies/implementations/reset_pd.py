@@ -3,13 +3,13 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import numpy.typing as npt
 
-from toddlerbot.policies.balance_pd import BalancePDPolicy
-from toddlerbot.sensing.camera import Camera
-from toddlerbot.sim import Obs
-from toddlerbot.sim.robot import Robot
-from toddlerbot.tools.joystick import Joystick
-from toddlerbot.utils.comm_utils import ZMQNode
-from toddlerbot.utils.math_utils import interpolate_action
+
+from ...sensing import Camera
+from ...sim import ( Obs,Robot )
+from ...tools import Joystick
+from ...utils import ZMQNode, interpolate_action
+
+from .balance_pd import BalancePDPolicy
 
 
 class ResetPDPolicy(BalancePDPolicy, policy_name="reset_pd"):

@@ -4,12 +4,12 @@ import jax
 import jax.numpy as jnp
 from brax import base
 
-from toddlerbot.locomotion.mjx_config import MJXConfig
-from toddlerbot.locomotion.mjx_env import MJXEnv
-from toddlerbot.reference.walk_simple_ref import WalkSimpleReference
-from toddlerbot.reference.walk_zmp_ref import WalkZMPReference
-from toddlerbot.sim.robot import Robot
-from toddlerbot.utils.math_utils import quat2euler, quat_inv, rotate_vec
+from .mjx_config import MJXConfig
+from .mjx_env import MJXEnv
+
+from ..reference import (WalkSimpleReference, WalkZMPReference)
+from ..sim import Robot
+from ..utils import ( quat2euler, quat_inv, rotate_vec )
 
 
 class WalkEnv(MJXEnv, env_name="walk"):

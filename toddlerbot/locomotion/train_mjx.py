@@ -26,17 +26,17 @@ from brax.io import model
 from brax.training.agents.ppo import networks as ppo_networks
 from brax.training.agents.ppo import train as ppo
 from flax.training import orbax_utils
-from moviepy.editor import VideoFileClip, clips_array
+from moviepy import VideoFileClip, clips_array
 from orbax import checkpoint as ocp
 from tqdm import tqdm
 
 import wandb
-from toddlerbot.locomotion.mjx_config import MJXConfig
-from toddlerbot.locomotion.mjx_env import MJXEnv, get_env_class
-from toddlerbot.locomotion.ppo_config import PPOConfig
-from toddlerbot.sim.robot import Robot
-from toddlerbot.utils.file_utils import find_robot_file_path
-from toddlerbot.utils.misc_utils import dataclass2dict, parse_value
+
+from .mjx_config import MJXConfig
+from .mjx_env import MJXEnv, get_env_class
+from .ppo_config import PPOConfig
+from ..sim import Robot
+from ..utils import ( find_robot_file_path, dataclass2dict, parse_value)
 
 jax.config.update("jax_default_matmul_precision", jax.lax.Precision.HIGH)
 

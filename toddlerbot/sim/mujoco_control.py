@@ -1,10 +1,8 @@
 from typing import Optional,Mapping
-
-# from toddlerbot.sim.robot import Robot
-from toddlerbot.utils.array_utils import ArrayType
-from toddlerbot.utils.array_utils import array_lib as np
 from dataclasses import dataclass
 
+from ..utils import ( array_lib as np,
+                      ArrayType)
 
 @dataclass(init=True)
 class MotorController:

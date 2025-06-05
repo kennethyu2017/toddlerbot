@@ -3,7 +3,7 @@ import platform
 import numpy as np
 import serial
 
-from toddlerbot.utils.file_utils import find_ports
+from ..utils import find_ports
 
 
 class FSR:

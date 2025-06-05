@@ -12,20 +12,19 @@ from jax import numpy as jnp
 from mujoco import mjx
 from mujoco.mjx._src import support  # type: ignore
 
-from toddlerbot.locomotion.mjx_config import MJXConfig
-from toddlerbot.reference.motion_ref import MotionReference
-from toddlerbot.sim.mujoco_control import MotorController
-from toddlerbot.sim.robot import Robot
-from toddlerbot.utils.file_utils import find_robot_file_path
-from toddlerbot.utils.math_utils import (
-    butterworth,
-    euler2quat,
-    exponential_moving_average,
-    quat2euler,
-    quat_inv,
-    quat_mult,
-    rotate_vec,
-)
+from .mjx_config import MJXConfig
+from ..sim import Robot, MotorController
+from ..utils import ( find_robot_file_path,
+                      butterworth,
+                      euler2quat,
+                      exponential_moving_average,
+                      quat2euler,
+                      quat_inv,
+                      quat_mult,
+                      rotate_vec,
+                      )
+
+from ..reference import MotionReference
 
 # Global registry to store env names and their corresponding classes
 env_registry: Dict[str, Type["MJXEnv"]] = {}

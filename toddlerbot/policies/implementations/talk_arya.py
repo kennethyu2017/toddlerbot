@@ -11,14 +11,12 @@ from openai import AsyncOpenAI
 from openai.resources.beta.realtime.realtime import AsyncRealtimeConnection
 from openai.types.beta.realtime.session import Session
 
-from toddlerbot.policies import BasePolicy
-from toddlerbot.sensing.microphone import Microphone
-from toddlerbot.sensing.speaker import Speaker
-from toddlerbot.sim import Obs
-from toddlerbot.sim.robot import Robot
-from toddlerbot.tools.audio_player_async import AudioPlayerAsync
-from toddlerbot.utils.comm_utils import ZMQMessage, ZMQNode
-from toddlerbot.utils.math_utils import interpolate_action
+from ...sensing import (Microphone, Speaker )
+from ...sim import ( Obs, Robot )
+from ...tools import AudioPlayerAsync
+from ...utils import ( ZMQMessage, ZMQNode, interpolate_action )
+
+from ..base_policy import BasePolicy
 
 CHANNELS = 1
 SAMPLE_RATE = 24000

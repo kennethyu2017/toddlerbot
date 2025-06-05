@@ -11,6 +11,7 @@
 #robot assets
 *.STL
 *.stl
+*.part
 
 
 #dataset

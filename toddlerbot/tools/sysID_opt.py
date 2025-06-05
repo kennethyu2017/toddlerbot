@@ -13,18 +13,14 @@ import numpy.typing as npt
 import optuna
 # from optuna.logging import _get_library_root_logger
 
-# from toddlerbot.sim import Obs
-# from toddlerbot.sim.mujoco_control import MotorController
-# from toddlerbot.sim.mujoco_sim import MuJoCoSim
-# from toddlerbot.sim.robot import Robot
-from ..sim import *
-from ..utils import config_logging
-from ..policies import (RUN_POLICY_LOG_FOLDER_FMT, RUN_STEP_RECORD_PICKLE_FILE,
+from toddlerbot.sim import Robot, MuJoCoSim, MotorController
+from toddlerbot.utils import config_logging
+from toddlerbot.policies import (RUN_POLICY_LOG_FOLDER_FMT, RUN_STEP_RECORD_PICKLE_FILE,
                         RUN_EPISODE_MOTOR_KP_PICKLE_FILE, StepRecord, EpisodeInfo)
 
 # from toddlerbot.utils.misc_utils import log
 
-from toddlerbot.visualization.vis_plot import (
+from toddlerbot.visualization import (
     plot_joint_tracking,
     plot_joint_tracking_frequency,
 )

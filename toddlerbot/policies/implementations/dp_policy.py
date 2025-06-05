@@ -8,15 +8,12 @@ import joblib
 import numpy as np
 import numpy.typing as npt
 
-from toddlerbot.manipulation.inference_class import DPModel
-from toddlerbot.policies.balance_pd import BalancePDPolicy
-from toddlerbot.sensing.camera import Camera
-from toddlerbot.sim import Obs
-from toddlerbot.sim.robot import Robot
-from toddlerbot.tools.joystick import Joystick
-from toddlerbot.utils.comm_utils import ZMQNode
-from toddlerbot.utils.math_utils import interpolate_action
-
+from ...manipulation import DPModel
+from ...sensing import Camera
+from ...sim import ( Obs, Robot )
+from ...tools import Joystick
+from ...utils import ( ZMQNode, interpolate_action )
+from .balance_pd import BalancePDPolicy
 
 class DPPolicy(BalancePDPolicy, policy_name="dp"):
     """Policy for executing manipulation tasks using a deep policy model."""

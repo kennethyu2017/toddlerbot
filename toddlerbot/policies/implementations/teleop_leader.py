@@ -6,13 +6,12 @@ import joblib
 import numpy as np
 import numpy.typing as npt
 
-from toddlerbot.policies import BasePolicy
-from toddlerbot.sensing.FSR import FSR
-from toddlerbot.sim import Obs
-from toddlerbot.sim.robot import Robot
-from toddlerbot.tools.joystick import Joystick
-from toddlerbot.utils.comm_utils import ZMQMessage, ZMQNode
-from toddlerbot.utils.math_utils import interpolate_action
+from ...sensing import FSR
+from ...sim import ( Obs, Robot )
+from ...tools import Joystick
+from ...utils import ( ZMQNode, ZMQMessage, interpolate_action )
+
+from ..base_policy import BasePolicy
 
 # Connect the leader arms to the remote controller and run this script on the remote controller
 # during the teleoperation data collection session.

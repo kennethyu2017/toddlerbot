@@ -5,14 +5,13 @@ import joblib
 import numpy as np
 import numpy.typing as npt
 
-from toddlerbot.policies import BasePolicy
-from toddlerbot.sim import Obs
-from toddlerbot.sim.robot import Robot
-from toddlerbot.tools.keyboard import Keyboard
-from toddlerbot.utils.math_utils import interpolate_action
+from ...sim import ( Obs,Robot )
+from ...utils import interpolate_action
+from ...tools import keyboard
+
+from..base_policy import BasePolicy
 
 # This script replays a keyframe animation or recorded motion data.
-
 
 class ReplayPolicy(BasePolicy, policy_name="replay"):
     def __init__(

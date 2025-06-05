@@ -11,7 +11,7 @@ import numpy as np
 import numpy.typing as npt
 
 from scservo_sdk import SMS_STS_DEFAULT_BAUD_RATE
-from . import BaseController, JointState
+from .base_controller import BaseController, JointState
 from .feite_client import FeiteGroupClient, PosVelLoadRead
 
 from ._module_logger import logger

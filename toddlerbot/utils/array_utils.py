@@ -7,7 +7,9 @@ import numpy as np
 import numpy.typing as npt
 import scipy
 
-USE_JAX = os.getenv("USE_JAX", "false").lower() == "true"
+# USE_JAX = os.getenv("USE_JAX", "false").lower() == "true"
+# TODO> check GPU to enable JAX.
+USE_JAX = os.getenv("USE_JAX", "true").lower() == "true"
 
 array_lib = jnp if USE_JAX else np
 ArrayType = jax.Array | npt.NDArray[np.float32]

@@ -1,10 +1,9 @@
 from typing import Tuple
 
-from toddlerbot.reference.motion_ref import MotionReference
-from toddlerbot.sim.robot import Robot
-from toddlerbot.utils.array_utils import ArrayType, inplace_update
-from toddlerbot.utils.array_utils import array_lib as np
-
+from .motion_ref import MotionReference
+from ..sim import Robot
+from ..utils import (array_lib as np,
+                      ArrayType, inplace_update)
 
 class WalkSimpleReference(MotionReference):
     def __init__(

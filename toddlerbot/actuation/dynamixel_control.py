@@ -10,11 +10,11 @@ from typing import Dict, List, Sequence
 import numpy as np
 import numpy.typing as npt
 
-from toddlerbot.actuation import BaseController, JointState
-from toddlerbot.actuation.dynamixel_client import DynamixelClient
+from .base_controller import BaseController, JointState
+from .dynamixel_client import DynamixelClient
 
 # from toddlerbot.utils.math_utils import interpolate_pos
-from toddlerbot.utils.misc_utils import log  # profile
+from ..utils import log  # profile
 
 CONTROL_MODE_DICT: Dict[str, int] = {
     "current": 0,

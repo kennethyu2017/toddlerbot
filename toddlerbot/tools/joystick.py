@@ -6,7 +6,7 @@ from typing import Dict
 
 import numpy as np
 
-from toddlerbot.locomotion.mjx_config import get_env_config
+from toddlerbot.locomotion import get_env_config
 
 os_type = platform.system()
 if os_type != "Windows":

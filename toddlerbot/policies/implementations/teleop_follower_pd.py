@@ -5,14 +5,13 @@ import joblib
 import numpy as np
 import numpy.typing as npt
 
-from toddlerbot.policies.balance_pd import BalancePDPolicy
-from toddlerbot.sensing.camera import Camera
-from toddlerbot.sim import Obs
-from toddlerbot.sim.robot import Robot
-from toddlerbot.tools.joystick import Joystick
-from toddlerbot.utils.comm_utils import ZMQNode
-from toddlerbot.utils.dataset_utils import Data, DatasetLogger
 
+from ...sensing import Camera
+from ...sim import ( Obs, Robot )
+from ...tools import Joystick
+from ...utils import ( ZMQNode, Data, DatasetLogger )
+
+from .balance_pd import BalancePDPolicy
 
 class TeleopFollowerPDPolicy(BalancePDPolicy, policy_name="teleop_follower_pd"):
     """Teleoperation follower policy for the follower robot of ToddlerBot."""

@@ -2,8 +2,7 @@ import ast
 import asyncio
 import functools
 import inspect
-import logging
-# import os
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -12,43 +11,45 @@ from dataclasses import asdict, is_dataclass
 from datetime import datetime
 from typing import Any, Callable, TypeVar
 
-from colorama import Fore, init
+from colorama import init
 from line_profiler import LineProfiler
+
+from ._module_logger import logger
 
 # Initialize colorama to auto-reset color codes after each print statement
 init(autoreset=True)
 
-# Set up basic configuration for logging
-logging.basicConfig(level=logging.WARNING)
-
-# Configure your specific logger
-my_logger = logging.getLogger("my_logger")
-my_logger.setLevel(logging.DEBUG)
-handler = logging.StreamHandler()
-formatter = logging.Formatter("%(message)s")
-handler.setFormatter(formatter)
-my_logger.addHandler(handler)
-my_logger.propagate = False
-
-
-def log(message: str, header: str = "", level: str = "info"):
-    """Logs a message with an optional header and severity level.
-
-    Args:
-        message (str): The message to log.
-        header (str, optional): An optional header for the log message. Defaults to an empty string.
-        level (str, optional): The severity level of the log message (e.g., 'info', 'warning', 'error'). Defaults to 'info'.
-    """
-    header_msg = f"[{header}] "
-    if level == "debug":
-        my_logger.debug(Fore.CYAN + "[Debug] " + header_msg + message)
-    elif level == "error":
-        my_logger.error(Fore.RED + "[Error] " + header_msg + message)
-    elif level == "warning":
-        my_logger.warning(Fore.YELLOW + "[Warning] " + header_msg + message)
-    else:
-        my_logger.info(Fore.WHITE + "[Info] " + header_msg + message)
-
+# # Set up basic configuration for logging
+# logging.basicConfig(level=logging.WARNING)
+#
+# # Configure your specific logger
+# my_logger = logging.getLogger("my_logger")
+# my_logger.setLevel(logging.DEBUG)
+# handler = logging.StreamHandler()
+# formatter = logging.Formatter("%(message)s")
+# handler.setFormatter(formatter)
+# my_logger.addHandler(handler)
+# my_logger.propagate = False
+#
+#
+# def log(message: str, header: str = "", level: str = "info"):
+#     """Logs a message with an optional header and severity level.
+#
+#     Args:
+#         message (str): The message to log.
+#         header (str, optional): An optional header for the log message. Defaults to an empty string.
+#         level (str, optional): The severity level of the log message (e.g., 'info', 'warning', 'error'). Defaults to 'info'.
+#     """
+#     header_msg = f"[{header}] "
+#     if level == "debug":
+#         my_logger.debug(Fore.CYAN + "[Debug] " + header_msg + message)
+#     elif level == "error":
+#         my_logger.error(Fore.RED + "[Error] " + header_msg + message)
+#     elif level == "warning":
+#         my_logger.warning(Fore.YELLOW + "[Warning] " + header_msg + message)
+#     else:
+#         my_logger.info(Fore.WHITE + "[Info] " + header_msg + message)
+#
 
 def precise_sleep(duration: float):
     """Sleeps for a specified duration with high precision.
@@ -125,7 +126,7 @@ def dump_profiling_data(prof_path: Path = "profile_output.lprof"):
     txt_path = prof_path.with_suffix('.txt')
     subprocess.run(f"python -m line_profiler {prof_path.resolve()} > {txt_path.resolve()}", shell=True)
 
-    log(f"Profile results saved to {txt_path.resolve()}.", header="Profiler")
+    logger.info(f"Profile results saved to {txt_path.resolve()}.")
 
 
 def snake2camel(snake_str: str) -> str:
@@ -173,7 +174,7 @@ def set_seed(seed: int):
     if seed == -1:
         seed = np.random.randint(0, 10000)
 
-    log(f"Setting seed: {seed}", header="Seed")
+    logger.info(f"Setting seed: {seed}")
 
     random.seed(seed)
     np.random.seed(seed)

@@ -3,7 +3,7 @@ import time
 import cv2
 import numpy as np
 
-from toddlerbot.utils.comm_utils import ZMQNode
+from toddlerbot.utils import ZMQNode
 
 # This script is used to receive JPEG images from a ZMQ connection and display them in real-time.
 # You can run this on the remote controller to see what the robot sees.

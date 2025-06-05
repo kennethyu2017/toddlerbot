@@ -1,6 +1,5 @@
 import sounddevice as sd
 
-
 class Microphone:
     """Microphone class for handling audio input from a microphone device."""
 

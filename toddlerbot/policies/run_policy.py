@@ -2,13 +2,12 @@ import argparse
 # import bisect
 import importlib
 import json
-# import os
 from pathlib import Path
 import pickle
 import pkgutil
 import time
 import time as timelib
-from typing import Any, Dict, List,Optional, Generator, DefaultDict, Mapping
+from typing import Dict, List,Optional, Generator, DefaultDict, Mapping
 from dataclasses import dataclass
 from collections import OrderedDict, defaultdict
 from contextlib import contextmanager
@@ -21,50 +20,20 @@ from tqdm import tqdm
 import logging
 from copy import deepcopy
 
-from . import *
-# from toddlerbot.policies import BasePolicy, get_policy_class, get_policy_names
-# from toddlerbot.policies.balance_pd import BalancePDPolicy
-# from toddlerbot.policies.calibrate import CalibratePolicy
-# from toddlerbot.policies.dp_policy import DPPolicy
-# from toddlerbot.policies.mjx_policy import MJXPolicy
-# from toddlerbot.policies.push_cart import PushCartPolicy
-# from toddlerbot.policies.record import RecordPolicy
-# from toddlerbot.policies.replay import ReplayPolicy
-# from toddlerbot.policies.sysID import SysIDPolicy
-# from toddlerbot.policies.teleop_follower_pd import TeleopFollowerPDPolicy
-# from toddlerbot.policies.teleop_joystick import TeleopJoystickPolicy
-# from toddlerbot.policies.teleop_leader import TeleopLeaderPolicy
-
-from toddlerbot.sim import BaseEnv, Obs
-from toddlerbot.sim.mujoco_sim import MuJoCoSim
-from toddlerbot.sim.real_world import RealWorld
-from toddlerbot.sim.robot import Robot
-
-# from toddlerbot.utils.comm_utils import sync_time
-# from toddlerbot.utils.misc_utils import dump_profiling_data, log, snake2camel
-# from ..utils.config_logging import config_logging
-
-from ..utils import sync_time, dump_profiling_data, snake2camel, config_logging
-
-from ..visualization import *
-
-# from toddlerbot.visualization.vis_plot import (
-#     plot_joint_tracking,
-#     plot_joint_tracking_frequency,
-#     plot_joint_tracking_single,
-#     plot_line_graph,
-#     plot_loop_time,
-#     plot_motor_vel_tor_mapping,
-#     # plot_path_tracking,
-# )
-
-# from toddlerbot.utils.misc_utils import profile
-from ._module_logger import logger
+from toddlerbot.sim import (Robot, BaseEnv, Obs, MuJoCoSim, RealWorld)
+from toddlerbot.utils import ( sync_time, dump_profiling_data,
+                               # snake2camel,
+                               config_logging,
+                               # profile
+                               )
+from toddlerbot.visualization import *
+from toddlerbot.policies.implementations import *
+from toddlerbot.policies.base_policy import ( BasePolicy, get_policy_names, get_policy_class )
+from toddlerbot.policies._module_logger import logger
 
 RUN_POLICY_LOG_FOLDER_FMT = 'run_policy_log/{robot_name}_{policy_name}_{env_name}_{cur_time}'
 RUN_STEP_RECORD_PICKLE_FILE = 'step_record/step_record_list.pkl'
 RUN_EPISODE_MOTOR_KP_PICKLE_FILE = '{policy_name}/episode_motor_kp.pkl'
-
 
 def dynamic_import_policies(policy_package: str):
     """Dynamically imports all modules within a specified package.

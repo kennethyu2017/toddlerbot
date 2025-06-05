@@ -5,13 +5,14 @@ from typing import List, Optional, Tuple
 import joblib
 import mujoco
 import numpy
-from mujoco import mjx
+from mujoco.mjx import (forward as mjx_fwd,
+                        put_model as mjx_put_model,
+                        make_data as mjx_make_data)
 
-from toddlerbot.sim.robot import Robot
-from toddlerbot.utils.array_utils import ArrayType, inplace_update
-from toddlerbot.utils.array_utils import array_lib as np
-from toddlerbot.utils.file_utils import find_robot_file_path
-from toddlerbot.utils.math_utils import euler2quat, quat_inv, quat_mult, rotate_vec
+from ..sim import Robot
+from ..utils import ( array_lib as np, ArrayType, inplace_update,
+                      find_robot_file_path,
+                      euler2quat, quat_inv, quat_mult, rotate_vec )
 
 
 class MotionReference(ABC):
@@ -240,23 +241,23 @@ class MotionReference(ABC):
         )
 
         if self.use_jax:
-            self.model = mjx.put_model(model)
+            self.model = mjx_put_model(model)
 
-            def forward(qpos):
-                data = mjx.make_data(self.model)
+            def _forward(qpos):
+                data = mjx_make_data(self.model)
                 data = data.replace(qpos=qpos)
-                return mjx.forward(self.model, data)
+                return mjx_fwd(self.model, data)
 
         else:
             self.model = model
 
-            def forward(qpos):
+            def _forward(qpos):
                 data = mujoco.MjData(self.model)
                 data.qpos = qpos
                 mujoco.mj_forward(self.model, data)
                 return data
 
-        self.forward = forward
+        self.forward = _forward
 
         data = self.forward(self.default_qpos)
         self.left_foot_center = np.asarray(data.site_xpos[self.left_foot_site_id])

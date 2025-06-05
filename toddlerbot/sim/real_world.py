@@ -6,17 +6,12 @@ from collections import OrderedDict
 import numpy as np
 import numpy.typing as npt
 
-from ..actuation import JointState
-from ..sim import BaseEnv, Obs
-from ..sim.robot import Robot
-from ..sensing.IMU import IMU as BNO08X_IMU
-from ..utils.file_utils import find_ports
-
+from ..sensing import IMU as BNO08X_IMU
+from ..utils import find_ports
 from ..actuation import *
-# from ..actuation import BaseController
-# from ..actuation.dynamixel_control import (DynamixelConfig, DynamixelController)
-# from ..actuation.feite_control import (FeiteConfig, FeiteController)
 
+from .base_env import BaseEnv, Obs
+from .robot import Robot
 from ._module_logger import logger
 
 def _init_dynamixel_actuators(*, robot:Robot, executor: ThreadPoolExecutor)->Future:

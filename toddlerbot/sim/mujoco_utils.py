@@ -1,4 +1,3 @@
-# import os
 import pickle
 import time
 import warnings
@@ -15,7 +14,7 @@ import numpy as np
 import numpy.typing as npt
 from moviepy import VideoFileClip, clips_array
 
-from toddlerbot.sim.robot import Robot
+from .robot import Robot
 
 # Suppress specific warnings
 warnings.filterwarnings("ignore", category=UserWarning, module="moviepy")
