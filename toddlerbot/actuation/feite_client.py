@@ -1,4 +1,4 @@
-"""Communication using the DynamixelSDK."""
+"""Communication using the Feite SDK."""
 
 ##This is based off of the dynamixel SDK
 import atexit
@@ -12,7 +12,7 @@ from typing import (Any, Dict, List, Optional, Sequence,Type,
 import numpy as np
 import numpy.typing as npt
 
-from scservo_sdk import (PortHandler, ProtocolPacketHandler, GroupSyncReader, GroupSyncWriter,
+from .feite_servo.scservo_sdk import (PortHandler, ProtocolPacketHandler, GroupSyncReader, GroupSyncWriter,
                          CommResult, ByteOrder, SMS_STS_SRAM_Table_ReadOnly, SMS_STS_SRAM_Table_RW,
                          SMS_STS_EEPROM_Table_ReadOnly, SMS_STS_EEPROM_Table_RW, SMS_STS_Table_Data_Length)
 
