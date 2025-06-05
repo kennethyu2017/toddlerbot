@@ -30,10 +30,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from toddlerbot.sim.mujoco_sim import MuJoCoSim
-from toddlerbot.sim.robot import Robot
-from toddlerbot.utils.math_utils import interpolate_action, mat2quat
-from toddlerbot.utils.misc_utils import find_latest_file_with_time_str
+from toddlerbot.sim import MuJoCoSim, Robot
+from toddlerbot.utils import ( interpolate_action, mat2quat, find_latest_file_with_time_str )
 
 # This script is a GUI application that allows the user to interact with MuJoCo simulations in real-time
 # and create keyframes for a given task. The keyframes can be tested and saved as a sequence

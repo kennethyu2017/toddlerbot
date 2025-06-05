@@ -2,16 +2,15 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torchvision.models as models
+
 from diffusers.schedulers.scheduling_ddim import DDIMScheduler
 from diffusers.schedulers.scheduling_ddpm import DDPMScheduler
 
-from toddlerbot.manipulation.models.diffusion_model import ConditionalUnet1D
-from toddlerbot.manipulation.utils.dataset_utils import (
-    normalize_data,
-    unnormalize_data,
-)
-from toddlerbot.manipulation.utils.model_utils import get_resnet, replace_bn_with_gn
-
+from .models import ConditionalUnet1D
+from .utils import ( normalize_data,
+                     unnormalize_data,
+                     get_resnet,
+                     replace_bn_with_gn )
 
 class DPModel:
     def __init__(self, ckpt_path, stats=None):

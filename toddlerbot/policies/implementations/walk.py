@@ -3,12 +3,11 @@ from typing import Dict, Optional, Tuple
 import numpy as np
 import numpy.typing as npt
 
-from toddlerbot.locomotion.mjx_config import get_env_config
-from toddlerbot.policies.mjx_policy import MJXPolicy
-from toddlerbot.sim import Obs
-from toddlerbot.sim.robot import Robot
-from toddlerbot.tools.joystick import Joystick
+from ...locomotion import get_env_config
+from ...sim import ( Obs,Robot )
+from ...tools import Joystick
 
+from .mjx_policy import MJXPolicy
 
 class WalkPolicy(MJXPolicy, policy_name="walk"):
     """Walking policy for the toddlerbot robot."""

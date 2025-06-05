@@ -5,13 +5,10 @@ import joblib
 import numpy as np
 import numpy.typing as npt
 
-from toddlerbot.policies import BasePolicy
-from toddlerbot.sensing.camera import Camera
-from toddlerbot.sim import Obs
-from toddlerbot.sim.robot import Robot
-from toddlerbot.utils.math_utils import euler2mat, interpolate_action, quat2euler
-
-# from toddlerbot.utils.misc_utils import profile
+from ...sensing import Camera
+from ...sim import Obs,Robot
+from ...utils import ( euler2mat, interpolate_action, quat2euler,profile)
+from ..base_policy import BasePolicy
 
 
 class PullUpPolicy(BasePolicy, policy_name="pull_up"):

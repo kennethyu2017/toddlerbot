@@ -3,16 +3,14 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import numpy.typing as npt
 
-from toddlerbot.policies import BasePolicy
-from toddlerbot.policies.dp_policy import DPPolicy
-from toddlerbot.policies.walk import WalkPolicy
-from toddlerbot.sensing.camera import Camera
-from toddlerbot.sim import Obs
-from toddlerbot.sim.robot import Robot
-from toddlerbot.tools.joystick import Joystick
-from toddlerbot.utils.comm_utils import ZMQNode
-from toddlerbot.utils.math_utils import interpolate_action
+from ...sensing import Camera
+from ...sim import Obs, Robot
+from ...tools import Joystick
+from ...utils import ( ZMQNode, interpolate_action )
 
+from ..base_policy import BasePolicy
+from .dp_policy import DPPolicy
+from .walk import WalkPolicy
 
 class PushCartPolicy(BasePolicy, policy_name="push_cart"):
     """Policy for pushing a cart."""

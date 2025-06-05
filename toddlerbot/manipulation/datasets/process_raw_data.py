@@ -7,9 +7,9 @@ import joblib
 import numpy as np
 from tqdm import tqdm
 
-from toddlerbot.manipulation.utils.dataset_utils import create_video_grid
-from toddlerbot.sim.robot import Robot
-from toddlerbot.visualization.vis_plot import plot_teleop_dataset
+from toddlerbot.manipulation.utils import create_video_grid
+from toddlerbot.sim import Robot
+from toddlerbot.visualization import plot_teleop_dataset
 
 # This script processes raw data to create a dataset to train the diffusion policy.
 

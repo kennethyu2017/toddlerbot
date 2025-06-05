@@ -11,22 +11,15 @@ import numpy as np
 import numpy.typing as npt
 from pathlib import Path
 
-from ..actuation import *  #JointState
-from ..sim import * # BaseEnv, Obs, MotorController, PositionController
-
-# from ..sim.mujoco_control import (
-#     MotorController,
-#     PositionController,
-# )
-
-# from toddlerbot.sim.mujoco_utils import MuJoCoRenderer, MuJoCoViewer
-# from toddlerbot.sim.robot import Robot
-# from toddlerbot.utils.file_utils import find_robot_file_path
-# from toddlerbot.utils.math_utils import quat2euler, quat_inv, rotate_vec
-
+from ..actuation import JointState
 from ..utils import find_robot_file_path, quat2euler,quat_inv,rotate_vec
 
+from .robot import Robot
+from .base_env import  BaseEnv,Obs
+from .mujoco_control import MotorController,PositionController
+from .mujoco_utils import MuJoCoRenderer,MuJoCoViewer
 from ._module_logger import logger
+
 
 class MuJoCoSim(BaseEnv, env_name="mujoco"):
     """A class for the MuJoCo simulation environment."""

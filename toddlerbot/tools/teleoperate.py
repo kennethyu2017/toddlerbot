@@ -3,9 +3,8 @@ import time
 
 from tqdm import tqdm
 
-from toddlerbot.tools.joystick import Joystick
-from toddlerbot.utils.comm_utils import ZMQMessage, ZMQNode
-from toddlerbot.utils.misc_utils import log
+from toddlerbot.tools import Joystick
+from toddlerbot.utils import ZMQMessage, ZMQNode
 
 # This script is used to teleoperate the robot using a joystick. Note that this
 # script is not for teleoperated data collection, instead it is for
@@ -70,7 +69,7 @@ def main(ip: str):
                 time.sleep(time_until_next_step)
 
     except KeyboardInterrupt:
-        log("KeyboardInterrupt recieved. Closing...", header=header_name)
+        print("KeyboardInterrupt recieved. Closing...", header=header_name)
 
     finally:
         p_bar.close()

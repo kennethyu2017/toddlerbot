@@ -2,8 +2,8 @@ import os
 import sys
 import shutil
 import platform
-from onshape_to_robot import export
 
+# from onshape_to_robot import export
 
 def get_env_path():
     """Determines the path of the current Python environment.

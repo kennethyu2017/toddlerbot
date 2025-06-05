@@ -2,8 +2,8 @@ from typing import List
 
 import control
 
-from toddlerbot.utils.array_utils import ArrayType, expm, inplace_add, inplace_update
-from toddlerbot.utils.array_utils import array_lib as np
+from ..utils import ArrayType, expm, inplace_add, inplace_update
+from ..utils import array_lib as np
 
 GRAVITY = 9.81
 

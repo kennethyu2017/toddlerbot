@@ -1,0 +1,45 @@
+{
+    "general": {
+        "is_fixed": true,
+        "has_imu": false,
+        "dynamixel_baudrate": 2000000,
+        "feitei_baudrate": 1000000,
+        "solref": [
+            0.004,
+            1
+        ],
+        "is_neck_closed_loop": false,
+        "is_waist_closed_loop": false,
+        "is_knee_closed_loop": false,
+        "is_ankle_closed_loop": false,
+        "has_feite": true
+    },
+    "joints": {
+        "joint_0": {
+            "is_passive": false,
+            "transmission": "none",
+            "group": "none",
+            "lower_limit": 0.0,
+            "upper_limit": 3.14159,
+            "id": 0,
+            "type": "feite",
+            "spec": "SM40BL",
+            "control_mode": "position",
+            "init_pos": 0.0,
+            "default_pos": 0.0,
+            "kp_real": 32.0,
+            "ki_real": 0.0,
+            "kd_real": 0.0,
+            "kff2_real": 0.0,
+            "kff1_real": 0.0,
+            "kp_sim": 32.0,
+            "kd_sim": 0.0,
+            "damping": 0.0,
+            "armature": 0.0,
+            "frictionloss": 0.0,
+            "tau_max": 0.0,
+            "q_dot_tau_max": 0.0,
+            "q_dot_max": 0.0
+        }
+    }
+}

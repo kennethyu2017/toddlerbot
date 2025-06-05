@@ -8,7 +8,6 @@ import numpy as np
 import numpy.typing as npt
 import pupil_apriltags as apriltag
 
-
 class AprilTagDetector:
     """AprilTag detector class."""
 

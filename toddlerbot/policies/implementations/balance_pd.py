@@ -5,17 +5,12 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import numpy.typing as npt
 
-from toddlerbot.policies import BasePolicy
-from toddlerbot.reference.balance_pd_ref import BalancePDReference
-from toddlerbot.sensing.camera import Camera
-from toddlerbot.sim import Obs
-from toddlerbot.sim.robot import Robot
-from toddlerbot.tools.joystick import Joystick
-from toddlerbot.utils.comm_utils import ZMQMessage, ZMQNode
-from toddlerbot.utils.math_utils import euler2mat, interpolate_action
-
-# from toddlerbot.utils.misc_utils import profile
-
+from ...reference import BalancePDReference
+from ...sensing import Camera
+from ...sim import Obs,Robot
+from ...tools import Joystick
+from ...utils import ( ZMQMessage, ZMQNode, euler2mat, interpolate_action ,profile)
+from ..base_policy import BasePolicy
 
 class BalancePDPolicy(BasePolicy, policy_name="balance_pd"):
     """Policy for balancing the robot using a PD controller."""

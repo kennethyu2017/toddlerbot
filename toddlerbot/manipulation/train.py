@@ -14,11 +14,10 @@ from diffusers.training_utils import EMAModel
 from torch.utils.data import DataLoader, random_split
 from tqdm.auto import tqdm
 
-from toddlerbot.manipulation.datasets.teleop_dataset import TeleopImageDataset
-from toddlerbot.manipulation.models.diffusion_model import ConditionalUnet1D
-from toddlerbot.manipulation.utils.model_utils import get_resnet, replace_bn_with_gn
-from toddlerbot.visualization.vis_plot import plot_line_graph
-
+from toddlerbot.visualization import plot_line_graph
+from toddlerbot.manipulation.datasets import TeleopImageDataset
+from toddlerbot.manipulation.models import ConditionalUnet1D
+from toddlerbot.manipulation.utils import get_resnet, replace_bn_with_gn
 
 def train(
     dataset_path_list: List[str],

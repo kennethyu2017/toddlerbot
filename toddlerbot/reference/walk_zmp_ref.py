@@ -4,17 +4,15 @@ from typing import Tuple
 
 import jax
 
-from toddlerbot.algorithms.zmp_walk import ZMPWalk
-from toddlerbot.reference.motion_ref import MotionReference
-from toddlerbot.sim.robot import Robot
-from toddlerbot.utils.array_utils import (
-    ArrayType,
-    conditional_update,
-    inplace_add,
-    inplace_update,
-)
-from toddlerbot.utils.array_utils import array_lib as np
-
+from ..algorithms import ZMPWalk
+from .motion_ref import MotionReference
+from ..sim import Robot
+from ..utils import ( array_lib as np,
+                      ArrayType,
+                      conditional_update,
+                      inplace_add,
+                      inplace_update
+                      )
 
 class WalkZMPReference(MotionReference):
     """Class for generating a ZMP-based walking reference for the toddlerbot robot."""

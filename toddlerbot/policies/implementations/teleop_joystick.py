@@ -5,20 +5,20 @@ import joblib
 import numpy as np
 import numpy.typing as npt
 
-from toddlerbot.policies import BasePolicy
-from toddlerbot.policies.balance_pd import BalancePDPolicy
-from toddlerbot.policies.mjx_policy import MJXPolicy
-from toddlerbot.policies.reset_pd import ResetPDPolicy
-from toddlerbot.policies.teleop_follower_pd import TeleopFollowerPDPolicy
-from toddlerbot.policies.walk import WalkPolicy
-from toddlerbot.sensing.camera import Camera
-from toddlerbot.sim import Obs
-from toddlerbot.sim.robot import Robot
-from toddlerbot.tools.joystick import Joystick
-from toddlerbot.utils.comm_utils import ZMQNode
-from toddlerbot.policies.dp_policy import DPPolicy
-from toddlerbot.policies.push_cart import PushCartPolicy
-from toddlerbot.policies.replay import ReplayPolicy
+from ...sensing import Camera
+from ...sim import ( Obs, Robot )
+from ...tools import Joystick
+from ...utils import ZMQNode
+
+from ..base_policy import BasePolicy
+from .balance_pd import BalancePDPolicy
+from .mjx_policy import MJXPolicy
+from .reset_pd import ResetPDPolicy
+from .walk import WalkPolicy
+from .dp_policy import DPPolicy
+from .push_cart import PushCartPolicy
+from .replay import ReplayPolicy
+from .teleop_follower_pd import TeleopFollowerPDPolicy
 
 # Run this script on Jetson and run toddlerbot/tools/teleoperate.py on the remote controller
 # in the puppeteering mode to control the robot.

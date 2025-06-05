@@ -4,8 +4,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from scipy.signal import chirp
 
-from toddlerbot.utils.array_utils import ArrayType
-from toddlerbot.utils.array_utils import array_lib as np
+from .array_utils import (array_lib as np, ArrayType)
 
 
 def get_random_sine_signal_config(

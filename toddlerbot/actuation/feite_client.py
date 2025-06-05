@@ -15,8 +15,8 @@ import numpy.typing as npt
 from scservo_sdk import (PortHandler, ProtocolPacketHandler, GroupSyncReader, GroupSyncWriter,
                          CommResult, ByteOrder, SMS_STS_SRAM_Table_ReadOnly, SMS_STS_SRAM_Table_RW,
                          SMS_STS_EEPROM_Table_ReadOnly, SMS_STS_EEPROM_Table_RW, SMS_STS_Table_Data_Length)
-from ._module_logger import logger
 
+from ._module_logger import logger
 
 POS_RESOLUTION = 2.0 * np.pi / 4096  # 0.088 degrees per step.
 VEL_RESOLUTION = 50 * POS_RESOLUTION  # 50 steps / second, 0.732 rpm.
@@ -39,7 +39,6 @@ class PosVelLoadRead(NamedTuple):
     pos: npt.NDArray[np.float32]
     vel: npt.NDArray[np.float32]
     load: npt.NDArray[np.float32]
-
 
 
 # # TODO: for feite protocol, the Two’s complement is not applied for the negative value. Use the BIT15 instead...

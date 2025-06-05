@@ -5,14 +5,14 @@ import numpy as np
 import numpy.typing as npt
 import torch
 
-from toddlerbot.manipulation.utils.dataset_utils import (
+from toddlerbot.manipulation.utils import (
     create_sample_indices,
     create_video_grid,
     get_data_stats,
     normalize_data,
     sample_sequence,
 )
-from toddlerbot.visualization.vis_plot import plot_teleop_dataset
+from toddlerbot.visualization import plot_teleop_dataset
 
 
 class TeleopImageDataset(torch.utils.data.Dataset):

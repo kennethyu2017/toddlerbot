@@ -3,7 +3,6 @@ from typing import Tuple
 
 import gin
 
-
 @gin.configurable
 @dataclass
 class PPOConfig:

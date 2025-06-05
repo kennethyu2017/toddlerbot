@@ -5,11 +5,12 @@ import atexit
 import time
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
-import dynamixel_sdk
 import numpy as np
 import numpy.typing as npt
 
-from toddlerbot.utils.misc_utils import log
+import dynamixel_sdk
+
+from ..utils import log
 
 PROTOCOL_VERSION = 2.0
 

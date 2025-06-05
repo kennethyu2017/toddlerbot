@@ -9,8 +9,7 @@ from typing import Any, Callable, Dict
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-from toddlerbot.utils.misc_utils import log
-
+from ._module_logger import logger
 
 def is_x11_available():
     """
@@ -101,7 +100,7 @@ def make_vis_function(
             config_path = os.path.join(save_path, config_file_name)
             with open(config_path, "wb") as file:
                 pickle.dump(config, file)
-                log(f"Configuration saved to: {config_path}", header="Visualization")
+                logger.info(f"Configuration saved to: {config_path}")
 
         if not blocking:
             return None
@@ -128,7 +127,7 @@ def make_vis_function(
                 plt.savefig(png_file_path)
                 svg_file_path = os.path.join(save_path, f"{name}.svg")
                 plt.savefig(svg_file_path)
-                log(f"Graph saved as: {png_file_path}", header="Visualization")
+                logger.info(f"Graph saved as: {png_file_path}" )
 
             elif plt.get_backend() not in non_interactive_backends:
                 plt.show()

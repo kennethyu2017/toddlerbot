@@ -7,8 +7,6 @@ from xml.dom.minidom import parseString
 
 from transforms3d.euler import euler2quat
 
-# from toddlerbot.sim.robot import Robot
-# from toddlerbot.utils.math_utils import round_to_sig_digits
 from toddlerbot.utils import round_to_sig_digits
 from toddlerbot.sim import Robot
 

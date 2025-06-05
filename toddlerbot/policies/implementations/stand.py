@@ -3,10 +3,9 @@ from typing import Dict, Tuple
 import numpy as np
 import numpy.typing as npt
 
-from toddlerbot.policies import BasePolicy
-from toddlerbot.sim import Obs
-from toddlerbot.sim.robot import Robot
-from toddlerbot.utils.math_utils import interpolate_action
+from ...sim import ( Obs,Robot )
+from ...utils import interpolate_action
+from ..base_policy import BasePolicy
 
 # This script runs the simple stand policy.
 

@@ -6,15 +6,10 @@ from itertools import product
 import numpy as np
 import numpy.typing as npt
 
-
-from toddlerbot.policies import BasePolicy
-from toddlerbot.sim import Obs
-from toddlerbot.sim.robot import Robot
-from toddlerbot.utils.math_utils import get_chirp_signal, interpolate_action
-from toddlerbot.utils.misc_utils import set_seed
-
-from ._module_logger import logger
-
+from ...sim import ( Obs,Robot )
+from ...utils import ( get_chirp_signal, interpolate_action, set_seed )
+from ..base_policy import BasePolicy
+from .._module_logger import logger
 
 # This script collects data for system identification of the motors.
 

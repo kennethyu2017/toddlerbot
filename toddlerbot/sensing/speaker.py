@@ -3,7 +3,6 @@ import subprocess
 
 import sounddevice as sd
 
-
 class Speaker:
     """Speaker class for handling audio output to a speaker device."""
 

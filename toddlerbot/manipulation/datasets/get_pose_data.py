@@ -5,8 +5,8 @@ import joblib
 import numpy as np
 from tqdm import tqdm
 
-from toddlerbot.sim.robot import Robot
-from toddlerbot.visualization.vis_plot import plot_teleop_dataset
+from toddlerbot.sim import Robot
+from toddlerbot.visualization import plot_teleop_dataset
 
 # This script processes raw data to create a arm pose dataset to perturb the RL training.
 

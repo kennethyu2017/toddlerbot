@@ -7,21 +7,21 @@ from typing import Dict, List
 import numpy as np
 
 from ..actuation import *
-from toddlerbot.sim.robot import Robot
-from toddlerbot.utils.file_utils import find_ports
-# from toddlerbot.utils.misc_utils import log
+from ..sim import Robot
+from ..utils import find_ports
 
 from ._module_logger import logger
 
-
 # This script is used to calibrate the zero points of the Dynamixel motors.
-
 
 # TODO: impl.
 def calibrate_feite():
     feite_config = FeiteConfig(
         # ????  init_pos= np.pi  ???
     )
+
+    with FeiteController.open_controller( ) as controller:
+
     pass
 
 def calibrate_dynamixel(port: str, robot: Robot, group: str)->Dict[int, float]:

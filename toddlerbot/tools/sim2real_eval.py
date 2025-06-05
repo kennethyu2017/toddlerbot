@@ -8,9 +8,8 @@ from typing import Dict, List
 import numpy as np
 import numpy.typing as npt
 
-from toddlerbot.sim import Obs
-from toddlerbot.sim.robot import Robot
-from toddlerbot.visualization.vis_plot import (
+from toddlerbot.sim import Obs, Robot
+from toddlerbot.visualization import (
     plot_joint_tracking,
     plot_joint_tracking_frequency,
     # plot_sim2real_gap_bar,

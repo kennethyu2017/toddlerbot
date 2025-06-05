@@ -2,9 +2,7 @@ import os
 import platform
 from typing import List, Optional
 
-import serial.tools.list_ports as list_ports
-
-from toddlerbot.utils.misc_utils import log
+from serial.tools import list_ports as ser_list_ports
 
 
 def find_ports(target: str) -> List[str]:
@@ -16,7 +14,7 @@ def find_ports(target: str) -> List[str]:
     Returns:
         A list of strings representing the open ports on the target.
     """
-    ports = list(list_ports.comports())
+    ports = list(ser_list_ports.comports())
     target_ports: List[str] = []
 
     os_type = platform.system()
@@ -28,10 +26,10 @@ def find_ports(target: str) -> List[str]:
             if os_type != "Windows":
                 port = port.replace("cu", "tty")
 
-            log(
+            print(
                 f"Found {target} board: {port} - {desc} - {hwid}",
-                header="FileUtils",
-                level="debug",
+                # header="FileUtils",
+                # level="debug",
             )
             target_ports.append(port)
 

@@ -7,20 +7,15 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import numpy.typing as npt
-from brax.io import model
+from brax.io import model as brax_model
 from brax.training.agents.ppo import networks as ppo_networks
 
-from toddlerbot.locomotion.mjx_config import MJXConfig
-from toddlerbot.locomotion.ppo_config import PPOConfig
-from toddlerbot.policies import BasePolicy
-from toddlerbot.reference.motion_ref import MotionReference
-from toddlerbot.sim import Obs
-from toddlerbot.sim.robot import Robot
-from toddlerbot.tools.joystick import Joystick
-from toddlerbot.utils.math_utils import interpolate_action
-
-# from toddlerbot.utils.misc_utils import profile
-
+from ...locomotion import ( MJXConfig, PPOConfig )
+from ...reference import MotionReference
+from ...sim import Obs,Robot
+from ...tools import Joystick
+from ...utils import interpolate_action,profile
+from ..base_policy import BasePolicy
 
 class MJXPolicy(BasePolicy, policy_name="mjx"):
     """Policy for controlling the robot using the MJX model."""
@@ -181,7 +176,7 @@ class MJXPolicy(BasePolicy, policy_name="mjx"):
 
             print(f"Loading policy from {policy_path}")
 
-            params = model.load_params(policy_path)
+            params = brax_model.load_params(policy_path)
             inference_fn = make_policy(params, deterministic=True)
             jit_inference_fn = jax.jit(inference_fn)
             rng = jax.random.PRNGKey(0)

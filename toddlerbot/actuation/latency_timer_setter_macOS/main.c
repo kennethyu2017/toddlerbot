@@ -6,6 +6,8 @@
    This program is distributed under the GPL, version 2
 */
 
+//NOTE: for FT232 usb->rs485 serial converter only.
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <getopt.h>
