@@ -10,7 +10,7 @@ import numpy.typing as npt
 
 import dynamixel_sdk
 
-from ..utils import log
+from ._module_logger import logger
 
 PROTOCOL_VERSION = 2.0
 
@@ -53,7 +53,7 @@ def dynamixel_cleanup_handler():
     open_clients: List[DynamixelClient] = list(DynamixelClient.OPEN_CLIENTS)  # type: ignore
     for open_client in open_clients:
         if open_client.port_handler.is_using:
-            log("Forcing client to close.", header="Dynamixel", level="warning")
+            logger.warning("Forcing client to close.")
         open_client.port_handler.is_using = False
         open_client.disconnect()
 
@@ -170,7 +170,7 @@ class DynamixelClient:
         assert not self.is_connected, "Client is already connected."
 
         if self.port_handler.openPort():
-            log(f"Succeeded to open port: {self.port_name}", header="Dynamixel")
+            logger.info(f"Succeeded to open port: {self.port_name}")
         else:
             raise OSError(
                 (
@@ -180,7 +180,7 @@ class DynamixelClient:
             )
 
         if self.port_handler.setBaudRate(self.baudrate):
-            log(f"Succeeded to set baudrate to {self.baudrate}", header="Dynamixel")
+            logger.info(f"Succeeded to set baudrate to {self.baudrate}")
         else:
             raise OSError(
                 (
@@ -197,10 +197,8 @@ class DynamixelClient:
         if not self.is_connected:
             return
         if self.port_handler.is_using:
-            log(
-                "Port handler in use; cannot disconnect.",
-                header="Dynamixel",
-                level="error",
+            logger.error(
+                "Port handler in use; cannot disconnect."
             )
             return
         # Ensure motors are disabled at the end.
@@ -235,10 +233,8 @@ class DynamixelClient:
                 )
             )
             if remaining_ids:
-                log(
-                    f"Could not set torque {'enabled' if enabled else 'disabled'} for IDs: {str(remaining_ids)}",
-                    header="Dynamixel",
-                    level="error",
+                logger.error(
+                    f"Could not set torque {'enabled' if enabled else 'disabled'} for IDs: {str(remaining_ids)}"
                 )
             if retries == 0:
                 break
@@ -466,10 +462,8 @@ class DynamixelClient:
                 self._data_dict["cur"][i] = float(data_signed) * self._cur_scale_arr[i]
 
         if errored_ids:
-            log(
-                f"Bulk read failed for: {str(errored_ids)}",
-                header="Dynamixel",
-                level="error",
+            logger.error(
+                f"Bulk read failed for: {str(errored_ids)}"
             )
 
         return comm_time, self._data_dict
@@ -533,10 +527,8 @@ class DynamixelClient:
             data_arr[i] = float(data_signed) * scale
 
         if errored_ids:
-            log(
-                f"Sync read failed for: {str(errored_ids)}",
-                header="Dynamixel",
-                level="error",
+            logger.error(
+                f"Sync read failed for: {str(errored_ids)}"
             )
 
         return comm_time, data_arr
@@ -573,10 +565,8 @@ class DynamixelClient:
                 errored_ids.append(motor_id)
 
         if errored_ids:
-            log(
-                f"Sync write failed for: {str(errored_ids)}",
-                header="Dynamixel",
-                level="error",
+            logger.error(
+                f"Sync write failed for: {str(errored_ids)}"
             )
 
         comm_result = sync_writer.txPacket()
@@ -610,7 +600,7 @@ class DynamixelClient:
             if context is not None:
                 error_message = "> {}: {}".format(context, error_message)
 
-            log(error_message, header="Dynamixel", level="warning")
+            logger.error(error_message)
 
             return False
 

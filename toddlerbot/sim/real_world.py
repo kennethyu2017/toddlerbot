@@ -99,25 +99,25 @@ def _init_feite_actuators(*, robot:Robot, executor: ThreadPoolExecutor)-> Option
     # NOTE: must use the ordered id list as input to controller.
     feite_ids = robot.motor_id_ordering
 
-    control_mode = robot.get_motor_ordered_config_attrs("type", "feite", "control_mode")
+    # control_mode = robot.get_motor_ordered_config_attrs("type", "feite", "control_mode")
+    control_mode = np.asarray((robot.motor_control_mode[_n] for _n in robot.motor_name_ordering), dtype=np.float32)
     assert len(control_mode) == len(feite_ids)
 
-
-
-    TODO: use .....  _kp = np.asarray((robot.motor_kp_real[_n] for _n in robot.motor_name_ordering), dtype=np.float32)
-
-
-    kP = robot.get_motor_ordered_config_attrs("type", "feite", "kp_real")
+    kP = np.asarray((robot.motor_kp_real[_n] for _n in robot.motor_name_ordering), dtype=np.float32)
+    # kP = robot.get_motor_ordered_config_attrs("type", "feite", "kp_real")
     assert len(kP) == len(feite_ids)
 
-    kI = robot.get_motor_ordered_config_attrs("type", "feite", "ki_real")
+    # kI = robot.get_motor_ordered_config_attrs("type", "feite", "ki_real")
+    kI = np.asarray((robot.motor_ki_real[_n] for _n in robot.motor_name_ordering), dtype=np.float32)
     assert len(kI) == len(feite_ids)
 
-    kD = robot.get_motor_ordered_config_attrs("type", "feite", "kd_real")
+    # kD = robot.get_motor_ordered_config_attrs("type", "feite", "kd_real")
+    kD = np.asarray((robot.motor_kd_real[_n] for _n in robot.motor_name_ordering), dtype=np.float32)
     assert len(kD) == len(feite_ids)
 
     # NOTE: read `init_pos` is written by calibrate_zero.
-    init_pos = robot.get_motor_ordered_config_attrs("type", "feite", "init_pos")
+    # init_pos = robot.get_motor_ordered_config_attrs("type", "feite", "init_pos")
+    init_pos = np.asarray((robot.motor_init_pos[_n] for _n in robot.motor_name_ordering), dtype=np.float32)
     assert len(init_pos) == len(feite_ids)
 
     feite_config = FeiteConfig(

@@ -1,5 +1,5 @@
-from mjx_config import MJXConfig, get_env_config
-from ppo_config import PPOConfig
+from .mjx_config import MJXConfig, get_env_config
+from .ppo_config import PPOConfig
 
 __all__ = [
     'MJXConfig',

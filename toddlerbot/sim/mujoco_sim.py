@@ -109,15 +109,15 @@ class MuJoCoSim(BaseEnv, env_name="mujoco"):
             and self.model.actuator(0).biasprm[1] == 0
         ):
             # self.controller = MotorController(robot)
-            _kp = np.asarray((robot.motor_kp_sim[_n] for _n in robot.motor_name_ordering), dtype=np.float32)
+            _kp = np.asarray([robot.motor_kp_sim[_n] for _n in robot.motor_name_ordering], dtype=np.float32)
 
-            _kd = np.asarray((robot.motor_kd_sim[_n] for _n in robot.motor_name_ordering), dtype=np.float32)
+            _kd = np.asarray([robot.motor_kd_sim[_n] for _n in robot.motor_name_ordering], dtype=np.float32)
 
-            _tau_max = np.asarray((robot.motor_tau_max[_n] for _n in robot.motor_name_ordering), dtype=np.float32)
+            _tau_max = np.asarray([robot.motor_tau_max[_n] for _n in robot.motor_name_ordering], dtype=np.float32)
 
-            _q_dot_tau_max = np.asarray((robot.motor_q_dot_tau_max[_n] for _n in robot.motor_name_ordering), dtype=np.float32)
+            _q_dot_tau_max = np.asarray([robot.motor_q_dot_tau_max[_n] for _n in robot.motor_name_ordering], dtype=np.float32)
 
-            _q_dot_max = np.asarray((robot.motor_q_dot_max[_n] for _n in robot.motor_name_ordering), dtype=np.float32)
+            _q_dot_max = np.asarray([robot.motor_q_dot_max[_n] for _n in robot.motor_name_ordering], dtype=np.float32)
 
             self.controller = MotorController(_kp=_kp,
                                               _kd=_kd,

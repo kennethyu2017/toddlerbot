@@ -67,6 +67,8 @@ class _RobotCfgData:
 
     # TODO: motor params.integrate into one struct.
     motor_type: OrderedDict[str, str] = field(default_factory=OrderedDict)
+    motor_control_mode: OrderedDict[str, float] = field(default_factory=OrderedDict)
+
     motor_kp_real: OrderedDict[str, float] = field(default_factory=OrderedDict)
     motor_kd_real: OrderedDict[str, float] = field(default_factory=OrderedDict)
     motor_ki_real: OrderedDict[str, float] = field(default_factory=OrderedDict)
@@ -77,6 +79,9 @@ class _RobotCfgData:
     motor_tau_max: OrderedDict[str, float] = field(default_factory=OrderedDict)
     motor_q_dot_tau_max: OrderedDict[str, float] = field(default_factory=OrderedDict)
     motor_q_dot_max: OrderedDict[str, float] = field(default_factory=OrderedDict)
+
+    motor_init_pos: OrderedDict[str, float] = field(default_factory=OrderedDict)
+
 
 
 class Robot(_RobotCfgData):
@@ -132,6 +137,7 @@ class Robot(_RobotCfgData):
 
         #  'dynamixel' or 'feite'
         self.motor_type[name] = cfg['type']
+        self.motor_control_mode[name] = cfg['control_mode']
 
         self.motor_kp_real[name] = cfg['kp_real']
         self.motor_kd_real[name] = cfg['kd_real']
@@ -144,6 +150,7 @@ class Robot(_RobotCfgData):
         self.motor_q_dot_tau_max[name] = cfg['q_dot_tau_max']
         self.motor_q_dot_max[name] = cfg['q_dot_max']
 
+        self.motor_init_pos[name] = cfg['init_pos']
 
     def initialize(self) -> None:
         """Initializes the robot's joint and motor configurations based on the provided configuration data.
