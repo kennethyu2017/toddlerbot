@@ -3,7 +3,7 @@
         "is_fixed": true,
         "has_imu": false,
         "dynamixel_baudrate": 2000000,
-        "feitei_baudrate": 1000000,
+        "feitei_baudrate": 115200,
         "solref": [
             0.004,
             1

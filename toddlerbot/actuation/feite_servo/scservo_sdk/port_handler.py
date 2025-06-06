@@ -22,6 +22,8 @@ class PortHandler(object):
         self.packet_start_time = 0.0
         self.packet_timeout = 0.0
         self.tx_time_per_byte = 0.0
+
+        # in ms.
         self.latency_timer = latency_timer
 
         self.is_using = False
@@ -112,6 +114,7 @@ class PortHandler(object):
 
         self.ser.reset_input_buffer()
 
+        # in ms.
         self.tx_time_per_byte = (1000.0 / self.baudrate) * 10.0
 
         return True

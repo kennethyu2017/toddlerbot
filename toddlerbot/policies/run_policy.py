@@ -33,7 +33,7 @@ from toddlerbot.policies.base_policy import BasePolicy
 from toddlerbot.policies._module_logger import logger
 
 # import from ./__init__.py
-from . import (RUN_EPISODE_MOTOR_KP_PICKLE_FILE,RUN_STEP_RECORD_PICKLE_FILE,
+from toddlerbot.policies import (RUN_EPISODE_MOTOR_KP_PICKLE_FILE,RUN_STEP_RECORD_PICKLE_FILE,
                RUN_POLICY_LOG_FOLDER_FMT,StepRecord)
 
 
@@ -44,7 +44,7 @@ class _ModuleAndClsName(NamedTuple):
 # TODO: complete this.
 _policy_module_and_cls_dict :Dict[str, _ModuleAndClsName ]={
     'balance_pd': _ModuleAndClsName('balance_pd', 'BalancePDPolicy'),
-    'sysID': _ModuleAndClsName('sysID', 'sysIDPolicy'),
+    'sysID': _ModuleAndClsName('sysID', 'SysIDPolicy'),
     'calibrate': _ModuleAndClsName ('calibrate', 'CalibratePolicy', ),
 }
 
@@ -67,7 +67,8 @@ def _get_policy_class_v2(policy_name: str) -> Type["BasePolicy"]:
     mod_name: str = _policy_module_and_cls_dict[policy_name].module_name
     cls_name: str = _policy_module_and_cls_dict[policy_name].cls_name
 
-    module = import_module(mod_name,
+    logger.info(f'dynamically import module:{mod_name}, class name: {cls_name}')
+    module = import_module('.' + mod_name,
                            'toddlerbot.policies.implementations' )
 
     if hasattr(module, cls_name):

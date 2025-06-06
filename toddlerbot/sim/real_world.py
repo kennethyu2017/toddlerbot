@@ -100,24 +100,24 @@ def _init_feite_actuators(*, robot:Robot, executor: ThreadPoolExecutor)-> Option
     feite_ids = robot.motor_id_ordering
 
     # control_mode = robot.get_motor_ordered_config_attrs("type", "feite", "control_mode")
-    control_mode = np.asarray((robot.motor_control_mode[_n] for _n in robot.motor_name_ordering), dtype=np.float32)
+    control_mode = [robot.motor_control_mode[_n] for _n in robot.motor_name_ordering]
     assert len(control_mode) == len(feite_ids)
 
-    kP = np.asarray((robot.motor_kp_real[_n] for _n in robot.motor_name_ordering), dtype=np.float32)
+    kP = np.asarray( [robot.motor_kp_real[_n] for _n in robot.motor_name_ordering], dtype=np.float32)
     # kP = robot.get_motor_ordered_config_attrs("type", "feite", "kp_real")
     assert len(kP) == len(feite_ids)
 
     # kI = robot.get_motor_ordered_config_attrs("type", "feite", "ki_real")
-    kI = np.asarray((robot.motor_ki_real[_n] for _n in robot.motor_name_ordering), dtype=np.float32)
+    kI = np.asarray( [robot.motor_ki_real[_n] for _n in robot.motor_name_ordering], dtype=np.float32)
     assert len(kI) == len(feite_ids)
 
     # kD = robot.get_motor_ordered_config_attrs("type", "feite", "kd_real")
-    kD = np.asarray((robot.motor_kd_real[_n] for _n in robot.motor_name_ordering), dtype=np.float32)
+    kD = np.asarray( [robot.motor_kd_real[_n] for _n in robot.motor_name_ordering], dtype=np.float32)
     assert len(kD) == len(feite_ids)
 
     # NOTE: read `init_pos` is written by calibrate_zero.
     # init_pos = robot.get_motor_ordered_config_attrs("type", "feite", "init_pos")
-    init_pos = np.asarray((robot.motor_init_pos[_n] for _n in robot.motor_name_ordering), dtype=np.float32)
+    init_pos = np.asarray( [robot.motor_init_pos[_n] for _n in robot.motor_name_ordering], dtype=np.float32)
     assert len(init_pos) == len(feite_ids)
 
     feite_config = FeiteConfig(
@@ -356,7 +356,7 @@ class RealWorld(BaseEnv, env_name='real_world'):
             # obs.motor_tor = processed['motor_tor']
             return self.post_process_motor_reading(ste)
         else:
-            return None
+            raise ValueError('has no motor instantiated.')
 
     def read_imu_state(self, retries: int) ->Optional[Mapping[str, float|npt.NDArray[np.float32]]]:
         if self._imu is not None:
@@ -373,7 +373,7 @@ class RealWorld(BaseEnv, env_name='real_world'):
 
             return self._imu.get_state()
         else:
-            return None
+            raise ValueError(f'has no imu sensor instantiated.')
 
 
     # @profile()
@@ -392,10 +392,12 @@ class RealWorld(BaseEnv, env_name='real_world'):
         # futures: Dict[str, Any] = {}
         # future_seq: Dict[Future, Callable[[Mapping[int|str,Any] | None],None]] = {}
         obs = Obs()
-        future_seq: Dict[Future, str] = {
-            self._executor.submit(self.read_motor_state, retries): 'read_motor_state',
-            self._executor.submit(self.read_imu_state, retries): 'read_imu_state',
-        }
+        future_seq: Dict[Future, str] = {}
+        if self.actuator_controller is not None:
+            future_seq[self._executor.submit(self.read_motor_state, retries) ] = 'read_motor_state'
+
+        if self._imu is not None:
+            future_seq[ self._executor.submit(self.read_imu_state, retries) ] = 'read_imu_state'
 
         # results["dynamixel"] = self.actuator_controller.get_motor_state(retries)
         # results["_imu"] = self._imu.get_state()
