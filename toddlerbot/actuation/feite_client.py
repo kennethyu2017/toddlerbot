@@ -3,7 +3,7 @@
 ##This is based off of the dynamixel SDK
 import atexit
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass,field
 from enum import Enum
 from typing import (Any, Dict, List, Optional, Sequence,Type,
                     Set, Tuple, ClassVar,Iterable,NamedTuple,Callable)
@@ -206,7 +206,7 @@ _TableValueReadSpec : Dict[TableValueName, _ReadSpec] = {
 
 }
 
-@dataclass(init=False)
+# @dataclass(init=False)
 class FeiteGroupClient:
     """Client for communicating with a group of Feite motors.
 
@@ -214,7 +214,7 @@ class FeiteGroupClient:
     """
 
     # The currently open clients. class variable.
-    OPEN_CLIENTS: ClassVar[Set[Any]] = set()
+    OPEN_CLIENTS: ClassVar[Set[Any] ] = set()
 
     # instance variable.
     port_handler: PortHandler
@@ -275,6 +275,11 @@ class FeiteGroupClient:
         # self.sync_read_4_bytes = partial(self._sync_read_impl, size=4)
         # self.sync_read_6_bytes = partial(self._sync_read_impl, size=6)
 
+        # print(f'{FeiteGroupClient.OPEN_CLIENTS=:}')
+        # if FeiteGroupClient.OPEN_CLIENTS is None:
+        #     FeiteGroupClient.OPEN_CLIENTS = set()
+
+        # ??????
         FeiteGroupClient.OPEN_CLIENTS.add(self)
 
     @property
@@ -392,8 +397,8 @@ class FeiteGroupClient:
         if errored_ids:
             # TODO: add handel for failure read: we can not get pos/vel states from actuators, which is
             # dangerous for controlling. maybe we should halt any action?
-            logger.error( f"Sync read failed for: {str(errored_ids)}")
-            raise ValueError(f"Sync read failed for: {str(errored_ids)}")
+            logger.error( f"Sync read failed for motor id: {str(errored_ids)}")
+            raise ValueError(f"Sync read failed for motor id: {str(errored_ids)}")
 
         # TODO: cause we will not change _motor_ids after instantiate of `self`,  so no need to call clearParam.
         # recv_data_dict,param are set/cleared after every sync_read.

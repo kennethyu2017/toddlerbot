@@ -130,6 +130,9 @@ class FeiteController(BaseController):
         client: FeiteGroupClient
         _motor_ids: Tuple[int]
 
+        logger.info(f'init feite controller with target motor ids: {motor_ids}'
+                    f'\n with config: {config} ')
+
         self.config = config
         # NOTE: the index in self._motor_ids is used for read data array index, like pos,vel,etc.
         # we use immutable tuple instead of set/list.
@@ -139,7 +142,7 @@ class FeiteController(BaseController):
 
         self.lock = Lock()
 
-        self.client =self.connect_to_client()
+        self.client =self.connect_to_client(latency_value=10)
         self.initialize_motors()
 
         # if len(self.config.init_pos) == 0:
@@ -205,13 +208,15 @@ class FeiteController(BaseController):
             client = FeiteGroupClient(
                 motor_ids = self._motor_ids,
                 port_name = self.config.port,
-                baud_rate= self.config.baudrate,)
+                baud_rate= self.config.baudrate,
+                latency_timer_ms=latency_value,
+            )
             client.connect()
             logger.info(f"Connected to the port: {self.config.port}")
             return client
 
-        except Exception:
-            raise ConnectionError("Could not connect to the Feite port.")
+        except Exception as _err:
+            raise ConnectionError(f"Could not connect to the Feite port, error: {_err}  type of err: {type(_err)}.")
 
     def initialize_motors(self):
         """Initialize the motors by rebooting, checking voltage, and configuring settings.

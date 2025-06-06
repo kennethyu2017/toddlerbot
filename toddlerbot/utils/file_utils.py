@@ -18,10 +18,10 @@ def find_ports(target: str) -> List[str]:
     target_ports: List[str] = []
 
     os_type = platform.system()
-
+    print(f'searching serial ports of {target} --->')
     for port, desc, hwid in ports:
         # Adjust the condition below according to your board's unique identifier or pattern
-        print(port, desc, hwid)
+        print(f'name:{port}, description: {desc}, hwid: {hwid}')
         if target in desc:
             if os_type != "Windows":
                 port = port.replace("cu", "tty")
@@ -34,7 +34,9 @@ def find_ports(target: str) -> List[str]:
             target_ports.append(port)
 
     if len(target_ports) == 0:
-        raise ConnectionError(f"Could not find the {target} board.")
+        # raise ConnectionError(f"Could not find the {target} board.")
+        print(f"Could not find the {target} board.")
+        return target_ports
     else:
         return sorted(target_ports)
 

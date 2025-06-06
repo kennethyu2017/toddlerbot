@@ -100,7 +100,7 @@ class ProtocolPacketHandler(object):
         elif result == CommResult.RX_WAITING:
             return "[TxRxResult] Now receiving status packet!"
         elif result == CommResult.RX_TIMEOUT:
-            return "[TxRxResult] There is no status packet!"
+            return "[TxRxResult] Rx timeout, there is no status packet!"
         elif result == CommResult.RX_CORRUPT:
             return "[TxRxResult] Incorrect status packet!"
         elif result == CommResult.NOT_AVAILABLE:

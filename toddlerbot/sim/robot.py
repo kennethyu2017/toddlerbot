@@ -67,7 +67,7 @@ class _RobotCfgData:
 
     # TODO: motor params.integrate into one struct.
     motor_type: OrderedDict[str, str] = field(default_factory=OrderedDict)
-    motor_control_mode: OrderedDict[str, float] = field(default_factory=OrderedDict)
+    motor_control_mode: OrderedDict[str, str] = field(default_factory=OrderedDict)
 
     motor_kp_real: OrderedDict[str, float] = field(default_factory=OrderedDict)
     motor_kd_real: OrderedDict[str, float] = field(default_factory=OrderedDict)
@@ -105,6 +105,8 @@ class Robot(_RobotCfgData):
         self.load_robot_config()
 
         self.initialize()
+
+        logger.info('{!s}'.format(self))
 
     def load_robot_config(self):
         """Load the robot's configuration and collision configuration from JSON files.
@@ -230,12 +232,12 @@ class Robot(_RobotCfgData):
         # self.motor_name_ordering = tuple(self.init_motor_angles)  #  list(self.init_motor_angles) #.keys())
         # self.active_joint_name_ordering = tuple(self.init_active_joint_angles)  #  list(self.init_active_joint_angles) #.keys())
 
-        logger.info(f' robot motor name ordering: {self.motor_name_ordering}  len:{len(self.motor_name_ordering)}')
-        logger.info(f' robot motor id ordering: {self.motor_id_ordering} len:{len(self.motor_id_ordering)}')
+        # logger.info(f' robot motor name ordering: {self.motor_name_ordering}  len:{len(self.motor_name_ordering)}')
+        # logger.info(f' robot motor id ordering: {self.motor_id_ordering} len:{len(self.motor_id_ordering)}')
 
         # NOTE: `active joint` ordering must be same as Mujoco `qpos`, see: mujoco_sim.py: def get_joint_state(self).
         self.active_joint_name_ordering = tuple(self.init_active_joint_angles)
-        logger.info(f' robot active joint name ordering: {self.active_joint_name_ordering} len:{len(self.active_joint_name_ordering)}')
+        # logger.info(f' robot active joint name ordering: {self.active_joint_name_ordering} len:{len(self.active_joint_name_ordering)}')
 
         # TODO: only transmission `ankle` will increase the len(active_joint_name_ordering) more than len(motor_name_ordering).
         # but we don't use `ankle` transmission till now. so, active_joint_name_ordering and motor_name_ordering are 1-to-1 mapping.
@@ -299,7 +301,7 @@ class Robot(_RobotCfgData):
             elif transmission == "rack_and_pinion":
                 self.passive_joint_names.append(joint_name + "_mirror")
 
-        logger.info(f' robot passive joint names: {self.passive_joint_names}')
+        # logger.info(f' robot passive joint names: {self.passive_joint_names}')
 
         # if "foot_name" in self.config["general"]:
         #     self.foot_name = self.config["general"]["foot_name"]
@@ -707,13 +709,14 @@ class Robot(_RobotCfgData):
 
         return passive_angles
 
-    def __str__(self):
-        logger.info(f'robot {self.name} info :---------->')
-        logger.info(f' robot motor name ordering: {self.motor_name_ordering}')
-        logger.info(f' robot motor id ordering: {self.motor_id_ordering}')
-
-        logger.info(f' robot active joint name ordering: {self.active_joint_name_ordering}')
-        logger.info(f' robot passive joint names: {self.passive_joint_names}')
+    def __str__(self) ->str:
+        return (
+            f'robot {self.name} config :----------> '
+            f'\n motor name ordering: {self.motor_name_ordering}'
+            f'\n motor id ordering: {self.motor_id_ordering}'
+            f'\n active joint name ordering: {self.active_joint_name_ordering}'
+            f'\n passive joint names: {self.passive_joint_names}'
+         )
 
 
 

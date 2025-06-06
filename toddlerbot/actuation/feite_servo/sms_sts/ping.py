@@ -8,46 +8,59 @@
 #
 
 import sys
+import time
+
 # import os
 
 # sys.path.append("..")
 
-from scservo_sdk import *                   # Uses FTServo SDK library
+from toddlerbot.actuation.feite_servo.scservo_sdk import (PortHandler,SMS_STS_DEFAULT_BAUD_RATE,
+                                                          ProtocolPacketHandler, ByteOrder,
+                                                          CommResult)                   # Uses FTServo SDK library
 
 # define constants.
 URT_1_DEV_NAME : str = r'/dev/ttyUSB0'
 
-# Initialize PortHandler instance
-# Set the port path
-# Get methods and members of PortHandlerLinux or PortHandlerWindows
-portHandler = PortHandler(URT_1_DEV_NAME) #ex) Windows: "COM1"   Linux: "/dev/ttyUSB0" Mac: "/dev/tty.usbserial-*"
 
-# Initialize PacketHandler instance
-# Get methods and members of Protocol
-packetHandler = sms_sts(portHandler)
-# Open port
-if portHandler.openPort():
-    print("Succeeded to open the port")
-else:
-    print("Failed to open the port")
-    quit()
+if __name__  == '__main__':
+    # Initialize PortHandler instance
+    # Set the port path
+    # Get methods and members of PortHandlerLinux or PortHandlerWindows
+    port_handler = PortHandler(port_name=URT_1_DEV_NAME,
+                               baud_rate=SMS_STS_DEFAULT_BAUD_RATE,
+                               latency_timer=10) #ex) Windows: "COM1"   Linux: "/dev/ttyUSB0" Mac: "/dev/tty.usbserial-*"
 
-# Set port baudrate 1000000
-if portHandler.setBaudRate(1000000):
-    print("Succeeded to change the baudrate")
-else:
-    print("Failed to change the baudrate")
-    quit()
+    # Initialize PacketHandler instance
+    # Get methods and members of Protocol
+    packet_handler = ProtocolPacketHandler(port_handler=port_handler,
+                                           byte_order=ByteOrder.LITTLE)
+    # Open port
+    if port_handler.openPort():
+        print("Succeeded to open the port")
+    else:
+        print("Failed to open the port")
+        quit()
 
-# Try to ping the ID:1 FTServo
-# Get SCServo model number
-scs_model_number, scs_comm_result, scs_error = packetHandler.ping(1)
-if scs_comm_result != COMM_SUCCESS:
-    print("%s" % packetHandler.getTxRxResult(scs_comm_result))
-else:
-    print("[ID:%03d] ping Succeeded. SCServo model number : %d" % (1, scs_model_number))
-if scs_error != 0:
-    print("%s" % packetHandler.getRxPacketError(scs_error))
+    # Set port baudrate 1000000
+    # if port_handler.setBaudRate(1000000):
+    #     print("Succeeded to change the baudrate")
+    # else:
+    #     print("Failed to change the baudrate")
+    #     quit()
 
-# Close port
-portHandler.closePort()
+    # Try to ping the ID:1 FTServo
+    # Get SCServo model number
+    for _ in range(100):
+        scs_model_number, scs_comm_result, scs_error = packet_handler.ping(scs_id=0)
+        if scs_comm_result != CommResult.SUCCESS:
+            print("%s" % packet_handler.getTxRxResult(scs_comm_result))
+        else:
+            print("[ID:%03d] ping Succeeded. SCServo model number : %d" % (1, scs_model_number))
+        if scs_error != 0:
+            print("%s" % packet_handler.getRxPacketError(scs_error))
+
+        time.sleep(2.)
+
+    # Close port
+    port_handler.closePort()
+
