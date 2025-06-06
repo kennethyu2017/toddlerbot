@@ -16,7 +16,7 @@ import optuna
 from toddlerbot.sim import Robot, MuJoCoSim, MotorController
 from toddlerbot.utils import config_logging
 from toddlerbot.policies import (RUN_POLICY_LOG_FOLDER_FMT, RUN_STEP_RECORD_PICKLE_FILE,
-                        RUN_EPISODE_MOTOR_KP_PICKLE_FILE, StepRecord, EpisodeInfo)
+                                 RUN_EPISODE_MOTOR_KP_PICKLE_FILE, StepRecord, sysIDEpisodeInfo)
 
 # from toddlerbot.utils.misc_utils import log
 
@@ -152,7 +152,7 @@ def _load_dataset(*,robot: Robot, step_record_file: Path, kp_file: Path)->Genera
         # ckpt_dict: Dict[str, Dict[str, float]] = data_dict["ckpt_dict"]
         # list of {motor_name:kp ... } of each episode.
         # each episode, only one sysID_joint, but maybe more than one corresponding motors.
-        episode_info: List[EpisodeInfo] | None = None
+        episode_info: List[sysIDEpisodeInfo] | None = None
         with open(kp_file,'rb') as _f:
             episode_info = pickle.load(_f)
 

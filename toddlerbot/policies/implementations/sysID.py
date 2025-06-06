@@ -10,6 +10,7 @@ from ...sim import ( Obs,Robot )
 from ...utils import ( get_chirp_signal, interpolate_action, set_seed )
 from ..base_policy import BasePolicy
 from .._module_logger import logger
+from .. import sysIDEpisodeInfo
 
 # This script collects data for system identification of the motors.
 
@@ -173,12 +174,6 @@ def _build_jnt_sysID_spec(robot_name: str)->Mapping[str, _SysIDSpecs]:
     return specs
 
 
-class EpisodeInfo(NamedTuple):
-    ep_end_time_pnt: float
-    sysID_jnt_name: List[str]
-    motor_kp: Dict[str, float]
-
-
 class SysIDPolicy(BasePolicy, policy_name="sysID"):
 # class SysIDFixedPolicy(BasePolicy, policy_name="sysID"):
     """System identification policy for the toddlerbot robot."""
@@ -223,7 +218,7 @@ class SysIDPolicy(BasePolicy, policy_name="sysID"):
         # self.episode_motor_kp: List[ Tuple[float, Dict[str, float]] ] = []
         # must be ordered list.
 
-        self.episode_info: List[EpisodeInfo] = []
+        self.episode_info: List[sysIDEpisodeInfo] = []
 
         # NOTE: `act` is motor control action, e.g., target pos of motor.
         # In prep duration, make all motors back to zero.
@@ -406,9 +401,9 @@ class SysIDPolicy(BasePolicy, policy_name="sysID"):
 
                 # self.episode_motor_kp[self._sysID_time_seq[-1]] = { _n: _kp for _n in motor_name}
                 # must be ordered list.
-                self.episode_info.append(EpisodeInfo(ep_end_time_pnt=self._sysID_time_seq[-1],
-                                                     sysID_jnt_name=sysID_jnt_name,
-                                                     motor_kp={ _n: _kp for _n in sysID_motor_name}))
+                self.episode_info.append(sysIDEpisodeInfo(ep_end_time_pnt=self._sysID_time_seq[-1],
+                                                          sysID_jnt_name=sysID_jnt_name,
+                                                          motor_kp={ _n: _kp for _n in sysID_motor_name}))
 
                 logger.info(f'--->build episode, end time: {self._sysID_time_seq[-1]}, end act: {self._sysID_motor_act_seq[-1]}'
                             f'\n active jnt name: {sysID_jnt_name}, active jnt direction: {sysID_jnt_dir}, '
