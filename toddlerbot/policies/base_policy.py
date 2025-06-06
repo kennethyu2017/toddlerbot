@@ -12,40 +12,40 @@ from ..utils import ( interpolate, snake2camel )
 # TODO: move into BasePolicy as class variable.
 # __policy_registry: Dict[str, Type["BasePolicy"]] = {}
 
-def get_policy_class(policy_name: str) -> Type["BasePolicy"]:
-    """Retrieves the policy class associated with the given policy name.
-
-    Args:
-        policy_name (str): The name of the policy to retrieve.
-
-    Returns:
-        Type[BasePolicy]: The class of the policy corresponding to the given name.
-
-    Raises:
-        ValueError: If the policy name is not found in the policy registry.
-    """
-    if policy_name not in BasePolicy.policy_registry:
-        raise ValueError(f"Unknown policy: {policy_name}")
-
-    return BasePolicy.policy_registry[policy_name]
-
-
-def get_policy_names() -> List[str]:
-    """Retrieves a list of policy names from the policy registry.
-
-    This function iterates over the keys in the policy registry and generates a list
-    of policy names. For each key, it adds the key itself and a modified version of
-    the key with the suffix '_fixed' to the list.
-
-    Returns:
-        List[str]: A list containing the original and modified policy names.
-    """
-    policy_names: List[str] = []
-    for key in BasePolicy.policy_registry.keys():
-        policy_names.append(key)
-        policy_names.append(key + "_fixed")
-
-    return policy_names
+# def get_policy_class(policy_name: str) -> Type["BasePolicy"]:
+#     """Retrieves the policy class associated with the given policy name.
+#
+#     Args:
+#         policy_name (str): The name of the policy to retrieve.
+#
+#     Returns:
+#         Type[BasePolicy]: The class of the policy corresponding to the given name.
+#
+#     Raises:
+#         ValueError: If the policy name is not found in the policy registry.
+#     """
+#     if policy_name not in BasePolicy.policy_registry:
+#         raise ValueError(f"Unknown policy: {policy_name}")
+#
+#     return BasePolicy.policy_registry[policy_name]
+#
+#
+# def get_policy_names() -> List[str]:
+#     """Retrieves a list of policy names from the policy registry.
+#
+#     This function iterates over the keys in the policy registry and generates a list
+#     of policy names. For each key, it adds the key itself and a modified version of
+#     the key with the suffix '_fixed' to the list.
+#
+#     Returns:
+#         List[str]: A list containing the original and modified policy names.
+#     """
+#     policy_names: List[str] = []
+#     for key in BasePolicy.policy_registry.keys():
+#         policy_names.append(key)
+#         policy_names.append(key + "_fixed")
+#
+#     return policy_names
 
 class BasePolicy(ABC):
     """Base class for all policies."""
@@ -136,6 +136,7 @@ class BasePolicy(ABC):
             # getattr(BasePolicy, '__policy_registry').update({policy_name:cls})
 
             BasePolicy.policy_registry[policy_name] = cls
+            print(f'register policy class :  {BasePolicy.policy_registry=:}')
 
     def reset(self):...
 

@@ -1,13 +1,15 @@
 import argparse
 # import bisect
-import importlib
+from importlib import import_module
 import json
 from pathlib import Path
 import pickle
-import pkgutil
+# import pkgutil
 import time
 import time as timelib
-from typing import Dict, List,Optional, Generator, DefaultDict, Mapping
+from typing import (Dict, List, Optional, Generator,
+                    DefaultDict, Mapping, Type,
+                    NamedTuple, Set)
 from dataclasses import dataclass
 from collections import OrderedDict, defaultdict
 from contextlib import contextmanager
@@ -20,59 +22,97 @@ from tqdm import tqdm
 import logging
 from copy import deepcopy
 
-from toddlerbot.sim import (Robot, BaseEnv, Obs, MuJoCoSim, RealWorld)
+from toddlerbot.sim import (Robot, BaseEnv, MuJoCoSim, RealWorld)
 from toddlerbot.utils import ( sync_time, dump_profiling_data,
                                # snake2camel,
                                config_logging,
                                # profile
                                )
 from toddlerbot.visualization import *
-from toddlerbot.policies.implementations import *
-from toddlerbot.policies.base_policy import ( BasePolicy, get_policy_names, get_policy_class )
+from toddlerbot.policies.base_policy import BasePolicy
 from toddlerbot.policies._module_logger import logger
 
-RUN_POLICY_LOG_FOLDER_FMT = 'run_policy_log/{robot_name}_{policy_name}_{env_name}_{cur_time}'
-RUN_STEP_RECORD_PICKLE_FILE = 'step_record/step_record_list.pkl'
-RUN_EPISODE_MOTOR_KP_PICKLE_FILE = '{policy_name}/episode_motor_kp.pkl'
+# import from ./__init__.py
+from . import (RUN_EPISODE_MOTOR_KP_PICKLE_FILE,RUN_STEP_RECORD_PICKLE_FILE,
+               RUN_POLICY_LOG_FOLDER_FMT,StepRecord)
 
-def dynamic_import_policies(policy_package: str):
-    """Dynamically imports all modules within a specified package.
 
-    This function attempts to import each module found in the given package directory. If a module cannot be imported, a log message is generated.
+class _ModuleAndClsName(NamedTuple):
+    module_name : str   # python file name.
+    cls_name: str
+
+# TODO: complete this.
+_policy_module_and_cls_dict :Dict[str, _ModuleAndClsName ]={
+    'balance_pd': _ModuleAndClsName('balance_pd', 'BalancePDPolicy'),
+    'sysID': _ModuleAndClsName('sysID', 'sysIDPolicy'),
+    'calibrate': _ModuleAndClsName ('calibrate', 'CalibratePolicy', ),
+}
+
+
+def _get_policy_class_v2(policy_name: str) -> Type["BasePolicy"]:
+    """Retrieves the policy class associated with the given policy name.
 
     Args:
-        policy_package (str): The name of the package containing the modules to be imported.
-    """
-    package = importlib.import_module(policy_package)
-    package_path = package.__path__
+        policy_name (str): The name of the policy to retrieve.
 
-    # Iterate over all modules in the given package directory
-    for _, module_name, _ in pkgutil.iter_modules(package_path):
-        full_module_name = f"{policy_package}.{module_name}"
-        try:
-            importlib.import_module(full_module_name)
-        except Exception as err:
-            logger.error(f"Could not import {full_module_name}, err:{err}")
+    Returns:
+        Type[BasePolicy]: The class of the policy corresponding to the given name.
+
+    Raises:
+        ValueError: If the policy name is not found in the policy registry.
+    """
+    if policy_name not in _policy_module_and_cls_dict:
+        raise ValueError(f"Unknown policy: {policy_name}")
+
+    mod_name: str = _policy_module_and_cls_dict[policy_name].module_name
+    cls_name: str = _policy_module_and_cls_dict[policy_name].cls_name
+
+    module = import_module(mod_name,
+                           'toddlerbot.policies.implementations' )
+
+    if hasattr(module, cls_name):
+        return getattr(module, cls_name)
+    else:
+        raise ValueError(f'imported module: {mod_name} has no attr with name: {cls_name}.'
+                         f' module dict: {module.__dict__} ' )
+
+
+def _get_policy_names_v2() -> Set[str]:
+    """Retrieves a list of policy names from the policy registry.
+
+    This function iterates over the keys in the policy registry and generates a list
+    of policy names. For each key, it adds the key itself and a modified version of
+    the key with the suffix '_fixed' to the list.
+
+    Returns:
+        List[str]: A list containing the original and modified policy names.
+    """
+    return  (  {_k for _k in _policy_module_and_cls_dict } |
+               {_k + "_fixed" for _k in _policy_module_and_cls_dict }
+               )
+
+# def dynamic_import_policies(policy_package: str):
+#     """Dynamically imports all modules within a specified package.
+#
+#     This function attempts to import each module found in the given package directory. If a module cannot be imported, a log message is generated.
+#
+#     Args:
+#         policy_package (str): The name of the package containing the modules to be imported.
+#     """
+#     package = importlib.import_module(policy_package)
+#     package_path = package.__path__
+#
+#     # Iterate over all modules in the given package directory
+#     for _, module_name, _ in pkgutil.iter_modules(package_path):
+#         full_module_name = f"{policy_package}.{module_name}"
+#         try:
+#             importlib.import_module(full_module_name)
+#         except Exception as err:
+#             logger.error(f"Could not import {full_module_name}, err:{err}")
 
 
 # Call this to import all policies dynamically
-dynamic_import_policies("toddlerbot.policies")
-
-@dataclass(init=True)
-class _StepTimePnt:
-    step_start:float = float('inf')
-    recv_obs: float = float('inf')
-    inference: float = float('inf')
-    set_action: float = float('inf')
-    sim_step: float = float('inf')
-    step_end: float = float('inf')
-
-@dataclass(init=True)
-class StepRecord:
-    time_pnt: _StepTimePnt = None
-    obs: Obs = None
-    motor_act: npt.NDArray[np.float32] = None
-    ctrl_input: Dict[str, float] = None  # e.g., human operation.
+# dynamic_import_policies("toddlerbot.policies")
 
 
 def _plot_loop_time_helper(step_record_list: List[StepRecord], plot_dir: Path):
@@ -435,7 +475,8 @@ class _MotorKpSetter:
 
     def set_kp(self, *,
                      policy:BasePolicy, env:BaseEnv, step_count:int, obs_time: float):
-        assert isinstance(policy, SysIDPolicy)
+        # assert isinstance(policy, SysIDPolicy)
+        assert policy.__name__ ==  'SysIDPolicy'
         # key is end_time of each episode.
         # ep_end_time_pnt = tuple(policy.episode_motor_kp)  #.keys())
         # if obs.time > max(ep_end_time_point), bisect_left will return len(ep_end_time_point) as `insertion` position.
@@ -497,7 +538,8 @@ class _MotorKpSetter:
 
 def _toggle_motor(policy:BasePolicy, env:BaseEnv):
     # need to enable and disable motors according to logging state
-    if isinstance(policy, TeleopLeaderPolicy) and policy.toggle_motor:
+    # if isinstance(policy, TeleopLeaderPolicy) and policy.toggle_motor:
+    if policy.__name__ =='TeleopLeaderPolicy' and policy.toggle_motor:
         assert isinstance(env, RealWorld)
         if policy.is_running:
             # disable all motors when logging
@@ -508,7 +550,8 @@ def _toggle_motor(policy:BasePolicy, env:BaseEnv):
 
         policy.toggle_motor = False
 
-    elif isinstance(policy, RecordPolicy) and policy.toggle_motor:
+    # elif isinstance(policy, RecordPolicy) and policy.toggle_motor:
+    elif policy.__name__ =='RecordPolicy' and policy.toggle_motor:
         assert isinstance(env, RealWorld)
         env.actuator_controller.disable_motors(policy.disable_motor_indices)
         policy.toggle_motor = False
@@ -531,26 +574,31 @@ def _save_policy_log(*, policy:BasePolicy, robot:Robot,
     if not log_dir.exists():
         log_dir.mkdir()
 
-    if isinstance(policy, SysIDPolicy):
+    # if isinstance(policy, SysIDPolicy):
+    if policy.__name__ == 'SysIDPolicy':
         # with open(log_dir/'episode_motor_kp.pkl', "wb") as _f:
         with open(RUN_EPISODE_MOTOR_KP_PICKLE_FILE.format(policy_name=policy.name), "wb") as _f:
             pickle.dump(policy.episode_info, _f)
 
-    if isinstance(policy, TeleopFollowerPDPolicy):
+    # if isinstance(policy, TeleopFollowerPDPolicy):
+    if policy.__name__ == 'TeleopFollowerPDPolicy':
         policy.dataset_logger.move_files_to_folder(log_dir)
 
-    if isinstance(policy, DPPolicy) and len(policy.camera_frame_list) > 0:
+    # if isinstance(policy, DPPolicy) and len(policy.camera_frame_list) > 0:
+    if policy.__name__ == 'DPPolicy' and len(policy.camera_frame_list) > 0:
         fps = int(1 / np.diff(policy.camera_time_list).mean())
         logger.info(f"visual_obs fps: {fps}")
         video_path = log_dir / "visual_obs.mp4"
         video_clip = ImageSequenceClip(policy.camera_frame_list, fps=fps)
         video_clip.write_videofile(video_path, codec="libx264", fps=fps)
 
-    if isinstance(policy, ReplayPolicy):
+    # if isinstance(policy, ReplayPolicy):
+    if policy.__name__ == 'ReplayPolicy':
         with open(log_dir/ 'keyframes.pkl', 'wb') as _f:
             pickle.dump(policy.keyframes, _f)
 
-    if isinstance(policy, CalibratePolicy):
+    # if isinstance(policy, CalibratePolicy):
+    if policy.__name__ == 'CalibratePolicy':
         # TODO: after run_policy, call add_configs.py to update config_motors.json contents into config.json.
         config_file: Path = robot.root_path / 'joint_motor_mapping.json'
         if config_file.exists():
@@ -597,14 +645,15 @@ def _save_policy_log(*, policy:BasePolicy, robot:Robot,
         else:
             raise FileNotFoundError(f"Could not find {config_file.resolve()}")
 
-    if isinstance(policy, PushCartPolicy):
+    # if isinstance(policy, PushCartPolicy):
+    if policy.__name__ ==  'PushCartPolicy':
         video_path = log_dir / 'visual_obs.mp4'
         fps = int(1 / np.diff(policy.grasp_policy.camera_time_list).mean())
         logger.info(f"visual_obs fps: {fps}")
         video_clip = ImageSequenceClip(policy.grasp_policy.camera_frame_list, fps=fps)
         video_clip.write_videofile(video_path, codec="libx264", fps=fps)
 
-    if isinstance(policy, TeleopJoystickPolicy):
+    if policy.__name__ == 'TeleopJoystickPolicy':
         policy_dict = {
             "hug": policy.hug_policy,
             "pick": policy.pick_policy,
@@ -614,7 +663,7 @@ def _save_policy_log(*, policy:BasePolicy, robot:Robot,
         }
         for task_name, task_policy in policy_dict.items():
             if (
-                not isinstance(task_policy, DPPolicy)
+                not task_policy.__name__ == 'DPPolicy'
                 or len(task_policy.camera_frame_list) == 0
             ):
                 continue
@@ -671,7 +720,7 @@ def run_policy(*,
 
     # for sysID only.
     # _cur_ep_idx :int = -1
-    motor_kp_setter: _MotorKpSetter | None = _MotorKpSetter() if isinstance(policy,SysIDPolicy) else None
+    motor_kp_setter: _MotorKpSetter | None = _MotorKpSetter() if policy.__name__ == 'SysIDPolicy' else None
 
     # TODO: for tqdm,  if total is float('inf'), Infinite iterations,
     #  behave same as `total-unknown`: can not show progress bar.
@@ -872,8 +921,9 @@ def _build_policy(args:argparse.Namespace, robot:Robot, init_motor_pos:npt.NDArr
     # TODO: confusing.  we can separate them into two fields:  --policy xxx  --fixed true/false.
     # `fixed` meas robot with a fixed base , e.g. fixed by a bench clamp.
     # NOTE: all policy name can be added with a "_fixed" suffix during input args.
-    PolicyCls = get_policy_class(args.policy.replace("_fixed", ""))
-    logger.info(f'get policy class: {PolicyCls.__name__}')
+    PolicyCls = _get_policy_class_v2(args.policy.replace("_fixed", ""))
+    policy_cls_base_name = {_base.__name__ for _base in PolicyCls.__bases__}
+    logger.info(f'get policy class: {PolicyCls.__name__}, base class: {policy_cls_base_name}')
 
     if "replay" in args.policy:
         policy = PolicyCls(args.policy, robot, init_motor_pos, args.run_name)
@@ -913,7 +963,8 @@ def _build_policy(args:argparse.Namespace, robot:Robot, init_motor_pos:npt.NDArr
     elif "push_cart" in args.policy:
         policy = PolicyCls(args.policy, robot, init_motor_pos, args.ckpt)
 
-    elif issubclass(PolicyCls, MJXPolicy):
+    # elif issubclass(PolicyCls, MJXPolicy):
+    elif 'MJXPolicy' in policy_cls_base_name:
         fixed_command = None
         if len(args.command) > 0:
             fixed_command = np.array(args.command.split(" "), dtype=np.float32)
@@ -922,12 +973,14 @@ def _build_policy(args:argparse.Namespace, robot:Robot, init_motor_pos:npt.NDArr
             args.policy, robot, init_motor_pos, args.ckpt, fixed_command=fixed_command
         )
 
-    elif issubclass(PolicyCls, DPPolicy):
+    # elif issubclass(PolicyCls, DPPolicy):
+    elif 'DPPolicy' in policy_cls_base_name:
         policy = PolicyCls(
             args.policy, robot, init_motor_pos, args.ckpt, task=args.task
         )
 
-    elif issubclass(PolicyCls, BalancePDPolicy):
+    # elif issubclass(PolicyCls, BalancePDPolicy):
+    elif 'BalancePDPolicy' in policy_cls_base_name:
         # Run the command
         if len(args.ip) > 0:
             sync_time(args.ip)
@@ -1013,7 +1066,7 @@ def _args_parsing() -> argparse.Namespace:
         type=str,
         default="stand",
         help="The name of the task.",
-        choices=get_policy_names(),
+        choices=_get_policy_names_v2(),
     )
 
     parser.add_argument(
