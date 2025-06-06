@@ -219,7 +219,8 @@ class RealWorld(BaseEnv, env_name='real_world'):
                 value = _f.result()
             except Exception as exc:
                 setattr(self, attr, None)
-                logger.error(f'instantiate {attr} generated an exception: {exc}')                
+                logger.error(f'instantiate {attr} generated an exception: {exc}')
+                raise
             else:
                 setattr(self, attr, value)
                 logger.info(f'instantiate {attr} succeed.')

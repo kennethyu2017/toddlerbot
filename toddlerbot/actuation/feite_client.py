@@ -397,7 +397,7 @@ class FeiteGroupClient:
         if errored_ids:
             # TODO: add handel for failure read: we can not get pos/vel states from actuators, which is
             # dangerous for controlling. maybe we should halt any action?
-            logger.error( f"Sync read failed for motor id: {str(errored_ids)}")
+            # logger.error( f"Sync read failed for motor id: {str(errored_ids)}")
             raise ValueError(f"Sync read failed for motor id: {str(errored_ids)}")
 
         # TODO: cause we will not change _motor_ids after instantiate of `self`,  so no need to call clearParam.
