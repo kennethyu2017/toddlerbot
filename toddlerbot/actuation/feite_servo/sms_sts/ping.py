@@ -7,17 +7,10 @@
 # This example is tested with a SCServo(STS/SMS), and an URT
 #
 
-import sys
 import time
-
-# import os
-
-# sys.path.append("..")
-
 from toddlerbot.actuation.feite_servo.scservo_sdk import (PortHandler,SMS_STS_DEFAULT_BAUD_RATE,
                                                           ProtocolPacketHandler, ByteOrder,
                                                           CommResult)                   # Uses FTServo SDK library
-
 # define constants.
 URT_1_DEV_NAME : str = r'/dev/ttyUSB0'
 

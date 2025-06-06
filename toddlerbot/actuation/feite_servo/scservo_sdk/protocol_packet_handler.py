@@ -522,6 +522,9 @@ class ProtocolPacketHandler(object):
         rx_length = 0
         while True:
             rxpacket.extend(self.port_handler.readPort(wait_length - rx_length))
+
+            # print(f' rxpkt from readPort: {rxpacket} ')
+
             rx_length = len(rxpacket)
             if rx_length >= wait_length:
                 result = CommResult.SUCCESS

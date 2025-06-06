@@ -26,45 +26,45 @@ class GroupSyncReader:
         # NOTE: _recv_data_dict,param are set/cleared after every sync_read.
         self.param = bytearray()
         # key is motor id.
-        self._recv_data_dict = {}
+        self._rcv_data_dict = {}
        
 
     def makeParam(self)->bool:
-        if len(self._recv_data_dict) == 0: 
+        if len(self._rcv_data_dict) == 0:
             return False
 
         self.param.clear()
 
-        for scs_id in self._recv_data_dict:
+        for scs_id in self._rcv_data_dict:
             self.param.append(scs_id)
             
         return True
 
     # NOTE: _recv_data_dict,param are set/cleared at every sync_read.
     def addParam(self, scs_id:int)->bool:
-        if scs_id in self._recv_data_dict:  # scs_id already exist
+        if scs_id in self._rcv_data_dict:  # scs_id already exist
             return False
 
-        self._recv_data_dict[scs_id] = None # RetData(0, bytearray()) # (error_code, params)  # [0] * self.data_length
+        self._rcv_data_dict[scs_id] = None # RetData(0, bytearray()) # (error_code, params)  # [0] * self.data_length
 
         self.is_param_changed = True
         return True
 
     def removeParam(self, scs_id):
-        if scs_id not in self._recv_data_dict:  # NOT exist
+        if scs_id not in self._rcv_data_dict:  # NOT exist
             return
 
-        del self._recv_data_dict[scs_id]
+        del self._rcv_data_dict[scs_id]
 
         self.is_param_changed = True
 
     #NOTE: _recv_data_dict,param are set/cleared at every sync_read.        
     def clearParam(self)->NoReturn:
-        self._recv_data_dict.clear()
+        self._rcv_data_dict.clear()
         self.param.clear()
 
     def txPacket(self):
-        if len(self._recv_data_dict.keys()) == 0:
+        if len(self._rcv_data_dict.keys()) == 0:
             return CommResult.NOT_AVAILABLE
 
         if self.is_param_changed is True or len(self.param)==0:            
@@ -72,7 +72,7 @@ class GroupSyncReader:
                 assert False
                 return CommResult.TX_ERROR            
 
-        return self.packet_handler.syncReadTx(self.start_address, self.data_length, self.param, len(self._recv_data_dict.keys()))
+        return self.packet_handler.syncReadTx(self.start_address, self.data_length, self.param, len(self._rcv_data_dict.keys()))
 
     def rxPacket(self)->CommResult:
         rxpacket:bytearray
@@ -80,19 +80,22 @@ class GroupSyncReader:
         self.last_result = True
         result = CommResult.RX_FAIL
 
-        if len(self._recv_data_dict.keys()) == 0:
+        if len(self._rcv_data_dict.keys()) == 0:
             return CommResult.NOT_AVAILABLE
 
-        result, rxpacket = self.packet_handler.syncReadRx(self.data_length, len(self._recv_data_dict.keys()))
-        # print(rxpacket)
+        result, rxpacket = self.packet_handler.syncReadRx(self.data_length, len(self._rcv_data_dict.keys()))
+
+        # print(f'sync read rx: {rxpacket}')
+
         if len(rxpacket) >= (self.data_length+6):
-            for scs_id in self._recv_data_dict:
-                self._recv_data_dict[scs_id], result = self.readRx(rxpacket, scs_id, self.data_length)
+            for scs_id in self._rcv_data_dict:
+                self._rcv_data_dict[scs_id], result = self.readRx(rxpacket, scs_id, self.data_length)
                 if result != CommResult.SUCCESS:
                     self.last_result = False
                 # print(scs_id)
         else:
             self.last_result = False
+
         # print(self.last_result)
         return result
 
@@ -153,16 +156,16 @@ class GroupSyncReader:
 
     def isAvailable(self, scs_id, address, data_length): #->Tuple[bool, int]:
         #if self.last_result is False or scs_id not in self._recv_data_dict:
-        if scs_id not in self._recv_data_dict:
+        if scs_id not in self._rcv_data_dict:
             return False #, 0
 
         if (address < self.start_address) or (self.start_address + self.data_length - data_length < address):
             return False #, 0
-        if self._recv_data_dict[scs_id] is None:
+        if self._rcv_data_dict[scs_id] is None:
             return False #, 0
-        if len(self._recv_data_dict[scs_id].params)<(data_length): 
+        if len(self._rcv_data_dict[scs_id].params)<(data_length):
             return False #, 0
-        if (_error:= self._recv_data_dict[scs_id].error) != 0:
+        if (_error:= self._rcv_data_dict[scs_id].error) != 0:
             # TODO: handle error.
             raise ValueError(f"actuator id: {scs_id} error: {_error}")
             return False
@@ -192,8 +195,8 @@ class GroupSyncReader:
 
 
     def getDataAsBytes(self, *, scs_id:int, address:int, size:int) -> bytearray:
-        assert size < self.data_length
+        assert size <= self.data_length
         assert address >= self.start_address
         offset = address - self.start_address
         # NOTE: copy to return new bytearray object instead of slicing.
-        return self._recv_data_dict[scs_id].params[offset: offset + size].copy()
+        return self._rcv_data_dict[scs_id].params[offset: offset + size].copy()
