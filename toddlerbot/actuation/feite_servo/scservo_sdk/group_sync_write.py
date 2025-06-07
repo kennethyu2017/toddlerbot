@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 from typing import NoReturn, Dict
+from copy import deepcopy
 from .scservo_def import *
 from .protocol_packet_handler import ProtocolPacketHandler
 
@@ -47,7 +48,7 @@ class GroupSyncWriter:
         # NOTE: make a copy to avoid the buffer of data will be modified after addParam, 
         # cause we don't send the packet immediately after addParam, instead, complete 
         # collecting  all the data from all ID.
-        self.write_data_dict[scs_id] = data.copy()
+        self.write_data_dict[scs_id] = deepcopy(data) # data.copy()
 
         self.is_param_changed = True
         return True

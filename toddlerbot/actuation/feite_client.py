@@ -12,19 +12,8 @@ from typing import (Any, Dict, List, Optional, Sequence,Type,
 import numpy as np
 import numpy.typing as npt
 
-from .feite_servo.scservo_sdk import (PortHandler, ProtocolPacketHandler, GroupSyncReader, GroupSyncWriter,
-                         CommResult, ByteOrder, SMS_STS_SRAM_Table_ReadOnly, SMS_STS_SRAM_Table_RW,
-                         SMS_STS_EEPROM_Table_ReadOnly, SMS_STS_EEPROM_Table_RW, SMS_STS_Table_Data_Length)
-
+from .feite_servo.scservo_sdk import *
 from ._module_logger import logger
-
-POS_RESOLUTION = 2.0 * np.pi / 4096  # 0.088 degrees per step.
-VEL_RESOLUTION = 50 * POS_RESOLUTION  # 50 steps / second, 0.732 rpm.
-VOLTAGE_RESOLUTION = 0.1
-LOAD_PERCENTAGE_RESOLUTION = 0.1  # 0.1%
-# See http://emanual.robotis.com/docs/en/dxl/x/xh430-v210/#goal-velocity
-# DEFAULT_VEL_SCALE = 0.229 * 2.0 * np.pi / 60.0  # 0.229 rpm
-# DEFAULT_V_IN_SCALE = 0.1
 
 class TableValueName(Enum):
     pos = 1
@@ -65,104 +54,6 @@ class PosVelLoadRead(NamedTuple):
 #     return param.to_bytes(length=size, byteorder='little', signed=False)
 
 
-# TODO: for feite protocol, the Two’s complement is not applied for the negative value. Use the BIT15 instead...
-def _signed_to_proto_param_bytes_v2(*, value: int, size: int) -> bytes | bytearray:
-    """Converts a signed integer to its unsigned equivalent based on the specified size.
-
-    Args:
-        value (int): The signed integer to convert.
-        size (int): The size in bytes of the integer type.
-
-    Returns:
-        bytes: The unsigned integer representation of the input value.the highest bit, e.g., BIT15, representing sign
-    """
-    # use the highest bit, e.g., BIT15, to represent sign.
-    abs_value = abs(value)
-    param = abs_value.to_bytes(length=size, byteorder='little', signed=False)
-    # [-32767, 32767] for 2 bytes.
-    assert (param[-1] & 0x80 ) == 0
-    # TODO: check the actuator real act.
-    if value < 0:
-        param = bytearray(param)
-        param[-1] |= 0x80  # (1 << 7) got unsigned int.
-
-    return param
-
-
-# def proto_param_bytes_to_signed_v1(*, param:int, size: int) -> int:
-#     """Converts an unsigned integer to a signed integer of a specified byte size.
-#
-#     Args:
-#         param (int): The unsigned integer to convert. the highest bit, e.g., BIT15, representing sign.
-#         size (int): The byte size of the integer.
-#
-#     Returns:
-#         int: The signed integer representation of the input value.
-#     """
-#     bit_size = 8 * size
-#     highest_bit_1_value = 1 << (bit_size - 1)  # got unsigned int.
-#     # use the highest bit, e.g., BIT15, to represent sign.
-#     if (param & highest_bit_1_value) != 0:
-#         return  highest_bit_1_value - param
-#     return param
-
-def _proto_param_bytes_to_signed_v2(*, param: bytes | bytearray) -> int:
-    """Converts an unsigned integer to a signed integer of a specified byte size.
-
-    Args:
-        param (bytes): The unsigned integer to convert. the highest bit, e.g., BIT15, representing sign.
-
-    Returns:
-        int: The signed integer representation of the input value.
-    """
-
-    # use the highest bit, e.g., BIT15, to represent sign.
-    # TODO: check the real act of actuator.
-    sign:int = 1
-    if (param[-1] & 0x80) !=0 :   # (1 << 7) got unsigned int.
-        sign = -1
-        if isinstance(param,bytes):
-            param = bytearray(param)
-
-        param[-1] &= 0x7f  # ~(1 << 7) got unsigned int.
-
-    return sign * int.from_bytes(bytes=param, byteorder='little', signed=False)
-
-
-def _parse_model(param: bytes| bytearray) -> int:
-    assert len(param) == 2
-    return int.from_bytes(bytes=param, byteorder='little', signed=False)
-
-def _parse_pos(param: bytes | bytearray)->float:
-    assert len(param) == 2
-    # feedback param is present absolute steps in a single turn, w/o direction.
-    step = int.from_bytes(bytes=param, byteorder='little', signed=False)
-    assert 0 <= step <= 4095
-    return step * POS_RESOLUTION  # rad in as single turn.
-
-def _parse_vel(param: bytes | bytearray)->float:
-    assert len(param) == 2
-    # BIT15 is direction.
-    vel = _proto_param_bytes_to_signed_v2(param=param)
-    # vel resolution is 0.732 rpm, SM40BL max vel is 88 rpm.
-    assert -120 <= vel <= 120
-    return vel * VEL_RESOLUTION
-
-def _parse_load(param: bytes | bytearray)->float:
-    assert len(param) == 2
-    # 0.1% of stall_torque.
-    load = int.from_bytes(bytes=param, byteorder='little', signed=False)
-    assert 0 <= load <= 1000
-    return load * LOAD_PERCENTAGE_RESOLUTION
-
-
-def _parse_vin(param: bytes | bytearray)->float:
-    assert len(param) == 1
-    vin = int.from_bytes(bytes=param, byteorder='little', signed=False)
-    assert 0 <= vin < 140
-    return vin * VOLTAGE_RESOLUTION
-
-
 class _ReadSpec(NamedTuple):
     start_addr: int
     size: Sequence[int]  # for multi-params read, e.g., `pos,vel,load` together.
@@ -173,27 +64,27 @@ class _ReadSpec(NamedTuple):
 _TableValueReadSpec : Dict[TableValueName, _ReadSpec] = {
     TableValueName.pos: _ReadSpec(start_addr=SMS_STS_SRAM_Table_ReadOnly.PRESENT_POSITION_L,
                      size=[SMS_STS_Table_Data_Length.PRESENT_POSITION],
-                     parser=[_parse_pos],
+                     parser=[parse_pos],
                      result_dtype=[np.float32]),
 
     TableValueName.vel: _ReadSpec(start_addr=SMS_STS_SRAM_Table_ReadOnly.PRESENT_VELOCITY_L,
                      size=[SMS_STS_Table_Data_Length.PRESENT_VELOCITY],
-                     parser=[_parse_vel],
+                     parser=[parse_vel],
                      result_dtype=[np.float32]),
 
     TableValueName.load: _ReadSpec(start_addr=SMS_STS_SRAM_Table_ReadOnly.PRESENT_LOAD_L,
                       size=[SMS_STS_Table_Data_Length.PRESENT_LOAD],
-                      parser=[_parse_load],
+                      parser=[parse_load],
                       result_dtype=[np.float32]),
 
     TableValueName.vin: _ReadSpec(start_addr=SMS_STS_SRAM_Table_ReadOnly.PRESENT_VOLTAGE,
                                      size=[SMS_STS_Table_Data_Length.PRESENT_VOLTAGE],
-                                     parser=[_parse_vin],
+                                     parser=[parse_vin],
                                      result_dtype=[np.float16]),
 
     TableValueName.model: _ReadSpec(start_addr=SMS_STS_EEPROM_Table_ReadOnly.MODEL_L,
                         size=[SMS_STS_Table_Data_Length.MODEL_NUMBER],
-                        parser=[_parse_model],
+                        parser=[parse_model],
                         result_dtype=[np.uint16]),
 
     # consecutive-address multiple values read.
@@ -201,7 +92,7 @@ _TableValueReadSpec : Dict[TableValueName, _ReadSpec] = {
                         size=[SMS_STS_Table_Data_Length.PRESENT_POSITION,
                               SMS_STS_Table_Data_Length.PRESENT_VELOCITY,
                               SMS_STS_Table_Data_Length.PRESENT_LOAD],
-                        parser=[_parse_pos, _parse_vel, _parse_load],
+                        parser=[parse_pos, parse_vel, parse_load],
                         result_dtype=[np.float32, np.float32, np.float32])
 
 }
@@ -222,10 +113,10 @@ class FeiteGroupClient:
     def __init__(
         self,*,
         motor_ids: Sequence[int],  # ids of a group of actuators.
-        port_name: str = "/dev/ttyUSB0",
-        baud_rate: int = 115200,  # default for SMS/STS series.
-        lazy_connect: bool = False,
-        latency_timer_ms: int = 1,    #usb serial latency timer, default 1ms.
+        port_name: str,             #= "/dev/ttyUSB0",
+        baud_rate: int,             # = 115200,  # default for SMS/STS series.
+        lazy_connect: bool,          #= False,
+        rcv_timeout_ms: int,              #= 5,    #usb serial latency timer, default 5 ms.
     ):
         """Initializes a new client.
 
@@ -238,11 +129,11 @@ class FeiteGroupClient:
         self.port_name = port_name
         self.baud_rate = baud_rate
         self.lazy_connect = lazy_connect
-        self.latency_timer_ms = latency_timer_ms
+        self.rcv_timeout_ms = rcv_timeout_ms
 
         self.port_handler = PortHandler(port_name=self.port_name,
                                         baud_rate=self.baud_rate,
-                                        latency_timer=self.latency_timer_ms)
+                                        rcv_timeout_ms=self.rcv_timeout_ms)
 
         # self.packet_handler = SMS_STS_PacketHandler(self.port_handler)
         self.packet_handler = ProtocolPacketHandler(port_handler=self.port_handler, byte_order=ByteOrder.LITTLE)
@@ -572,7 +463,7 @@ class FeiteGroupClient:
     #     attr: str = 'vel'
     #     comm_time, self._cached_read_data_dict[attr] = self.sync_read_helper(addr=SMS_STS_SRAM_Table_ReadOnly.PRESENT_VELOCITY_L,
     #                                                                           size=2,
-    #                                                                           parser=_parse_vel)
+    #                                                                           parser=parse_vel)
     #
     #     # NOTE: if the ID does not return pkt, the corresponding value is `np.inf`.
     #     return comm_time, self._cached_read_data_dict[attr].copy()
@@ -586,7 +477,7 @@ class FeiteGroupClient:
     #     attr:str = 'vin'
     #     comm_time, self._cached_read_data_dict[attr] = self.sync_read_helper(addr=SMS_STS_SRAM_Table_ReadOnly.PRESENT_VOLTAGE,
     #                                                                           size=1,
-    #                                                                           parser=_parse_vin)
+    #                                                                           parser=parse_vin)
     #
     #     # NOTE: if the ID does not return pkt, the corresponding value is `np.inf`.
     #     return comm_time, self._cached_read_data_dict[attr].copy()
@@ -625,11 +516,11 @@ class FeiteGroupClient:
     #     for _x, _bytes in enumerate(param_list):
     #         assert len(_bytes) == 6
     #         # get pos.
-    #         self._cached_read_data_dict["pos"][_x] = _parse_pos(_bytes[0:2])
+    #         self._cached_read_data_dict["pos"][_x] = parse_pos(_bytes[0:2])
     #         # get vel
-    #         self._cached_read_data_dict["vel"][_x] = _parse_vel(_bytes[2:4])
+    #         self._cached_read_data_dict["vel"][_x] = parse_vel(_bytes[2:4])
     #         # get load, percentage of stall torque.
-    #         self._cached_read_data_dict["load"][_x] = _parse_load(_bytes[4:6])
+    #         self._cached_read_data_dict["load"][_x] = parse_load(_bytes[4:6])
     #
     #     # NOTE: if the ID does not return pkt, the corresponding value is timed value...
     #     return PosVelLoadRead(
@@ -829,7 +720,7 @@ class FeiteGroupClient:
         size = steps.dtype.itemsize
         assert size==2
 
-        self._sync_write_impl(param=[_signed_to_proto_param_bytes_v2(value=_v, size=size)
+        self._sync_write_impl(param=[signed_to_proto_param_bytes_v2(value=_v, size=size)
                                           for _v in steps],  # addr 42, 43,
                               address=SMS_STS_SRAM_Table_RW.GOAL_POSITION_L,
                               write_ids=motor_ids)
@@ -840,8 +731,10 @@ class FeiteGroupClient:
 
 
     def set_return_delay_time(self, value: int|Sequence[int]):
-        # TODO: value >= 1.
-        self._set_1_byte_param_helper(address=SMS_STS_EEPROM_Table_RW.RETURN_DELAY_TIME, value=value)
+        # This sync writing section has to go after the voltage reading to make sure the motors are powered up
+        # Set the return delay time to value us. EEPROM Table value unit is 2 us, so we //2 here.
+        assert value >= 2
+        self._set_1_byte_param_helper(address=SMS_STS_EEPROM_Table_RW.RETURN_DELAY_TIME, value=value // 2)
 
     def set_control_mode(self, value: int|Sequence[int]):
         # TODO: only allow 0,1,2,3

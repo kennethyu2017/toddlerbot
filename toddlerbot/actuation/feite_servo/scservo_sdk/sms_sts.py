@@ -1,11 +1,18 @@
 #!/usr/bin/env python
 
-from .scservo_def import *
+from numpy import pi
 from .protocol_packet_handler import *
-from .group_sync_read import *
 from .group_sync_write import *
 
 SMS_STS_DEFAULT_BAUD_RATE = 115200
+SMS_STS_DEFAULT_RETURN_DELAY_US = 10
+
+POS_RESOLUTION = 2.0 * pi / 4096.  # in radius. 0.001534 rad / 0.088 degrees per step.
+VEL_RESOLUTION = 50 * POS_RESOLUTION  # in radius. unit in 50 steps / second, i.e.,  0.0767 rad/s,  0.732 rpm/s.
+ACCEL_RESOLUTION = 100 * POS_RESOLUTION  # in radius. unit in 100 steps / s2 i.e.,  0.1534 rad/s2,  1.465 rpm/s2.
+VOLTAGE_RESOLUTION = 0.1
+LOAD_PERCENTAGE_RESOLUTION = 0.1  # 0.1%
+
 
 #波特率定义
 class SMS_STS_Baud_Rate:

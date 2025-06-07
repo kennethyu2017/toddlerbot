@@ -21,7 +21,7 @@ if __name__  == '__main__':
     # Get methods and members of PortHandlerLinux or PortHandlerWindows
     port_handler = PortHandler(port_name=URT_1_DEV_NAME,
                                baud_rate=SMS_STS_DEFAULT_BAUD_RATE,
-                               latency_timer=10) #ex) Windows: "COM1"   Linux: "/dev/ttyUSB0" Mac: "/dev/tty.usbserial-*"
+                               rcv_timeout_ms=10) #ex) Windows: "COM1"   Linux: "/dev/ttyUSB0" Mac: "/dev/tty.usbserial-*"
 
     # Initialize PacketHandler instance
     # Get methods and members of Protocol
@@ -31,10 +31,9 @@ if __name__  == '__main__':
     if port_handler.openPort():
         print("Succeeded to open the port")
     else:
-        print("Failed to open the port")
-        quit()
+        raise IOError("Failed to open the port")
 
-    # Set port baudrate 1000000
+        # Set port baudrate 1000000
     # if port_handler.setBaudRate(1000000):
     #     print("Succeeded to change the baudrate")
     # else:
@@ -52,7 +51,7 @@ if __name__  == '__main__':
         if scs_error != 0:
             print("%s" % packet_handler.getRxPacketError(scs_error))
 
-        time.sleep(2.)
+        time.sleep(1.)
 
     # Close port
     port_handler.closePort()

@@ -10,7 +10,7 @@ from typing import Dict, NamedTuple, Sequence, Tuple
 import numpy as np
 import numpy.typing as npt
 
-from .feite_servo.scservo_sdk import SMS_STS_DEFAULT_BAUD_RATE
+from .feite_servo.scservo_sdk import SMS_STS_DEFAULT_BAUD_RATE,SMS_STS_DEFAULT_RETURN_DELAY_US
 from .base_controller import BaseController, JointState
 from .feite_client import FeiteGroupClient, PosVelLoadRead
 
@@ -24,7 +24,9 @@ CONTROL_MODE_DICT: Dict[str, int] = {
 }
 
 # TODO: move into yaml config file.
-USB_SERIAL_DEFAULT_LATENCY_TIMER_IN_MS = 1
+# receive timeout.
+_USB_SERIAL_DEFAULT_RCV_TIMEOUT_MS = 5  #1
+
 
 # def get_env_path():
 #     """Determines the path of the current Python environment.
@@ -108,7 +110,7 @@ class FeiteConfig(NamedTuple):
     init_pos: Sequence[float] | None = None
     default_vel: float = np.pi
     # interp_method: str = "cubic"
-    return_delay_time: int = 1
+    return_delay_us: int = SMS_STS_DEFAULT_RETURN_DELAY_US
 
 
 class FeiteController(BaseController):
@@ -142,7 +144,7 @@ class FeiteController(BaseController):
 
         self.lock = Lock()
 
-        self.client =self.connect_to_client(latency_value=10)
+        self.client =self.connect_to_client(rcv_timeout_ms=_USB_SERIAL_DEFAULT_RCV_TIMEOUT_MS)
         self.initialize_motors()
 
         # if len(self.config.init_pos) == 0:
@@ -156,7 +158,7 @@ class FeiteController(BaseController):
             self.init_pos = np.asarray(config.init_pos, dtype=np.float32)
             self.normalize_init_pos()
 
-    def connect_to_client(self, latency_value: int = 1)->FeiteGroupClient:
+    def connect_to_client(self, rcv_timeout_ms: int)->FeiteGroupClient:
         """Connects to a Feite client and sets the USB latency timer.
 
         This method sets the USB latency timer for the specified port and attempts to connect to a Feite client.
@@ -164,7 +166,7 @@ class FeiteController(BaseController):
          If the connection fails, an error is logged or raised.
 
         Args:
-            latency_value (int): The desired latency timer value. Defaults to 1.
+            rcv_timeout_ms (int): The desired latency timer value. Defaults to 1.
 
         Raises:
             ConnectionError: If the connection to the Feite port fails.
@@ -208,8 +210,9 @@ class FeiteController(BaseController):
             client = FeiteGroupClient(
                 motor_ids = self._motor_ids,
                 port_name = self.config.port,
-                baud_rate= self.config.baudrate,
-                latency_timer_ms=latency_value,
+                baud_rate = self.config.baudrate,
+                lazy_connect = False,
+                rcv_timeout_ms= rcv_timeout_ms,
             )
             client.connect()
             logger.info(f"Connected to the port: {self.config.port}")
@@ -244,11 +247,10 @@ class FeiteController(BaseController):
             )
 
         time.sleep(0.2)
+
         # ---- TODO: add overload protect, min/max pos.. to Feite motors. ----
 
-        # This sync writing section has to go after the voltage reading to make sure the motors are powered up
-        # Set the return delay time to 1*2=2us
-        self.client.set_return_delay_time(self.config.return_delay_time)
+        self.client.set_return_delay_time(self.config.return_delay_us)
 
         # self.client.sync_write_1_byte(_motor_ids=self._motor_ids,
         #                              params= [bytes([self.config.return_delay_time])] * len(self._motor_ids),
