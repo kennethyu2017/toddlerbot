@@ -128,6 +128,7 @@ def _init_feite_actuators(*, robot:Robot, executor: ThreadPoolExecutor)-> Option
         kI=kI,
         kD=kD,
         init_pos=init_pos,
+        return_delay_us = 10,  #us
     )
     return executor.submit(FeiteController,feite_config, feite_ids)
 

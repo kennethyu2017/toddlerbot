@@ -59,7 +59,7 @@ class GroupSyncReader:
         self.is_param_changed = True
 
     #NOTE: _recv_data_dict,param are set/cleared at every sync_read.        
-    def clearParam(self)->NoReturn:
+    def clearParam(self):
         self._rcv_data_dict.clear()
         self.param.clear()
 

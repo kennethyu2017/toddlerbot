@@ -21,7 +21,7 @@ class BaseController(ABC):
         pass
 
     @abstractmethod
-    def connect_to_client(self):
+    def connect_to_client(self, timeout_ms: int):
         pass
 
     @abstractmethod

@@ -7,13 +7,7 @@
 # This example is tested with a SCServo(STS/SMS), and an URT
 #
 
-import sys
-import os
 import time
-
-sys.path.append("..")
-from scservo_sdk import *                      # Uses FTServo SDK library
-
 
 def read():
     while 1:

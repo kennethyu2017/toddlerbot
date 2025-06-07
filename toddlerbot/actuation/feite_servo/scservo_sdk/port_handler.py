@@ -1,18 +1,11 @@
 #!/usr/bin/env python
 
-from typing import List
 import time
 import serial
-import sys
-import platform
-
-# modified by kenneth yu.
-# DEFAULT_BAUDRATE = 1000000
-# LATENCY_TIMER = 50
 
 class PortHandler(object):
 
-    def __init__(self, *, port_name, baud_rate, latency_timer):
+    def __init__(self, *, port_name: str, baud_rate: int, rcv_timeout_ms: int):
 
         is_using: bool
         ser: serial.Serial
@@ -24,7 +17,7 @@ class PortHandler(object):
         self.tx_time_per_byte = 0.0
 
         # in ms.
-        self.latency_timer = latency_timer
+        self.rcv_timeout_ms = rcv_timeout_ms
 
         self.is_using = False
         self.port_name = port_name
@@ -46,15 +39,17 @@ class PortHandler(object):
     def getPortName(self):
         return self.port_name
 
+    # NOTE: this method just set RS485 serial baud rate, not the value in EEPROM table of motors.
     def setBaudRate(self, baudrate):
         baud = self.getCFlagBaud(baudrate)
 
-        if baud <= 0:
+        if baud is None:
             # self.setupPort(38400)
             # self.baudrate = baudrate
             return False  # TODO: setCustomBaudrate(baudrate)
         else:
             self.baudrate = baudrate
+            # TODO: set motor EEPROM table same time?
             return self.setupPort(baud)
 
     def getBaudRate(self):
@@ -74,7 +69,7 @@ class PortHandler(object):
 
     def setPacketTimeout(self, packet_length):
         self.packet_start_time = self.getCurrentTime()
-        self.packet_timeout = (self.tx_time_per_byte * packet_length) + (self.tx_time_per_byte * 3.0) + self.latency_timer #  + LATENCY_TIMER
+        self.packet_timeout = (self.tx_time_per_byte * packet_length) + (self.tx_time_per_byte * 3.0) + self.rcv_timeout_ms #  + LATENCY_TIMER
 
     def setPacketTimeoutMillis(self, msec):
         self.packet_start_time = self.getCurrentTime()
@@ -101,13 +96,20 @@ class PortHandler(object):
         if self.is_open:
             self.closePort()
 
+        # Feite SM40BL using 8N1
         self.ser = serial.Serial(
             port=self.port_name,
             baudrate=self.baudrate,
-            # parity = serial.PARITY_ODD,
-            # stopbits = serial.STOPBITS_TWO,
+            parity = serial.PARITY_NONE,
+            stopbits = serial.STOPBITS_ONE,
             bytesize=serial.EIGHTBITS,
-            timeout=0
+            # NOTE: in seconds. timeout will decide the read() behaviour, see
+            # pySerial doc.
+            # if timeout is None (default arg value), it will block until the requested number of bytes is read.
+            # TODO: we use the 2 times timeout_ms to give more tolerance for serial port, and make upper layer
+            # code to choose.
+            # NOTE: in seconds.
+            timeout=self.rcv_timeout_ms * 2. / 1000.    # 0.2  #1   #0 # in seconds.
         )
 
         self.is_open = True
@@ -120,7 +122,7 @@ class PortHandler(object):
         return True
 
     def getCFlagBaud(self, baudrate):
-        if baudrate in [4800, 9600, 14400, 19200, 38400, 57600, 115200, 128000, 250000, 500000, 1000000]:
+        if baudrate in {4800, 9600, 14400, 19200, 38400, 57600, 115200, 128000, 250000, 500000, 1000000}:
             return baudrate
         else:
-            return -1          
+            return None
