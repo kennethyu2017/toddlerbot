@@ -64,6 +64,7 @@ def proto_param_bytes_to_signed_v2(*, param: bytes | bytearray) -> int:
 
     if (param[-1] & 0x80) !=0 :   # (1 << 7) got unsigned int.
         sign = -1
+        # NOTE: deepcopy to avoid modifying argument `param` buffer.
         param = deepcopy(param)
 
         if isinstance(param,bytes):
@@ -108,20 +109,42 @@ def parse_vin(param: bytes | bytearray)->float:
     return vin * VOLTAGE_RESOLUTION
 
 
-def read_pos_and_vel_helper(pkt_handler: ProtocolPacketHandler, motor_id: int):
+def read_pos_and_vel_helper(reader: ProtocolPacketHandler, motor_id: int):
     # Read the present pos and vel.
-    pos_and_vel, comm_result, error = pkt_handler.readTxRx(motor_id,
-                                                              SMS_STS_SRAM_Table_ReadOnly.PRESENT_POSITION_L,
-                                                              4)
+    pos_and_vel, comm_result, error = reader.readTxRx(motor_id,
+                                                      SMS_STS_SRAM_Table_ReadOnly.PRESENT_POSITION_L,
+                                                      4)
     assert len(pos_and_vel) == 4
     if comm_result != CommResult.SUCCESS:
-        print(pkt_handler.getTxRxResult(comm_result))
+        raise IOError(f'reader.readTxRx comm error: {reader.getTxRxResult(comm_result)} ')
     else:
         print(f'Read [ID: {motor_id:>3d}] --->'
               f' Present Pos:{parse_pos(pos_and_vel[:2]): 4.4f}'
               f' Present Vel:{parse_vel(pos_and_vel[2:]): 4.4f}')
+
     if error != 0:
-        print(pkt_handler.getRxPacketError(error))
+        raise ValueError(f'got motor error: {reader.getRxPacketError(error)} ')
+
+def write_acc_pos_vel_helper(*, writer: ProtocolPacketHandler,
+                              motor_id:int,
+                              acc_radius:float,
+                              pos_radius:float,
+                              vel_radius:float):
+    # comm_result, error = packet_handler.WritePosEx(1, 4095, 60, 50)
+    txpkt: bytes = construct_acc_pos_vel_txpkt_helper(acc_radius=acc_radius,
+                                                      pos_radius=pos_radius,
+                                                      vel_radius=vel_radius)
+
+    comm_result, error = writer.writeTxRx(scs_id=motor_id,
+                                          address=SMS_STS_SRAM_Table_RW.ACC,
+                                          length=len(txpkt),
+                                          data=txpkt)
+
+    if comm_result != CommResult.SUCCESS:
+        raise IOError(f'writer.writeTxRx comm error: {writer.getTxRxResult(comm_result)}')
+
+    if error != 0:
+        raise ValueError(f'got motor error: {writer.getRxPacketError(error)} ')
 
 
 def construct_acc_pos_vel_txpkt_helper(*, acc_radius: float,
