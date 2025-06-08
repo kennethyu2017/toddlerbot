@@ -31,5 +31,7 @@ __all__ = ['PortHandler',
            'parse_pos',
            'signed_to_proto_param_bytes_v2',
            'proto_param_bytes_to_signed_v2',
+           'read_pos_and_vel_helper',
+           'write_acc_pos_vel_helper',
 ]
 

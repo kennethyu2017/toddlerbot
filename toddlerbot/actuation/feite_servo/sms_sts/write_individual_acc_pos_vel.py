@@ -12,33 +12,12 @@ from numpy import pi
 
 from toddlerbot.actuation.feite_servo.scservo_sdk import (PortHandler, SMS_STS_DEFAULT_BAUD_RATE,
                                                           ProtocolPacketHandler, ByteOrder,
-                                                          SMS_STS_SRAM_Table_RW, CommResult,
-                                                          read_pos_and_vel_helper,
-                                                          construct_acc_pos_vel_txpkt_helper)
+                                                          read_pos_and_vel_helper, write_acc_pos_vel_helper,
+                                                          )
 
 # define constants.
 URT_1_DEV_NAME : str = r'/dev/ttyUSB0'
 MOTOR_ID :int = 0
-
-def _write_acc_pos_vel_helper(*, writer: ProtocolPacketHandler,
-                              motor_id:int,
-                              acc_radius:float,
-                              pos_radius:float,
-                              vel_radius:float):
-    # comm_result, error = packet_handler.WritePosEx(1, 4095, 60, 50)
-    txpkt: bytes = construct_acc_pos_vel_txpkt_helper(acc_radius=acc_radius,
-                                                      pos_radius=pos_radius,
-                                                      vel_radius=vel_radius)
-
-    comm_result, error = writer.writeTxRx(scs_id=motor_id,
-                                          address=SMS_STS_SRAM_Table_RW.ACC,
-                                          length=len(txpkt),
-                                          data=txpkt)
-
-    if comm_result != CommResult.SUCCESS:
-        print(f'{writer.getTxRxResult(comm_result)}')
-    elif error != 0:
-        print(f' {writer.getRxPacketError(error)}')
 
 
 def _main():
@@ -70,7 +49,7 @@ def _main():
             TARGET_POS_RADIUS: float = 2 * pi * .99
 
             # comm_result, error = packet_handler.WritePosEx(1, 4095, 60, 50)
-            _write_acc_pos_vel_helper(writer=packet_handler,
+            write_acc_pos_vel_helper(writer=packet_handler,
                                       motor_id=MOTOR_ID,
                                       acc_radius=TARGET_ACC_RADIUS,
                                       pos_radius=TARGET_POS_RADIUS,
@@ -86,7 +65,7 @@ def _main():
             # scs_comm_result, scs_error = packet_handler.WritePosEx(1, 0, 60, 50)
 
             TARGET_POS_RADIUS = 0.
-            _write_acc_pos_vel_helper(writer=packet_handler,
+            write_acc_pos_vel_helper(writer=packet_handler,
                                       motor_id=MOTOR_ID,
                                       acc_radius=TARGET_ACC_RADIUS,
                                       pos_radius=TARGET_POS_RADIUS,
