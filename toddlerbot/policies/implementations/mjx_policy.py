@@ -244,7 +244,7 @@ class MJXPolicy(BasePolicy, policy_name="mjx"):
             self.is_prepared = True
             self.prep_duration = 7.0 if is_real else 2.0
             self.prep_time, self.prep_action = self.move(
-                -self.control_dt,
+                -self.control_dt_sec,
                 self.init_motor_pos,
                 self.default_motor_pos,
                 self.prep_duration,
@@ -265,7 +265,7 @@ class MJXPolicy(BasePolicy, policy_name="mjx"):
         assert self.jit_inference_fn is not None, "jit_inference_fn is not set!"
         assert self.rng is not None, "rng is not set!"
 
-        time_curr = self.step_curr * self.control_dt
+        time_curr = self.step_curr * self.control_dt_sec
 
         control_inputs: Dict[str, float] = {}
         if len(self.control_inputs) > 0:

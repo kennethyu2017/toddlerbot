@@ -477,7 +477,7 @@ class _MotorKpSetter:
     def set_kp(self, *,
                      policy:BasePolicy, env:BaseEnv, step_count:int, obs_time: float):
         # assert isinstance(policy, SysIDPolicy)
-        assert policy.__name__ ==  'SysIDPolicy'
+        assert type(policy).__name__ ==  'SysIDPolicy'
         # key is end_time of each episode.
         # ep_end_time_pnt = tuple(policy.episode_motor_kp)  #.keys())
         # if obs.time > max(ep_end_time_point), bisect_left will return len(ep_end_time_point) as `insertion` position.
@@ -516,7 +516,11 @@ class _MotorKpSetter:
 
         elif obs_time > policy.episode_info[self._cur_ep_idx].ep_end_time_pnt:
             # we do not allow obs skip an episode.
-            assert obs_time <= policy.episode_info[self._cur_ep_idx + 1].ep_end_time_pnt
+            # assert obs_time <= policy.episode_info[self._cur_ep_idx + 1].ep_end_time_pnt
+            if obs_time > policy.episode_info[self._cur_ep_idx + 1].ep_end_time_pnt:
+                raise ValueError(f'we do not allow obs skip an episode: '
+                                 f'{obs_time=:} > {policy.episode_info[self._cur_ep_idx + 1].ep_end_time_pnt =:}')
+
             self._cur_ep_idx += 1
 
             # TODO: if all kp are zero, not set ,keep kp value set previously? but episode_motor_kp
@@ -540,7 +544,7 @@ class _MotorKpSetter:
 def _toggle_motor(policy:BasePolicy, env:BaseEnv):
     # need to enable and disable motors according to logging state
     # if isinstance(policy, TeleopLeaderPolicy) and policy.toggle_motor:
-    if policy.__name__ =='TeleopLeaderPolicy' and policy.toggle_motor:
+    if type(policy).__name__ =='TeleopLeaderPolicy' and policy.toggle_motor:
         assert isinstance(env, RealWorld)
         if policy.is_running:
             # disable all motors when logging
@@ -552,7 +556,7 @@ def _toggle_motor(policy:BasePolicy, env:BaseEnv):
         policy.toggle_motor = False
 
     # elif isinstance(policy, RecordPolicy) and policy.toggle_motor:
-    elif policy.__name__ =='RecordPolicy' and policy.toggle_motor:
+    elif type(policy).__name__ =='RecordPolicy' and policy.toggle_motor:
         assert isinstance(env, RealWorld)
         env.actuator_controller.disable_motors(policy.disable_motor_indices)
         policy.toggle_motor = False
@@ -576,17 +580,18 @@ def _save_policy_log(*, policy:BasePolicy, robot:Robot,
         log_dir.mkdir()
 
     # if isinstance(policy, SysIDPolicy):
-    if policy.__name__ == 'SysIDPolicy':
+    if type(policy).__name__ == 'SysIDPolicy':
         # with open(log_dir/'episode_motor_kp.pkl', "wb") as _f:
-        with open(RUN_EPISODE_MOTOR_KP_PICKLE_FILE.format(policy_name=policy.name), "wb") as _f:
+        with open(log_dir / RUN_EPISODE_MOTOR_KP_PICKLE_FILE,  # .format(policy_name=policy.name),
+                  "wb") as _f:
             pickle.dump(policy.episode_info, _f)
 
     # if isinstance(policy, TeleopFollowerPDPolicy):
-    if policy.__name__ == 'TeleopFollowerPDPolicy':
+    if type(policy).__name__ == 'TeleopFollowerPDPolicy':
         policy.dataset_logger.move_files_to_folder(log_dir)
 
     # if isinstance(policy, DPPolicy) and len(policy.camera_frame_list) > 0:
-    if policy.__name__ == 'DPPolicy' and len(policy.camera_frame_list) > 0:
+    if type(policy).__name__ == 'DPPolicy' and len(policy.camera_frame_list) > 0:
         fps = int(1 / np.diff(policy.camera_time_list).mean())
         logger.info(f"visual_obs fps: {fps}")
         video_path = log_dir / "visual_obs.mp4"
@@ -594,12 +599,12 @@ def _save_policy_log(*, policy:BasePolicy, robot:Robot,
         video_clip.write_videofile(video_path, codec="libx264", fps=fps)
 
     # if isinstance(policy, ReplayPolicy):
-    if policy.__name__ == 'ReplayPolicy':
+    if type(policy).__name__ == 'ReplayPolicy':
         with open(log_dir/ 'keyframes.pkl', 'wb') as _f:
             pickle.dump(policy.keyframes, _f)
 
     # if isinstance(policy, CalibratePolicy):
-    if policy.__name__ == 'CalibratePolicy':
+    if type(policy).__name__ == 'CalibratePolicy':
         # TODO: after run_policy, call add_configs.py to update config_motors.json contents into config.json.
         config_file: Path = robot.root_path / 'joint_motor_mapping.json'
         if config_file.exists():
@@ -647,14 +652,14 @@ def _save_policy_log(*, policy:BasePolicy, robot:Robot,
             raise FileNotFoundError(f"Could not find {config_file.resolve()}")
 
     # if isinstance(policy, PushCartPolicy):
-    if policy.__name__ ==  'PushCartPolicy':
+    if type(policy).__name__ ==  'PushCartPolicy':
         video_path = log_dir / 'visual_obs.mp4'
         fps = int(1 / np.diff(policy.grasp_policy.camera_time_list).mean())
         logger.info(f"visual_obs fps: {fps}")
         video_clip = ImageSequenceClip(policy.grasp_policy.camera_frame_list, fps=fps)
         video_clip.write_videofile(video_path, codec="libx264", fps=fps)
 
-    if policy.__name__ == 'TeleopJoystickPolicy':
+    if type(policy).__name__ == 'TeleopJoystickPolicy':
         policy_dict = {
             "hug": policy.hug_policy,
             "pick": policy.pick_policy,
@@ -664,7 +669,7 @@ def _save_policy_log(*, policy:BasePolicy, robot:Robot,
         }
         for task_name, task_policy in policy_dict.items():
             if (
-                not task_policy.__name__ == 'DPPolicy'
+                not type(task_policy).__name__ == 'DPPolicy'
                 or len(task_policy.camera_frame_list) == 0
             ):
                 continue
@@ -717,11 +722,12 @@ def run_policy(*,
     _step_count:int = 0
     time_until_next_step = 0.0
     # update tqdm every 1 sec.
-    p_bar_steps:int = int(1 / policy.control_dt)
+    p_bar_steps:int = max(1, int(1 / policy.control_dt_sec))
 
     # for sysID only.
     # _cur_ep_idx :int = -1
-    motor_kp_setter: _MotorKpSetter | None = _MotorKpSetter() if policy.__name__ == 'SysIDPolicy' else None
+    motor_kp_setter: _MotorKpSetter | None = _MotorKpSetter() \
+        if type(policy).__name__ == 'SysIDPolicy' else None
 
     # TODO: for tqdm,  if total is float('inf'), Infinite iterations,
     #  behave same as `total-unknown`: can not show progress bar.
@@ -758,8 +764,10 @@ def run_policy(*,
                 # motor_angle_dict: Dict[str, float] = OrderedDict(zip(robot.motor_name_ordering, motor_target_arr))
 
                 # every 6 seconds.
-                if _step_count % 300 == 0:
-                    logger.info(f'{motor_target_arr=:}')
+                # if _step_count % 300 == 0:
+                if _step_count % 100 == 1:
+                    # NOTE: set/get value should be normalized by feite_controller.init_pos
+                    logger.info(f'{step_record_list[-1].motor_act=:}, {obs.motor_pos=:}, {motor_target_arr=:}')
 
                 # env.set_motor_target(motor_angle_dict)
                 env.set_motor_target(motor_target_arr)
@@ -789,7 +797,7 @@ def run_policy(*,
                 # loop_time_record_list.append( time_record)
 
                 time_until_next_step = (run_start_time +
-                                        policy.control_dt * _step_count
+                                        policy.control_dt_sec * _step_count
                                         - _record.time_pnt.step_end)
 
                 step_record_list.append(_record)
@@ -800,6 +808,7 @@ def run_policy(*,
                     logger.warning(f'time_until_next_step < 0 : {time_until_next_step}')
 
                 if ("real" in env.env_name or vis_type == "view") and time_until_next_step > 0:
+                    logger.debug(f'+++++ sleep for {time_until_next_step * 1000:.2f} ms')
                     timelib.sleep(time_until_next_step)
 
         except KeyboardInterrupt:
@@ -830,13 +839,13 @@ def run_policy(*,
                                                           env_name=env.env_name,
                                                           cur_time=cur_time) )
 
-            exp_folder.mkdir(parents=False, exist_ok=True)
+            exp_folder.mkdir(parents=True, exist_ok=True)
             # os.makedirs(exp_folder, exist_ok=True)
 
             # TODO: save recording file every n steps n seconds. ... not at the end of while loop.....
             if vis_type == "render" and isinstance(env, MuJoCoSim):   #hasattr(env, "save_recording"):
                 # assert isinstance(env, MuJoCoSim)
-                env.save_recording(exp_folder, policy.control_dt, 2)
+                env.save_recording(exp_folder, policy.control_dt_sec, 2)
 
             # Using context mgr to close env, not use close() standalone.
             # close() also set torque off for all connected motors.
@@ -857,7 +866,7 @@ def run_policy(*,
 
     _save_run_log(step_record_list, exp_folder / RUN_STEP_RECORD_PICKLE_FILE)
     _save_policy_log(policy=policy,robot=robot,
-                     log_dir=exp_folder / policy.name,
+                     log_dir=exp_folder, # / policy.name,
                      step_record_list=step_record_list)
 
     dump_profiling_data(exp_folder / 'profile_output.lprof')
@@ -1121,7 +1130,7 @@ if __name__ == "__main__":
                    root_date_fmt='%Y-%m-%d %H:%M:%S',
                    # log_file='/tmp/toddler/imitate_episode.log',
                    log_file=None,
-                   module_logger_config={'policies': logging.INFO,
+                   module_logger_config={'toddler.policies': logging.INFO,
                                          'main': logging.INFO})
     # use root logger for __main__.
     logger = logging.getLogger('root')

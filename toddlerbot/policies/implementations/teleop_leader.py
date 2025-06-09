@@ -110,7 +110,7 @@ class TeleopLeaderPolicy(BasePolicy, policy_name="teleop_leader"):
             self.is_prepared = True
             self.prep_duration = 2.0
             self.prep_time, self.prep_action = self.move(
-                -self.control_dt,
+                -self.control_dt_sec,
                 self.init_motor_pos,
                 self.manip_motor_pos,
                 self.prep_duration,
@@ -152,7 +152,7 @@ class TeleopLeaderPolicy(BasePolicy, policy_name="teleop_leader"):
         else:
             if self.is_button_pressed and self.reset_time is None:
                 self.reset_time, self.reset_action = self.move(
-                    obs.time - self.control_dt,
+                    obs.time - self.control_dt_sec,
                     obs.motor_pos,
                     self.manip_motor_pos,
                     self.reset_duration,

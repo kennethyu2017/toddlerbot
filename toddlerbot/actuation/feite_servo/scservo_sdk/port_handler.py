@@ -82,8 +82,8 @@ class PortHandler(object):
     #     self.packet_timeout_ms = msec
 
     def checkPacketTimeout(self):
-        print(f'--- check timeout: perf count ms since pkt start: { self.getPerfCntNsSincePktStart() // 1_000_000 } '
-              f' timeout ms : {self.packet_timeout_ns // 1_000_000}')
+        # print(f'--- check timeout: perf count ms since pkt start: { self.getPerfCntNsSincePktStart() // 1_000_000 } '
+        #       f' timeout ms : {self.packet_timeout_ns // 1_000_000}')
         cnt_ns = self.getPerfCntNsSincePktStart()
         if cnt_ns > self.packet_timeout_ns:
             raise IOError(f'rcv pkt timeout--- pls check FT232 USB converter latency_timer --- perf cnt ms since pkt start: {cnt_ns//1_000_000},'

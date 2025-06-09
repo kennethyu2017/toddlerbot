@@ -1,7 +1,7 @@
 import platform
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed, Future
-from typing import Dict, List, Optional, Mapping, Set, Any
+from typing import Dict, List, Optional, Mapping, Set, Any,Callable
 from collections import OrderedDict
 
 import numpy as np
@@ -174,6 +174,13 @@ class RealWorld(BaseEnv, env_name='real_world'):
         # ]
 
         self._executor = ThreadPoolExecutor(max_workers=5)  # default max num of threads: (os.cpu_count() or 1) + 4. no need so much occupied.
+
+        # map to uncompleted read/set futures. only for set. not for observation.
+        self._io_set_future_dict :Dict[str, Future | None] = {
+            # feite RS485 bus is half-duplex, so we only allow single read or write operation at same time.
+            'motor': None,
+            'imu': None,    # I2C bus.
+        }
 
         # TODO: not expose dynamixel_controller and _imu to external modules, such as run_policy. cause this I/O bound call should
         # make use of ThreadPoolExecutor.
@@ -415,7 +422,9 @@ class RealWorld(BaseEnv, env_name='real_world'):
                 ste: Mapping[str, float|npt.NDArray[np.float32]] = _f.result()
             except Exception as exc:
                 # let the corresponding attrs in obs be inited `None`.
-                logger.error(f' {read_sensor} generated an exception: {exc}')
+                logger.error(f' {read_sensor} generated an exception: {exc} {type(exc)}')
+                raise
+
             else:
                 for _k,_v in ste.items():
                     if hasattr(obs, _k):
@@ -442,6 +451,23 @@ class RealWorld(BaseEnv, env_name='real_world'):
 
         return obs
 
+
+    def _create_io_set_future(self, name:str, fn: Callable, *args, **kwargs):
+        assert name in self._io_set_future_dict
+
+        # wait for exiting future to complete.
+        ftr = self._io_set_future_dict[name]
+        if ftr is not None:
+            # NOTE: to catch the exception to previous IO set operation future.
+            try:
+                _ = ftr.result()
+            except Exception as exc:
+                logger.error(f' {name} IO set future generated an exception: {exc} {type(exc)}')
+                raise
+
+        self._io_set_future_dict[name] = self._executor.submit(fn, *args, **kwargs)
+
+
     # @profile()
     def set_motor_target(self, motor_angles: Dict[str, float]| npt.NDArray[np.float32]):
         """Sets the target angles for the robot's motors, adjusting for any negated motor directions and updating
@@ -467,7 +493,7 @@ class RealWorld(BaseEnv, env_name='real_world'):
                 # assert _name in motor_angles
                 write_pos[_x]=(motor_angles[_n])
 
-        elif isinstance(motor_angles, npt.NDArray[np.float32]):
+        elif isinstance(motor_angles, np.ndarray):
             write_pos = motor_angles
 
         else:
@@ -476,9 +502,11 @@ class RealWorld(BaseEnv, env_name='real_world'):
         assert np.all(write_pos != np.inf)
         # write_pos *= self.negated_motor_direction_mask
 
-        # TODO: not waiting for the future to complete?
-        self._executor.submit(self.actuator_controller.set_pos,
-                              write_pos * self.negated_motor_direction_mask)
+        # wait for exiting future to complete.
+        self._create_io_set_future('motor',
+                                   self.actuator_controller.set_pos,
+                                   write_pos * self.negated_motor_direction_mask)
+
 
         # for _id, _name in zip(self.robot.motor_id_ordering, self.robot.motor_name_ordering):
         # if isinstance(motor_angles, (dict, OrderedDict)):
@@ -545,8 +573,10 @@ class RealWorld(BaseEnv, env_name='real_world'):
             else:
                 write_kps.append(self.robot.config["joints"][_name]["kp_real"])
 
-        # TODO: not waiting for the future to complete?
-        self._executor.submit(self.actuator_controller.set_kp, write_kps)
+        # wait for exiting future to complete.
+        self._create_io_set_future('motor',
+                                   self.actuator_controller.set_kp,
+                                   write_kps)
 
     # TODO: use context manager.
     def close(self):

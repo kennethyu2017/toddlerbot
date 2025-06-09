@@ -303,7 +303,7 @@ class TalkAryaPolicy(BasePolicy, policy_name="talk_arya"):
             self.is_prepared = True
             self.prep_duration = 12.0 if is_real else 2.0
             self.prep_time, self.prep_action = self.move(
-                -self.control_dt,
+                -self.control_dt_sec,
                 self.init_motor_pos,
                 self.default_motor_pos,
                 self.prep_duration,

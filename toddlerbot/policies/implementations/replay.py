@@ -160,7 +160,7 @@ class ReplayPolicy(BasePolicy, policy_name="replay"):
             self.is_prepared = True
             self.prep_duration = 7.0 if is_real else 2.0
             self.prep_time, self.prep_action = self.move(
-                -self.control_dt,
+                -self.control_dt_sec,
                 self.init_motor_pos,
                 self.action_arr[0],
                 self.prep_duration,

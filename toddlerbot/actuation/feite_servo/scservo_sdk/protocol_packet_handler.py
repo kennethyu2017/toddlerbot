@@ -579,6 +579,10 @@ class ProtocolPacketHandler(object):
 
         txpacket[ProtoPkt.PARAMETER0 + 2: ProtoPkt.PARAMETER0 + 2 + param_length] = param[0: param_length]
 
+        # print(f'--- sync write pkt -->')
+        # for _b in txpacket:
+        #     print(f'0x{_b:02x}')
+
         _, result, _ = self.txRxPacket(txpacket)
 
         return result

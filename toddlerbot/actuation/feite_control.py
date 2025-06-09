@@ -318,6 +318,11 @@ class FeiteController(BaseController):
         delta_pos = (delta_pos + np.pi) % (2 * np.pi) - np.pi
         self.init_pos = pos_arr - delta_pos
 
+        logger.warning(f'====== normalized init pos: {self.init_pos} =============')
+        logger.warning(f'====== normalized init pos: {self.init_pos} =============')
+        logger.warning(f'====== normalized init pos: {self.init_pos} =============')
+
+
     def close_motors(self):
         """Closes all active motor clients.
 
@@ -451,8 +456,16 @@ class FeiteController(BaseController):
         pos_arr: npt.NDArray[np.float32] = np.array(pos)
         # add init_pos as offset.
         pos_arr_drive = self.init_pos + pos_arr
+
         with self.lock:
             self.client.set_desired_pos(motor_ids=self._motor_ids, positions=pos_arr_drive)
+
+        # try:
+        #     with self.lock:
+        #         self.client.set_desired_pos(motor_ids=self._motor_ids, positions=pos_arr_drive)
+        # except Exception as err:
+        #     logger.error(f' set pos exception: {err} {type(err)}')
+        #     raise
 
     # @profile()
     def get_motor_state(self, retries: int = 0) -> Dict[int, JointState]:
