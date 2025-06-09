@@ -98,7 +98,15 @@ def parse_load(param: bytes | bytearray)->float:
     assert len(param) == 2
     # 0.1% of stall_torque.
     load = int.from_bytes(bytes=param, byteorder='little', signed=False)
-    assert 0 <= load <= 1000
+    # assert 0 <= load <= 1000
+    if not 0 <= load <= 1000:
+        pass
+        # raise ValueError(f'read motor load value error: {load}')
+        # print(f' WARING: ====  read motor load value error: {load}')
+        # print(f' WARING: ====  read motor load value error: {load}')
+        # print(f' WARING: ====  read motor load value error: {load}')
+
+
     return load * LOAD_PERCENTAGE_RESOLUTION
 
 

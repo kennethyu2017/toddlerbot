@@ -386,6 +386,12 @@ class FeiteGroupClient:
                 # TODO: propagate nan to up layer caller. _value is `fill_value`, 0 or np.nan.
                 raise ValueError(f'the read data of ID:{self._motor_ids[_x]} is None.')
             else:
+                # if sum(read_spec.size) == 6:
+                #     logger.info(f'--- sync read bytes:')
+                #     for _b in _bytes:
+                #         print(f'0x{_b:02x}')
+                #     logger.info(f'end of bytes --- ')
+
                 assert len(_bytes) == sum(read_spec.size)
                 for _s, _psr, _arr in zip(read_spec.size, read_spec.parser, value_arr_list):
                     # bytearray(_bytes.pop(0) for _ in range(_s))
@@ -560,6 +566,7 @@ class FeiteGroupClient:
 
         self.check_connected()
         key = (address, size)
+
         if key not in self._sync_writers:
             self._sync_writers[key] = GroupSyncWriter(
                 packet_handler = self.packet_handler,
@@ -713,7 +720,8 @@ class FeiteGroupClient:
         """
         assert len(motor_ids) == len(positions)
         # TODO: only allow -2Pi ~ 2Pi.
-        assert np.all( np.abs(positions) < 2*np.pi )
+        if not np.all( np.abs(positions) < 2*np.pi ):
+            raise ValueError(f'not allowed desired pos: {positions}, which should be in [-2pi, 2pi] ')
 
         # ->steps, ->int, signed->unsigned, to_bytes.
         # Convert to Feite position steps:
@@ -721,7 +729,7 @@ class FeiteGroupClient:
         size = steps.dtype.itemsize
         assert size==2
 
-        self._sync_write_impl(param=[signed_to_proto_param_bytes_v2(value=_v, size=size)
+        self._sync_write_impl(param=[signed_to_proto_param_bytes_v2(value=int(_v), size=size)
                                           for _v in steps],  # addr 42, 43,
                               address=SMS_STS_SRAM_Table_RW.GOAL_POSITION_L,
                               write_ids=motor_ids)

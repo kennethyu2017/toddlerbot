@@ -77,7 +77,7 @@ class CalibratePolicy(BasePolicy, policy_name="calibrate"):
         self.integral_error = 0.0
 
         self.prep_time_seq, self.prep_motor_act_seq = self.move(
-            time_curr=-self.control_dt,
+            time_curr=-self.control_dt_sec,
             action_curr=init_motor_pos,
             action_next=self.default_motor_pos,
             duration=self.prep_duration
@@ -107,7 +107,7 @@ class CalibratePolicy(BasePolicy, policy_name="calibrate"):
         error_derivative = obs.ang_vel[1]
 
         # Update integral error (with a basic anti-windup mechanism)
-        self.integral_error += error * self.control_dt
+        self.integral_error += error * self.control_dt_sec
         self.integral_error = np.clip(self.integral_error, -10.0, 10.0)  # Anti-windup
 
         # PID controller output

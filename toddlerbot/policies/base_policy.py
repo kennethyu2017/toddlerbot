@@ -83,7 +83,7 @@ class BasePolicy(ABC):
         # self.n_steps_total = n_steps_total
 
         # some default values. can be overridden.
-        self.control_dt: float = 0.02      # 20ms, 50Hz.
+        self.control_dt_sec: float = 0.02      # 20ms, 50Hz.
         self.prep_duration: float = 2.0
         self.n_steps_total: float = float("inf")
 
@@ -172,7 +172,7 @@ class BasePolicy(ABC):
         time_seq: npt.NDArray[np.float32] = np.linspace(
             start=0,
             stop=duration,
-            num=int(duration / self.control_dt),
+            num=int(duration / self.control_dt_sec),
             endpoint=False,
             dtype=np.float32,
         )
@@ -195,7 +195,7 @@ class BasePolicy(ABC):
                 act_seq[i] = action_next   # keep action_next inside `end_time`.
 
         # TODO: why add control_dt?
-        time_seq += time_curr + self.control_dt
+        time_seq += time_curr + self.control_dt_sec
 
         return time_seq, act_seq
 

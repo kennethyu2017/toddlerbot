@@ -45,7 +45,7 @@ class BalancePDPolicy(BasePolicy, policy_name="balance_pd"):
         super().__init__(name, robot, init_motor_pos)
 
         self.balance_ref = BalancePDReference(
-            robot, self.control_dt, arm_playback_speed=0.0
+            robot, self.control_dt_sec, arm_playback_speed=0.0
         )
         self.command_range = np.array(
             [
@@ -265,7 +265,7 @@ class BalancePDPolicy(BasePolicy, policy_name="balance_pd"):
                 self.prep_duration -= 5.0
 
             self.prep_time, self.prep_action = self.move(
-                -self.control_dt,
+                -self.control_dt_sec,
                 self.init_motor_pos,
                 self.default_motor_pos,
                 self.prep_duration,
@@ -293,7 +293,7 @@ class BalancePDPolicy(BasePolicy, policy_name="balance_pd"):
                 manip_motor_pos_1[self.right_sho_roll_idx] = -1.4
 
                 manip_time_1, manip_action_1 = self.move(
-                    -self.control_dt,
+                    -self.control_dt_sec,
                     self.default_motor_pos,
                     manip_motor_pos_1,
                     self.manip_duration / 2,
@@ -308,7 +308,7 @@ class BalancePDPolicy(BasePolicy, policy_name="balance_pd"):
                 self.manip_action = np.concatenate([manip_action_1, manip_action_2])
             else:
                 self.manip_time, self.manip_action = self.move(
-                    -self.control_dt,
+                    -self.control_dt_sec,
                     self.default_motor_pos,
                     self.manip_motor_pos,
                     self.manip_duration,
@@ -392,7 +392,7 @@ class BalancePDPolicy(BasePolicy, policy_name="balance_pd"):
         else:
             command = self.get_command(control_inputs)
 
-        time_curr = self.step_curr * self.control_dt
+        time_curr = self.step_curr * self.control_dt_sec
         arm_motor_pos = self.get_arm_motor_pos(obs)
         arm_joint_pos = self.balance_ref.arm_fk(arm_motor_pos)
 
@@ -432,9 +432,9 @@ class BalancePDPolicy(BasePolicy, policy_name="balance_pd"):
             current_roll = obs.euler[0].item()
             current_pitch = obs.euler[1].item()
             roll_error = self.desired_torso_roll - current_roll
-            roll_vel = (current_roll - self.last_torso_roll) / self.control_dt
+            roll_vel = (current_roll - self.last_torso_roll) / self.control_dt_sec
             pitch_error = self.desired_torso_pitch - current_pitch
-            pitch_vel = (current_pitch - self.last_torso_pitch) / self.control_dt
+            pitch_vel = (current_pitch - self.last_torso_pitch) / self.control_dt_sec
 
             roll_pd_output = (
                 self.torso_roll_kp * roll_error - self.torso_roll_kd * roll_vel

@@ -221,7 +221,7 @@ class DPPolicy(BalancePDPolicy, policy_name="dp"):
                     release_motor_pos[self.waist_motor_indices] = waist_motor_pos
 
                     twist_time, twist_action = self.move(
-                        obs.time - self.control_dt,
+                        obs.time - self.control_dt_sec,
                         obs.motor_pos,
                         twist_motor_pos,
                         (self.reset_duration - 1) / 3,  # 2
@@ -259,7 +259,7 @@ class DPPolicy(BalancePDPolicy, policy_name="dp"):
                     )
                 else:
                     self.wrap_up_time, self.wrap_up_action = self.move(
-                        obs.time - self.control_dt,
+                        obs.time - self.control_dt_sec,
                         obs.motor_pos,
                         self.manip_motor_pos,
                         self.reset_duration,

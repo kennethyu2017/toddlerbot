@@ -13,9 +13,12 @@ from .._module_logger import logger
 from .. import sysIDEpisodeInfo
 
 # This script collects data for system identification of the motors.
-
+# in seconds.
 _WARM_UP_DURATION = 2.0
-_SIGNAL_DURATION = 10.0
+_CHIRP_SIGNAL_DURATION = 10.0
+_CHIRP_START_FREQ = 0.1
+_CHIRP_END_FREQ = 10.
+_CHIRP_DECAY_RATE = 0.1
 _RESET_DURATION = 2.0
 
 
@@ -25,10 +28,10 @@ class _SysIDSpecs:
     """Dataclass for system identification specifications."""
 
     amplitude_ratio_list: List[float]
-    initial_frequency: float = 0.1
-    final_frequency: float = 10.0
-    decay_rate: float = 0.1
-    direction: int = 1  # 1, -1
+    initial_frequency: float = _CHIRP_START_FREQ # 0.1
+    final_frequency: float = _CHIRP_END_FREQ # 10.0
+    decay_rate: float = _CHIRP_DECAY_RATE  # 0.1
+    direction: int = 1  # {1, -1}
     kp_list: Optional[List[float]] = None
 
     # other accompany active joint angles, not the sysID motor's `act`.
@@ -223,10 +226,10 @@ class SysIDPolicy(BasePolicy, policy_name="sysID"):
         # NOTE: `act` is motor control action, e.g., target pos of motor.
         # In prep duration, make all motors back to zero.
         # In the following steps, the default angels for irrelative motors are kept `0`. easy way.
-        prep_time_seq, prep_motor_act_seq = self.move(time_curr= -self.control_dt,
-                                           action_curr=init_motor_pos,
-                                           action_next= np.zeros_like(init_motor_pos),
-                                           duration=self.prep_duration )
+        prep_time_seq, prep_motor_act_seq = self.move(time_curr= -self.control_dt_sec,
+                                                      action_curr=init_motor_pos,
+                                                      action_next= np.zeros_like(init_motor_pos),
+                                                      duration=self.prep_duration)
 
         # for whole sysID procedure.
         self._sysID_time_seq: npt.NDArray[np.float32] = prep_time_seq
@@ -372,8 +375,8 @@ class SysIDPolicy(BasePolicy, policy_name="sysID"):
             # NOTE: in one episode, can have 1~2 sysID_joints
             for _kp, _ratio in product(kp_list, _sysID_specs.amplitude_ratio_list):
                 chirp_param = dict(
-                    duration=_SIGNAL_DURATION,
-                    control_dt=self.control_dt,
+                    duration=_CHIRP_SIGNAL_DURATION,
+                    control_dt=self.control_dt_sec,
                     mean=0.0,
                     initial_frequency=_sysID_specs.initial_frequency,
                     final_frequency=_sysID_specs.final_frequency,
@@ -392,7 +395,7 @@ class SysIDPolicy(BasePolicy, policy_name="sysID"):
 
                 self._sysID_time_seq = np.concatenate([self._sysID_time_seq, ep_time_seq], axis=0,
                                                       dtype=np.float32)
-                self._sysID_motor_act_seq = np.concatenate([self._sysID_motor_act_seq, prep_motor_act_seq],
+                self._sysID_motor_act_seq = np.concatenate([self._sysID_motor_act_seq, ep_act_seq],   #  prep_motor_act_seq],
                                                            axis=0, dtype=np.float32)
 
                 # motor_name: List[str] = []
@@ -420,7 +423,7 @@ class SysIDPolicy(BasePolicy, policy_name="sysID"):
 
         # override the value set in BasePolicy.__init__()
         self.n_steps_total = len(self._sysID_time_seq)
-        logger.info(f'finish building all the episodes: {self.n_steps_total=:}'
+        logger.info(f'finish building all the episodes: {self.n_steps_total=:} '
                     f'sysID end time: {self._sysID_time_seq[-1]}, end act: {self._sysID_motor_act_seq[-1]}')
 
 
@@ -527,7 +530,7 @@ class SysIDPolicy(BasePolicy, policy_name="sysID"):
 
         # shape: (robot.nu, len(chirp_time_seq) ) -> shape: (len(chirp_time_seq), robot.nu)
         chirp_motor_act_seq: npt.NDArray[np.float32] = np.asarray(
-            (motor_chirp_angle_seq[_n] for _n in self.robot.motor_name_ordering),
+            [motor_chirp_angle_seq[_n] for _n in self.robot.motor_name_ordering],
             dtype=np.float32).transpose()
 
         assert chirp_motor_act_seq.shape == ( len(chirp_time_seq), self.robot.nu )
@@ -556,11 +559,11 @@ class SysIDPolicy(BasePolicy, policy_name="sysID"):
         #     rotate_act_seq[_t_idx] = signal_action + action_warm_up
 
         if episode_time_seq is not None:
-            chirp_time_seq += episode_time_seq[-1] + self.control_dt
+            chirp_time_seq += episode_time_seq[-1] + self.control_dt_sec
             episode_time_seq = np.concatenate([episode_time_seq, chirp_time_seq], axis=0, dtype=np.float32)
             episode_act_seq = np.concatenate([episode_act_seq, chirp_motor_act_seq], axis=0, dtype=np.float32)
         else:
-            chirp_time_seq += time_curr + self.control_dt
+            chirp_time_seq += time_curr + self.control_dt_sec
             episode_time_seq = chirp_time_seq
             episode_act_seq = chirp_motor_act_seq
 

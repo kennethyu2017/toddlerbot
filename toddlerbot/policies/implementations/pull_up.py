@@ -72,7 +72,7 @@ class PullUpPolicy(BasePolicy, policy_name="pull_up"):
         grasp_ee_arr = np.array(grasp_data_dict["ee_traj"], dtype=np.float32)
         grasp_root_arr = np.array(grasp_data_dict["root_traj"], dtype=np.float32)
 
-        prepare_idx = int(1.0 / self.control_dt)
+        prepare_idx = int(1.0 / self.control_dt_sec)
         self.prepare_action = grasp_action_arr[prepare_idx].copy()
         self.prepared_time = 0.0
 
@@ -379,7 +379,7 @@ class PullUpPolicy(BasePolicy, policy_name="pull_up"):
             self.is_prepared = True
             self.prep_duration = 10.0 if is_real else 2.0
             self.prep_time, self.prep_action = self.move(
-                -self.control_dt,
+                -self.control_dt_sec,
                 self.init_motor_pos,
                 self.prepare_action,
                 self.prep_duration,
@@ -408,7 +408,7 @@ class PullUpPolicy(BasePolicy, policy_name="pull_up"):
             self.update_grasp_traj()
             self.grasp_motion_updated = True
 
-        if self.grasped_count < 1 / self.control_dt:
+        if self.grasped_count < 1 / self.control_dt_sec:
             if self.prepared_time == 0:
                 self.prepared_time = obs.time
 

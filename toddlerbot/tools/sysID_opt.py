@@ -992,7 +992,7 @@ def _main(args: argparse.Namespace):
                                                       env_name='real_world',
                                                       cur_time=args.time_str))
     step_record_file: Path = data_folder / RUN_STEP_RECORD_PICKLE_FILE
-    kp_file: Path = data_folder/ RUN_EPISODE_MOTOR_KP_PICKLE_FILE.format(policy_name = args.policy)
+    kp_file: Path = data_folder/ RUN_EPISODE_MOTOR_KP_PICKLE_FILE #  .format(policy_name = args.policy)
 
     if not step_record_file.exists():
         raise ValueError(f"Invalid step record file path: {step_record_file.resolve()}")

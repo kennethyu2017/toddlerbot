@@ -91,7 +91,7 @@ class ResetPDPolicy(BalancePDPolicy, policy_name="reset_pd"):
                     np.abs((upright_motor_pos - obs.motor_pos) / self.reset_vel)
                 )
                 reset_time_upright, reset_action_upright = self.move(
-                    obs.time - self.control_dt,
+                    obs.time - self.control_dt_sec,
                     obs.motor_pos,
                     upright_motor_pos,
                     upright_duration,
@@ -119,7 +119,7 @@ class ResetPDPolicy(BalancePDPolicy, policy_name="reset_pd"):
                     np.abs((self.default_motor_pos - obs.motor_pos) / self.reset_vel)
                 )
                 self.reset_time, self.reset_action = self.move(
-                    obs.time - self.control_dt,
+                    obs.time - self.control_dt_sec,
                     obs.motor_pos,
                     self.default_motor_pos,
                     reset_duration,
