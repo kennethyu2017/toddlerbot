@@ -14,8 +14,7 @@ from toddlerbot.actuation.feite_servo.scservo_sdk import (PortHandler,SMS_STS_DE
 # define constants.
 URT_1_DEV_NAME : str = r'/dev/ttyUSB0'
 
-
-if __name__  == '__main__':
+def _main():
     # Initialize PortHandler instance
     # Set the port path
     # Get methods and members of PortHandlerLinux or PortHandlerWindows
@@ -55,4 +54,8 @@ if __name__  == '__main__':
 
     # Close port
     port_handler.closePort()
+
+
+if __name__ == '__main__':
+    _main()
 

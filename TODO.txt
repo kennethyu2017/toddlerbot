@@ -1,0 +1,92 @@
+actuators:
+1. add time_stamp to each read pos_vel_load frame;
+2. in case reading pos_vel_load, when some ID is not available (not returning pkt), discard all the other frame? or add some flags to indicate? or
+ just set the value to np.nan in the returned array, let the caller to decide whether use only partial data. --> add the handle procedure in
+ upper caller, and the return data type can not be int. must be float.
+
+3. usage of init_pos? why not let it be 0 through calibrate the actuator addr 56 ?
+
+4. USE serial converter port, desc, hwid:
+  `ch340:`    /dev/ttyUSB0, USB Serial, USB VID:PID=1A86:7523 LOCATION=3-2
+  `ft232:`    /dev/ttyUSB1, FT232R USB UART - FT232R USB UART, USB VID:PID=0403:6001 SER=A90A5RB7 LOCATION=7-1
+
+5.in real_world.py, do not expose dynamixel_controller and imu to external modules, such as run_policy. cause this I/O bound call should
+make use of ThreadPoolExecutor.
+
+6. in real_world.py, put these infinite and scheduled tasks into ThreadPool:  motor_read, imu_read,  motor_set_target_pos, ....,
+ using Event/Deque to delivery read/write pkt.
+
+7. in real_world.py,  set_target_angle: use ThreadPoolExecutor.submit(write...), not check future.complete....
+
+8. in robot.py, "is_passive": false/true in config.json , to be not confused with the `robot.passive_joint`.
+     we can rename "is_passive": false to 'motor_drive': true.
+
+9. in run_policy.py,  input args, `--policy`,  can be policy_class_name + `_fixed` format, confusing.  we can separate them
+    into two fields:  --policy xxx  --fixed true/false.
+
+10. in BasePolicy.py, many un-used attrs defined in __init__.,  to shrink.
+
+11. in run_policy.py, "fixed" only used by Mujoco sim. confusing...  Use OO polymorphism to replace the
+    confused logic diversity.
+
+12. in run_policy.py, n_total_steps relative to both sim and policy. confusing...,  and n_total_steps is an attr of BasePolicy...
+
+13. change `sim ` to `env`.   sim2real, so `sim` is different against `real`. but in toddler project, sim includes real and mujoco.
+
+14. in run_policy.py, put if-branches details in run_policy()  into individual Policy class, maybe before_step()
+
+15. in run_policy.py, write logs data per while loops, not write in the loop end.
+
+16. RealWorld.set_motor_target() use `negated_motor_ids`, but MujocoSim.set_motor_target() not use negated informations. why?
+
+17. init_pos of Dynamixel is `0.0`.  For Feite, convert to Pi.
+
+19. Calibrate_zero.py, TODO: use motor id ordering to index motor init pos instead the original robot cfg...
+
+20. there are a lot of places to use robot.get_joint_config_attrs, set_joint_config_attrs, but the got sequence of data
+   is not guaranteed to be same order as motor_id_ordering....  refactoring the get/set methods to not use robot.config directly.
+
+21. after calibrate_zero , run CalibratePolicy, call add_configs.py to generate/update `config_motors.json` contents
+    into correct `config.json`.
+
+22. in sysID_opt.py, the joint ordering in Mujoco must be same ordering as in real_world/config.json .
+
+23. in sysID.py, the `warm-up angle` , `chirp signal` are as `active joint angle`, not direct `motor act`, so
+    we must convert it to motor_angle.
+
+24. in sysID.py, the `warm-up` active joints include the sysID and other accompany active joints, so do not add
+   `chirp` signal directly onto  `warm-up` active joints, only add to `sysID` active joints angles, then convert
+   the active joint angle to motor angle for action.
+
+25. in sysID.py, the `warm-up` active joints does not set kp, how to keep accurate model as in Mujoco?  during sysID_opt,
+will set `warm-up` motors action, but the qpos of `warm-up` joint is not used for `objective` comparison. The `warm-up` motors
+action will not interfere against the sysID motors ?
+
+26. in real_world, obs only read motor_pos, and `convert` to corresponding joint_pos; in Mujoco, we can read joint.qpos.
+
+27. in add_configs.py,  if joint is `gripper`, require the motor provide `current_based_position` ctrl mode, i.e.,
+    torque control mode. but the feite SM40BL has not such mode, TBD.
+
+28. in add_configs.py,  the meaning of passive joint here, is different against which in robot.py.....
+
+29. in add_configs.py, the baud rate in config.json ,  use 1Mbps, or 115200 for feite
+        "feitei_baudrate": feite_baud * 1000000,
+        # "feitei_baudrate": feite_baud * 115200,  # default for SMS/STS series.
+
+30. in robot.py, rename motor_name_ordering to motoring_joint_name_ordering....
+
+31. feite servo pip package: I modified it a few places, so add the modified `scservo_sdk` source codes into
+    my repo.
+
+32. if want to use jax : USE_JAX = os.getenv("USE_JAX", "false").lower() == "true"
+
+33. in feite_controller, during power-on, add self-check for each motor. such as ping ,read pos, write pos,...
+
+34. for Feite SM40BL, only after setting addr-55 lock symbol to `0`, the afterwards setting value to memory table can be saved
+    after power-off.
+
+35. to reduce RS485 read latency, have to set latency_timer of USB COM port , through  echo 1 or 5 | sudo tee /sys/bus/serial/ttyUSB0/latency_timer
+
+
+
+

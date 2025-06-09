@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
-from typing import Tuple, List, Optional
-from enum import Enum
+from typing import Tuple, Optional
+
 from .scservo_def import *
 from .port_handler import PortHandler
 
@@ -149,7 +149,9 @@ class ProtocolPacketHandler(object):
 
         txpacket[total_packet_length - 1] = ~checksum & 0xFF
 
-        #print "[TxPacket] %r" % txpacket
+        # print('--- tx packet: --->')
+        # for _b in txpacket:
+        #     print(f'0x{_b:02x}')
 
         # tx packet
         self.port_handler.clearPort()
@@ -160,47 +162,65 @@ class ProtocolPacketHandler(object):
 
         return CommResult.SUCCESS
 
-    def rxPacket(self)->Tuple[bytearray, CommResult]:
+    def rxPacket(self, wait_length: int = 6)->Tuple[bytearray, CommResult]:
+
         rxpacket = bytearray()  # mutable.
 
         result = CommResult.TX_FAIL
         checksum = 0
-        rx_length = 0
-        wait_length = 6  # minimum length (HEADER0 HEADER1 ID LENGTH ERROR CHKSUM)
+        # rx_length = 0
+        # TODO: use correct wait length to reduce the invoke of port_handler.readPort().
+        # wait_length = 6  # minimum length (HEADER0 HEADER1 ID LENGTH ERROR CHKSUM)
 
         while True:
-            rxpacket.extend(self.port_handler.readPort(wait_length - rx_length))
-            rx_length = len(rxpacket)
+            # rxpacket.extend(self.port_handler.readPort(wait_length - rx_length))
+            rxpacket.extend(self.port_handler.readPort(wait_length - len(rxpacket)))
+            rx_length :int = len(rxpacket)
+
+            # print(f'{rx_length=:} {wait_length=:}')
+
             if rx_length >= wait_length:
+
+                # for _b in rxpacket:
+                #     print(f'0x{_b:02x}')
+
                 # find packet header
-                for idx in range(0, (rx_length - 1)):
-                    if (rxpacket[idx] == 0xFF) and (rxpacket[idx + 1] == 0xFF):
+                # hdr_idx :int = rx_length - 2
+                # for _i in range(0, (rx_length - 1)):
+                #     hdr_idx = _i
+                #     if (rxpacket[_i] == 0xFF) and (rxpacket[_i + 1] == 0xFF):
+                #         # hdr_idx = _i
+                #         break
+
+                maybe_hdr_idx: int |None = None
+                for _i in range(0, rx_length):
+                    maybe_hdr_idx = _i
+                    # last byte.
+                    if _i == rx_length - 1:
+                        if rxpacket[_i] == 0xFF:
+                            # maybe 1st byte of following pkt header.
+                            pass
+                        else:
+                            # will delete rxpacket[0:maybe_hdr_idx] following.
+                            maybe_hdr_idx = rx_length
+
+                    elif rxpacket[_i] == 0xFF and rxpacket[_i+1] == 0xFF:
                         break
 
-                if idx == 0:  # found at the beginning of the packet
+                if maybe_hdr_idx == 0:  # found at the beginning of the packet
                     if (rxpacket[ProtoPkt.ID] > 0xFD) or (rxpacket[ProtoPkt.LENGTH] > RXPACKET_MAX_LEN) or (
                             rxpacket[ProtoPkt.ERROR] > 0x7F):
                         # unavailable ID or unavailable Length or unavailable Error
                         # remove the first byte in the packet
                         del rxpacket[0]
-                        rx_length -= 1
+                        # rx_length -= 1
                         continue
 
                     # re-calculate the exact length of the rx packet
                     if wait_length != (rxpacket[ProtoPkt.LENGTH] + ProtoPkt.LENGTH + 1):
                         wait_length = rxpacket[ProtoPkt.LENGTH] + ProtoPkt.LENGTH + 1
+                        # TODO: fix hdr_idx which not change when reading more bytes next loop...
                         continue
-
-                    if rx_length < wait_length:
-                        # check timeout
-                        if self.port_handler.isPacketTimeout():
-                            if rx_length == 0:
-                                result = CommResult.RX_TIMEOUT
-                            else:
-                                result = CommResult.RX_CORRUPT
-                            break
-                        else:
-                            continue
 
                     # calculate checksum
                     for i in range(2, wait_length - 1):  # except header, checksum
@@ -209,19 +229,24 @@ class ProtocolPacketHandler(object):
 
                     # verify checksum
                     if rxpacket[wait_length - 1] == checksum:
-                        result = CommResult.SUCCESS
+                        if self.port_handler.checkPacketTimeout():
+                            result = CommResult.RX_TIMEOUT
+                        else:
+                            result = CommResult.SUCCESS
+
                     else:
                         result = CommResult.RX_CORRUPT
+
                     break
 
                 else:
-                    # remove unnecessary packets
-                    del rxpacket[0: idx]
-                    rx_length -= idx
+                    # remove unnecessary packets, and match header in next while loop.
+                    del rxpacket[0: maybe_hdr_idx]
+                    # rx_length -= maybe_hdr_idx
 
             else:
                 # check timeout
-                if self.port_handler.isPacketTimeout():
+                if self.port_handler.checkPacketTimeout():
                     if rx_length == 0:
                         result = CommResult.RX_TIMEOUT
                     else:
@@ -231,7 +256,7 @@ class ProtocolPacketHandler(object):
         self.port_handler.is_using = False
         return rxpacket, result
 
-    def txRxPacket(self, txpacket:bytearray) -> Tuple[Optional[bytearray], CommResult, ProtoErrBit]:
+    def txRxPacket(self, txpacket:bytearray, wait_length:int = 6) -> Tuple[Optional[bytearray], CommResult, ProtoErrBit]:
         rxpacket = None
         error:int = 0
         result = CommResult.TX_FAIL
@@ -254,7 +279,7 @@ class ProtocolPacketHandler(object):
 
         # rx packet
         while True:
-            _pkt, result = self.rxPacket()
+            _pkt, result = self.rxPacket(wait_length)
             if result != CommResult.SUCCESS:
                 break
             elif _pkt[ProtoPkt.ID] == txpacket[ProtoPkt.ID]:
@@ -284,7 +309,7 @@ class ProtocolPacketHandler(object):
         rxpacket, result, error = self.txRxPacket(txpacket)
 
         if result == CommResult.SUCCESS:
-            data_read, result, error = self.readTxRx(scs_id, 3, 2)  # Address 3 : Model Number
+            data_read, result, error = self.readTxRx(scs_id, 3, 2, wait_length=8)  # Address 3 : Model Number
             if result == CommResult.SUCCESS:
                 model_number = self.scs_makeword(data_read[0], data_read[1])
 
@@ -344,7 +369,7 @@ class ProtocolPacketHandler(object):
 
         return None, result, error
 
-    def readTxRx(self, scs_id, address, length)->Tuple[Optional[bytearray], CommResult, int]:
+    def readTxRx(self, scs_id, address, length, wait_length: int = 6)->Tuple[Optional[bytearray], CommResult, int]:
 
         txpacket = bytearray(8)
 
@@ -357,7 +382,7 @@ class ProtocolPacketHandler(object):
         txpacket[ProtoPkt.PARAMETER0 + 0] = address
         txpacket[ProtoPkt.PARAMETER0 + 1] = length
 
-        rxpacket, result, error = self.txRxPacket(txpacket)
+        rxpacket, result, error = self.txRxPacket(txpacket, wait_length)
         if result == CommResult.SUCCESS:
             assert len(rxpacket) > ProtoPkt.PARAMETER0 + length and rxpacket[ProtoPkt.ID] == scs_id
             error = rxpacket[ProtoPkt.ERROR]
@@ -509,29 +534,31 @@ class ProtocolPacketHandler(object):
 
         txpacket[ProtoPkt.PARAMETER0 + 2: ProtoPkt.PARAMETER0 + 2 + param_length] = param[0: param_length]
 
-        # print(txpacket)
+        # print(f'syncRead txpacket---> len of pkt: {len(txpacket)}')
+        # for _b in txpacket:
+        #     print(f'0x{_b:02x}')
+
         result = self.txPacket(txpacket)
         return result
 
     def syncReadRx(self, data_length, param_length)->Tuple[CommResult,bytearray]:
         wait_length = (6 + data_length) * param_length
         self.port_handler.setPacketTimeout(wait_length)
-
         rxpacket = bytearray()
+        # rx_length = 0
 
-        rx_length = 0
         while True:
-            rxpacket.extend(self.port_handler.readPort(wait_length - rx_length))
+            # rxpacket.extend(self.port_handler.readPort(wait_length - rx_length))
+            rxpacket.extend(self.port_handler.readPort(wait_length - len(rxpacket) ))
+            rx_length :int = len(rxpacket)
 
-            # print(f' rxpkt from readPort: {rxpacket} ')
-
-            rx_length = len(rxpacket)
+            # TODO: too naive compared with rxPacket?
             if rx_length >= wait_length:
                 result = CommResult.SUCCESS
                 break
             else:
                 # check timeout
-                if self.port_handler.isPacketTimeout():
+                if self.port_handler.checkPacketTimeout():
                     if rx_length == 0:
                         result = CommResult.RX_TIMEOUT
                     else:

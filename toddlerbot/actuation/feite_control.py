@@ -25,7 +25,8 @@ CONTROL_MODE_DICT: Dict[str, int] = {
 
 # TODO: move into yaml config file.
 # receive timeout.
-_USB_SERIAL_DEFAULT_RCV_TIMEOUT_MS = 5  #1
+# TODO> NOTE: must set latency_timer of usb-rs485 converter to 1~5ms to guarantee USB COM port latency.
+_USB_SERIAL_DEFAULT_RCV_TIMEOUT_MS = 10  #5 #1
 
 
 # def get_env_path():
@@ -108,7 +109,9 @@ class FeiteConfig(NamedTuple):
     # kFF2: Seq[float]
     # kFF1: Seq[float]
     init_pos: Sequence[float] | None = None
-    default_vel: float = np.pi
+    default_vel: float = 0. #np.pi
+    # TODO:
+    # default_acc: float =...
     # interp_method: str = "cubic"
     return_delay_us: int = SMS_STS_DEFAULT_RETURN_DELAY_US
 
@@ -207,6 +210,11 @@ class FeiteController(BaseController):
         # time.sleep(0.1)
 
         try:
+            # TODO:
+            logger.warning(f'\n----- Remember to set latency-timer of FT232 USB-RS485 converter--- ')
+            logger.warning(f'\n----- Remember to set latency-timer of FT232 USB-RS485 converter--- ')
+            logger.warning(f'\n----- Remember to set latency-timer of FT232 USB-RS485 converter--- ')
+
             client = FeiteGroupClient(
                 motor_ids = self._motor_ids,
                 port_name = self.config.port,
@@ -240,7 +248,7 @@ class FeiteController(BaseController):
 
         _, v_in = self.client.read_vin()
         assert len(v_in)==len(self._motor_ids)
-        logger.info(f"Voltage (V): {v_in}")
+        logger.info(f"Voltage of motors: (V): {v_in}")
         if np.any(v_in < 10):
             raise ValueError(
                 "Voltage too low. Please check the power supply or charge the batteries."
@@ -264,7 +272,7 @@ class FeiteController(BaseController):
 
         # write kP,kD,kI together
         assert np.all(np.array(self.config.kP) <= 0xff) and np.all(0 < np.array(self.config.kP))
-        assert np.all(np.array(self.config.kD) <= 0xff) and np.all(0 < np.array(self.config.kD))
+        assert np.all(np.array(self.config.kD) <= 0xff) and np.all(0 <= np.array(self.config.kD))
         assert np.all(np.array(self.config.kI) <= 0xff) and np.all(0 <= np.array(self.config.kI))
 
         self.client.set_kp_kd_ki(kp=self.config.kP, kd=self.config.kD, ki=self.config.kI)

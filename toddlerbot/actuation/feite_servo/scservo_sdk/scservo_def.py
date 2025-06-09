@@ -19,13 +19,13 @@ class SCSProtoInst:
 
 # Communication Result. using Enum type for easy repr.
 class CommResult(Enum):
-    SUCCESS : int = 0  # tx or rx packet communication success
-    PORT_BUSY : int = -1  # Port is busy (in use)
-    TX_FAIL : int = -2  # Failed transmit instruction packet
+    SUCCESS  = 0  # tx or rx packet communication success
+    PORT_BUSY  = -1  # Port is busy (in use)
+    TX_FAIL  = -2  # Failed transmit instruction packet
     RX_FAIL = -3  # Failed get status packet
     TX_ERROR = -4  # Incorrect instruction packet
     RX_WAITING = -5  # Now recieving status packet
     RX_TIMEOUT = -6  # There is no status packet
-    RX_CORRUPT = -7  # Incorrect status packet
-    NOT_AVAILABLE = -9  #
+    RX_CORRUPT  = -7  # Incorrect status packet
+    NOT_AVAILABLE  = -9  #
 

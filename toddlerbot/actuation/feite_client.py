@@ -238,6 +238,7 @@ class FeiteGroupClient:
         """
         self.check_connected()
         key = (address, size)
+
         if key not in self._sync_readers:
             self._sync_readers[key] = GroupSyncReader(
                 packet_handler=self.packet_handler,
@@ -248,7 +249,7 @@ class FeiteGroupClient:
             for _id in self._motor_ids:
                 # we never clear sync reader's param.
                 if not self._sync_readers[key].addParam(_id):
-                    raise OSError(
+                    raise ValueError(
                         "[Motor ID: {}] Could not add parameter to sync read.".format(_id)
                     )
 
@@ -266,9 +267,9 @@ class FeiteGroupClient:
             # time_2 = time.time()
             # print(f"RTT: {time_2 - time_1}")
 
-            success = self.handle_packet_result(comm_result.value, context="sync_read")
-            #TODO: if not success, sleep 10ms.
-            time.sleep(0.01)
+            success = self.handle_packet_result(comm_result, context="sync_read")
+            #TODO: if not success, sleep 5ms.
+            time.sleep(0.005)
 
         errored_ids: List[int] = []
         # data_dict : Dict[int, bytearray] = {}  # [[] for _ in range(len(self._motor_ids))]     # = np.zeros(len(self._motor_ids), dtype=np.float32)
@@ -289,7 +290,7 @@ class FeiteGroupClient:
             # TODO: add handel for failure read: we can not get pos/vel states from actuators, which is
             # dangerous for controlling. maybe we should halt any action?
             # logger.error( f"Sync read failed for motor id: {str(errored_ids)}")
-            raise ValueError(f"Sync read failed for motor id: {str(errored_ids)}")
+            raise ValueError(f"Sync read failed for motor id: {errored_ids}")
 
         # TODO: cause we will not change _motor_ids after instantiate of `self`,  so no need to call clearParam.
         # recv_data_dict,param are set/cleared after every sync_read.
@@ -307,7 +308,7 @@ class FeiteGroupClient:
 
     def handle_packet_result(
         self,
-        comm_result: int,
+        comm_result: CommResult,
         motor_error: Optional[int] = None,
         motor_id: Optional[int] = None,
         context: Optional[str] = None,
@@ -327,7 +328,7 @@ class FeiteGroupClient:
 
             logger.error(error_message)
 
-            return False
+            raise IOError(f'pkt read/write error: {error_message}, pls check motor ID/motor connections.')
 
         return True
 
@@ -422,7 +423,7 @@ class FeiteGroupClient:
         comm_time, value_arr_list = self._sync_read_helper(_TableValueReadSpec[name])
         assert len(value_arr_list)==1 and len(value_arr_list)==len(_TableValueReadSpec[name].result_dtype)
         if into_cache:
-            assert self._cached_read_data_dict[name].dtype == _TableValueReadSpec[name].result_dtype
+            assert self._cached_read_data_dict[name].dtype == _TableValueReadSpec[name].result_dtype[0]
             self._cached_read_data_dict[name] = value_arr_list[0].copy()
 
         # NOTE: if the ID does not return pkt, the corresponding value is `np.nan`.
@@ -593,7 +594,7 @@ class FeiteGroupClient:
             logger.error( f"Sync write failed for: {str(errored_ids)}"    )
 
         comm_result = sync_writer.txPacket()
-        self.handle_packet_result(comm_result.value, context="sync_write")
+        self.handle_packet_result(comm_result, context="sync_write")
 
         # write_data_dict,param are set/cleared at every sync_write.
         # sync_writer.clearParam()
@@ -646,7 +647,7 @@ class FeiteGroupClient:
                 length = len(_bytes) ,
                 data = _bytes)
             success = self.handle_packet_result(
-                comm_result.value,
+                comm_result,
                 error,
                 _id,
                 context="_write_and_recv_answer_impl",
