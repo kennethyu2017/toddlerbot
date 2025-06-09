@@ -17,8 +17,7 @@ URT_1_DEV_NAME : str = r'/dev/ttyUSB0'
 MOTOR_ID :int = 0
 
 
-if __name__  == '__main__':
-
+def _main():
     # Initialize PortHandler instance
     # Set the port path
     # Get methods and members of PortHandlerLinux or PortHandlerWindows
@@ -45,3 +44,6 @@ if __name__  == '__main__':
     finally:
         # Close port
         _port_handler.closePort()
+
+if __name__  == '__main__':
+    _main()

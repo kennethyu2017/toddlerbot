@@ -1,4 +1,5 @@
 import platform
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed, Future
 from typing import Dict, List, Optional, Mapping, Set, Any
 from collections import OrderedDict
@@ -103,16 +104,16 @@ def _init_feite_actuators(*, robot:Robot, executor: ThreadPoolExecutor)-> Option
     control_mode = [robot.motor_control_mode[_n] for _n in robot.motor_name_ordering]
     assert len(control_mode) == len(feite_ids)
 
-    kP = np.asarray( [robot.motor_kp_real[_n] for _n in robot.motor_name_ordering], dtype=np.float32)
+    kP = np.asarray( [round(robot.motor_kp_real[_n]) for _n in robot.motor_name_ordering], dtype=np.uint8)
     # kP = robot.get_motor_ordered_config_attrs("type", "feite", "kp_real")
     assert len(kP) == len(feite_ids)
 
     # kI = robot.get_motor_ordered_config_attrs("type", "feite", "ki_real")
-    kI = np.asarray( [robot.motor_ki_real[_n] for _n in robot.motor_name_ordering], dtype=np.float32)
+    kI = np.asarray( [round(robot.motor_ki_real[_n]) for _n in robot.motor_name_ordering], dtype=np.uint8)
     assert len(kI) == len(feite_ids)
 
     # kD = robot.get_motor_ordered_config_attrs("type", "feite", "kd_real")
-    kD = np.asarray( [robot.motor_kd_real[_n] for _n in robot.motor_name_ordering], dtype=np.float32)
+    kD = np.asarray( [round(robot.motor_kd_real[_n]) for _n in robot.motor_name_ordering], dtype=np.uint8)
     assert len(kD) == len(feite_ids)
 
     # NOTE: read `init_pos` is written by calibrate_zero.
@@ -128,7 +129,7 @@ def _init_feite_actuators(*, robot:Robot, executor: ThreadPoolExecutor)-> Option
         kI=kI,
         kD=kD,
         init_pos=init_pos,
-        return_delay_us = 10,  #us
+        return_delay_us = 250,  #us. same as default EEPROM value of feite SM40BL.
     )
     return executor.submit(FeiteController,feite_config, feite_ids)
 
@@ -263,8 +264,12 @@ class RealWorld(BaseEnv, env_name='real_world'):
 
         assert len(self.negated_motor_direction_mask) == self.robot.nu
 
-        for _ in range(100):
-            self.get_observation(1)
+        for _i in range(100):
+            obs = self.get_observation(1)
+            time.sleep(0.03)
+            if _i % 30 == 0:
+                logger.info(f'real world init, read motor obs --- > time: {obs.time}  motor pos: {obs.motor_pos} '
+                            f'motor_vel: {obs.motor_vel} motor_torque: {obs.motor_tor}')
 
     def post_process_motor_reading(self, motor_state: Mapping[int, JointState])\
             -> Dict[str, float|npt.NDArray[np.float32]]:
@@ -412,9 +417,9 @@ class RealWorld(BaseEnv, env_name='real_world'):
                 # let the corresponding attrs in obs be inited `None`.
                 logger.error(f' {read_sensor} generated an exception: {exc}')
             else:
-                for _k,_v in ste:
+                for _k,_v in ste.items():
                     if hasattr(obs, _k):
-                        setattr(obs, __name=_k, __value=_v)
+                        setattr(obs, _k, _v)
                     else:
                         raise ValueError(f'read state key: {_k} not in obs.')
 

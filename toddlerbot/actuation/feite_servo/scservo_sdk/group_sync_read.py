@@ -72,6 +72,10 @@ class GroupSyncReader:
                 assert False
                 return CommResult.TX_ERROR            
 
+        # print(f'txParam --->')
+        # for _b in self.param:
+        #     print(f'0x{_b:02x}')
+
         return self.packet_handler.syncReadTx(self.start_address, self.data_length, self.param, len(self._rcv_data_dict.keys()))
 
     def rxPacket(self)->CommResult:
