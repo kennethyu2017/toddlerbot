@@ -764,10 +764,9 @@ def run_policy(*,
                 # motor_angle_dict: Dict[str, float] = OrderedDict(zip(robot.motor_name_ordering, motor_target_arr))
 
                 # every 6 seconds.
-                # if _step_count % 300 == 0:
-                if _step_count % 200 == 1:
+                if _step_count % 300 == 1:
                     # NOTE: set/get value should be normalized by feite_controller.init_pos
-                    logger.info(f'{step_record_list[-1].motor_act=:}, {obs.motor_pos=:}, {motor_target_arr=:}')
+                    logger.info(f'prev act:{step_record_list[-1].motor_act}, {obs.motor_pos=:}, {motor_target_arr=:}')
 
                 # env.set_motor_target(motor_angle_dict)
                 env.set_motor_target(motor_target_arr)

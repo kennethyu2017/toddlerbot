@@ -15,9 +15,12 @@ from .. import sysIDEpisodeInfo
 # This script collects data for system identification of the motors.
 # in seconds.
 _WARM_UP_DURATION = 2.0
-_CHIRP_SIGNAL_DURATION = 10.0
+_CHIRP_SIGNAL_DURATION = 15 #10.0
 _CHIRP_START_FREQ = 0.1
-_CHIRP_END_FREQ = 10.
+
+# TODO: 3 is enough?
+_CHIRP_END_FREQ = 3. # 10.
+
 _CHIRP_DECAY_RATE = 0.1
 _RESET_DURATION = 2.0
 
