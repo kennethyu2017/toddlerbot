@@ -37,7 +37,7 @@ toddlerbot/manipulation/datasets
 run_policy_log/
 plots/
 results/
-run_sysID/*.*
+run_sysID/
 scripts/run_*_remote.sh
 scripts/run_*_remote.py
 wandb/
