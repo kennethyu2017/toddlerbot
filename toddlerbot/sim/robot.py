@@ -120,7 +120,7 @@ class Robot(_RobotCfgData):
                 self.config = json.load(f)
 
         else:
-            raise FileNotFoundError(f"No config file found for robot '{self.name}'.")
+            raise FileNotFoundError(f"No config file found for robot:  {self.config_path.resolve()} ")
 
         # if os.path.exists(self.collision_config_path):
         if self.collision_config_path.exists():

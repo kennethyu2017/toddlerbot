@@ -226,9 +226,12 @@ def _parse_dynamics(*, robot_name: str,
                 "damping": 0.0,
                 "armature": 0.0,
                 "frictionloss": 0.0,
-                "tau_max": 0.0,
-                "q_dot_tau_max": 0.0,
-                "q_dot_max": 0.0  }
+                # TODO: value in range of corresponding trial, see
+                # _optimize_for_one_jnt_with_multiple_episodes() in sysID_opt.py
+                "tau_max": 0.5,
+                "q_dot_tau_max": 2.0,
+                "q_dot_max": 7.0,
+                 }
             )
 
             print(f'robot: {robot_name} is a sysID task, not have motor dynamics till now. '

@@ -33,10 +33,11 @@ data/
 ### Project ###
 .vscode/
 datasets/
-!toddlerbot/manipulation/datasets
-run_policy_log
+toddlerbot/manipulation/datasets
+run_policy_log/
 plots/
 results/
+run_sysID/*.*
 scripts/run_*_remote.sh
 scripts/run_*_remote.py
 wandb/

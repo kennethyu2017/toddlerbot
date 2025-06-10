@@ -47,7 +47,7 @@ class MotorController:
     def _set_param_helper(self, param_name: str, set_value: Mapping[int, float]):
         param_value:ArrayType = getattr(self, param_name)
 
-        for _idx, _v in set_value:
+        for _idx, _v in set_value.items():
             # _idx is the index of motor/actuator.
             assert 0 <= _idx < len(param_value)
             param_value[_idx] = _v

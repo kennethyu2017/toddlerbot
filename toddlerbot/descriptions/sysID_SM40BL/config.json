@@ -37,9 +37,9 @@
             "damping": 0.0,
             "armature": 0.0,
             "frictionloss": 0.0,
-            "tau_max": 0.0,
-            "q_dot_tau_max": 0.0,
-            "q_dot_max": 0.0
+            "tau_max": 0.5,
+            "q_dot_tau_max": 2.0,
+            "q_dot_max": 7.0
         }
     }
 }

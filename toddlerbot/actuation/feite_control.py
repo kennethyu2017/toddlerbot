@@ -8,6 +8,7 @@ import subprocess
 import time
 from threading import Lock
 from typing import Dict, NamedTuple, Sequence, Tuple
+from pathlib import Path
 
 import numpy as np
 import numpy.typing as npt
@@ -106,7 +107,9 @@ _USB_COM_PORT_LATENCY_TIMER_MS = 5
 # set USB COM port latency timer:
 # on linux, default usb-serial latency timer is 16ms, too large for multicore CPU, so we reduce it to 5ms.
 def _set_usb_com_latency_timer(*, device_name: str, latency_ms: int):
+    assert  0 < latency_ms <= 16
     os_type = sys.platform.casefold()
+    sh_cmd = ''
 
     try:
         # set_latency_timer(latency_value)
@@ -114,7 +117,28 @@ def _set_usb_com_latency_timer(*, device_name: str, latency_ms: int):
         if os_type == "linux":
             # Construct the command to set the latency timer on Linux
             # command = f"echo {latency_ms} | sudo tee /sys/bus/usb-serial/devices/{self.config.port.split('/')[-1]}/latency_timer"
-            command = f"echo {latency_ms} | sudo tee /sys/bus/usb-serial/devices/{device_name}/latency_timer"
+            latency_file = Path(f'/sys/bus/usb-serial/devices/{device_name}/latency_timer')
+
+            if not latency_file.exists():
+                sh_cmd = f"echo {latency_ms} | sudo tee {latency_file.resolve()}"
+
+            else:
+                with open(latency_file,'rt') as _f:
+                    saved_value : int = 16
+                    try:
+                        saved_value = int(_f.readline().strip())
+
+                    except Exception as exc:
+                        raise ValueError(f'read latency_timer content error: {exc} {type(exc)}')
+
+                    logger.info(f'{latency_file.resolve()} exists and value: {saved_value}')
+
+                    if saved_value != latency_ms:
+                        sh_cmd = f"echo {latency_ms} | sudo tee {latency_file.resolve()}"
+                        logger.info(f'saved value {saved_value} not equal set value {latency_ms}, update into file.')
+
+                    else:
+                        logger.info(f'saved value equals set value, no need to update the latency timer.')
 
         elif os_type == "darwin":
             # command = f"./toddlerbot/actuation/latency_timer_setter_macOS/set_latency_timer -l {latency_value}"
@@ -124,11 +148,14 @@ def _set_usb_com_latency_timer(*, device_name: str, latency_ms: int):
             raise OSError(f'can not set USB COM port latency timer on {os_type}')
 
         # Run the command
-        logger.info(f'set latency timer through cmd: {command}')
-        result = subprocess.run(
-            command, shell=True, text=True, check=True, stdout=subprocess.PIPE,
-        )
-        logger.info(f"Latency Timer set result: {result.stdout.strip()}")
+        if len(sh_cmd)>0:
+            logger.info(f'set latency timer through cmd: {sh_cmd}')
+            result = subprocess.run(
+                sh_cmd, shell=True, text=True, check=True, stdout=subprocess.PIPE,
+            )
+            logger.info(f"Latency Timer set result: {result.stdout.strip()}")
+        else:
+            logger.info(f'no valid cmd to update latency timer file.')
 
     except Exception as e:
         if os_type == "Windows":

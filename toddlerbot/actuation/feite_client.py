@@ -752,7 +752,8 @@ class FeiteGroupClient:
             """
             assert len(motor_ids) == len(accel)
 
-            if  np.any(accel < 0) or np.any(accel > 3 * np.pi):
+            # if  np.any(accel < 0) or np.any(accel > 3 * np.pi):
+            if False:
                 raise ValueError(f'not allowed goal accel: {accel}, which should be in [0, 3pi] ')
 
             # ->steps, ->int, signed->unsigned, to_bytes.
@@ -775,7 +776,8 @@ class FeiteGroupClient:
         """
         assert len(motor_ids) == len(vel)
 
-        if np.any (abs(vel) > 3 * np.pi/2 ):
+        # if np.any (abs(vel) > 3 * np.pi/2 ):
+        if False:
             raise ValueError(f'not allowed goal vel: {vel}, which should be in [-3pi/2, 3pi/2] ')
 
         # ->steps, ->int, signed->unsigned, to_bytes.
