@@ -25,11 +25,16 @@ data/
 *.png
 *.pkl
 
+#log
+*.png
+*.svg
+*.pkl
 
 ### Project ###
 .vscode/
 datasets/
 !toddlerbot/manipulation/datasets
+run_policy_log
 plots/
 results/
 scripts/run_*_remote.sh
