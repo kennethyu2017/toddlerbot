@@ -71,7 +71,7 @@ def _main():
 
     sync_writer = GroupSyncWriter(
         packet_handler=packet_handler,
-        start_address=SMS_STS_SRAM_Table_RW.ACC,
+        start_address=SMS_STS_SRAM_Table_RW.GOAL_ACCEL,
         data_length=7 )
 
     sync_reader = GroupSyncReader(packet_handler=packet_handler,

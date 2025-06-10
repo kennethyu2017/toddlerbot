@@ -87,6 +87,9 @@ action will not interfere against the sysID motors ?
 
 35. to reduce RS485 read latency, have to set latency_timer of USB COM port , through  echo 1 or 5 | sudo tee /sys/bus/serial/ttyUSB0/latency_timer
 
+36. config.json we manually set "lower_limit": -1.570795,  "upper_limit": 1.570795, but then should come from
+ urdf and add_configs, but it is 0 ~ pi in urdf, should modify from onshape.
+
 
 
 

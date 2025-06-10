@@ -116,6 +116,11 @@ def parse_vin(param: bytes | bytearray)->float:
     assert 0 <= vin < 140
     return vin * VOLTAGE_RESOLUTION
 
+def parse_protect_mode(param: bytes | bytearray)->int:
+    assert len(param) == 1
+    protect = int.from_bytes(bytes=param, byteorder='little', signed=False)
+    assert 0 <= protect < 0x3f
+    return protect
 
 def read_pos_and_vel_helper(reader: ProtocolPacketHandler, motor_id: int):
     # Read the present pos and vel.
@@ -144,7 +149,7 @@ def write_acc_pos_vel_helper(*, writer: ProtocolPacketHandler,
                                                       vel_radius=vel_radius)
 
     comm_result, error = writer.writeTxRx(scs_id=motor_id,
-                                          address=SMS_STS_SRAM_Table_RW.ACC,
+                                          address=SMS_STS_SRAM_Table_RW.GOAL_ACCEL,
                                           length=len(txpkt),
                                           data=txpkt)
 

@@ -40,6 +40,7 @@ class SMS_STS_EEPROM_Table_RW:
     # MIN_ANGLE_LIMIT_H = 10
     MAX_ANGLE_LIMIT_L = 11
     # MAX_ANGLE_LIMIT_H = 12
+    PROTECT_MODE = 19
     KP = 21
     # KD = 22
     # KI = 23
@@ -52,13 +53,13 @@ class SMS_STS_EEPROM_Table_RW:
 class SMS_STS_SRAM_Table_RW:    
     #-------SRAM(读写)--------
     TORQUE_ENABLE = 40
-    ACC = 41
+    GOAL_ACCEL = 41
     GOAL_POSITION_L = 42
     # GOAL_POSITION_H = 43
     GOAL_TIME_L = 44
     # GOAL_TIME_H = 45
-    GOAL_SPEED_L = 46
-    # GOAL_SPEED_H = 47
+    GOAL_VEL_L = 46
+    # GOAL_VEL_H = 47
     LOCK = 55
 
 class SMS_STS_SRAM_Table_ReadOnly:
@@ -86,6 +87,7 @@ class SMS_STS_Table_Data_Length:
     GOAL_POSITION = 2
     PRESENT_VOLTAGE = 1
     # LEN_GOAL_CURRENT = 2
+    PROTECT_MODE = 1
 
 
 class PacketHandler(ProtocolPacketHandler):

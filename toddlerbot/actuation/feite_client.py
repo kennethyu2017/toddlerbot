@@ -22,6 +22,7 @@ class TableValueName(Enum):
     vin = 4
     model = 5
     pos_vel_load = 6  # together.
+    protect_mode = 7
 
 class PosVelLoadRead(NamedTuple):
     comm_time: float
@@ -93,8 +94,12 @@ _TableValueReadSpec : Dict[TableValueName, _ReadSpec] = {
                               SMS_STS_Table_Data_Length.PRESENT_VELOCITY,
                               SMS_STS_Table_Data_Length.PRESENT_LOAD],
                         parser=[parse_pos, parse_vel, parse_load],
-                        result_dtype=[np.float32, np.float32, np.float32])
+                        result_dtype=[np.float32, np.float32, np.float32]),
 
+    TableValueName.protect_mode: _ReadSpec(start_addr=SMS_STS_EEPROM_Table_RW.PROTECT_MODE,
+                                           size=[SMS_STS_Table_Data_Length.PROTECT_MODE],
+                                           parser=[parse_protect_mode],
+                                           result_dtype=[np.uint8]),
 }
 
 # @dataclass(init=False)
@@ -506,6 +511,10 @@ class FeiteGroupClient:
             load=self._cached_read_data_dict[TableValueName.load].copy(),
         )
 
+    def read_protect_mode(self, retries: int = 0) -> Tuple[float, npt.NDArray[np.uint8]]:
+            return self._read_table_single_value_helper(name=TableValueName.protect_mode,
+                                                        into_cache=False)
+
     # def read_pos_vel_load(
     #     self, retries: int = 0
     # ) -> PosVelLoadRead:
@@ -711,27 +720,73 @@ class FeiteGroupClient:
         self._sync_write_impl(param=param,
                               address=address)
 
-    def set_desired_pos( self, *, motor_ids: Sequence[int], positions: npt.NDArray[np.float32] ):
+    def set_goal_pos(self, *, motor_ids: Sequence[int], pos: npt.NDArray[np.float32]):
         """Writes the given desired positions.
 
         Args:
             motor_ids: The motor IDs to write to.
-            positions: The joint angles in radians to write. in rad of single turn.signed value, to represent rotor direction.
+            pos: The joint angles in radians to write. in rad of single turn.signed value, to represent rotor direction.
         """
-        assert len(motor_ids) == len(positions)
+        assert len(motor_ids) == len(pos)
         # TODO: only allow -2Pi ~ 2Pi.
-        if not np.all( np.abs(positions) < 2*np.pi ):
-            raise ValueError(f'not allowed desired pos: {positions}, which should be in [-2pi, 2pi] ')
+        if not np.all(np.abs(pos) < 2 * np.pi):
+            raise ValueError(f'not allowed goal pos: {pos}, which should be in [-2pi, 2pi] ')
 
         # ->steps, ->int, signed->unsigned, to_bytes.
         # Convert to Feite position steps:
-        steps = (positions / POS_RESOLUTION).astype(dtype=np.int16)
+        steps = (pos / POS_RESOLUTION).astype(dtype=np.int16)
         size = steps.dtype.itemsize
         assert size==2
 
         self._sync_write_impl(param=[signed_to_proto_param_bytes_v2(value=int(_v), size=size)
                                           for _v in steps],  # addr 42, 43,
                               address=SMS_STS_SRAM_Table_RW.GOAL_POSITION_L,
+                              write_ids=motor_ids)
+
+    def set_goal_accel(self, *, motor_ids: Sequence[int], accel: npt.NDArray[np.float32]):
+            """Writes the given accel.
+
+            Args:
+                motor_ids: The motor IDs to write to.
+                accel:
+            """
+            assert len(motor_ids) == len(accel)
+
+            if  np.any(accel < 0) or np.any(accel > 3 * np.pi):
+                raise ValueError(f'not allowed goal accel: {accel}, which should be in [0, 3pi] ')
+
+            # ->steps, ->int, signed->unsigned, to_bytes.
+            # Convert to Feite position steps:
+            steps = (accel / ACCEL_RESOLUTION).astype(dtype=np.uint8)
+            size = steps.dtype.itemsize
+            assert size == 1
+
+            self._sync_write_impl(param=[int(_v).to_bytes(length=size, byteorder='little', signed=False)
+                                         for _v in steps],  # addr 41,
+                                  address=SMS_STS_SRAM_Table_RW.GOAL_ACCEL,
+                                  write_ids=motor_ids)
+
+    def set_goal_vel(self, *, motor_ids: Sequence[int], vel: npt.NDArray[np.float32]):
+        """Writes the given vel.
+
+        Args:
+            motor_ids: The motor IDs to write to.
+            vel:
+        """
+        assert len(motor_ids) == len(vel)
+
+        if np.any (abs(vel) > 3 * np.pi/2 ):
+            raise ValueError(f'not allowed goal vel: {vel}, which should be in [-3pi/2, 3pi/2] ')
+
+        # ->steps, ->int, signed->unsigned, to_bytes.
+        # Convert to Feite position steps:
+        steps = (vel / VEL_RESOLUTION).astype(dtype=np.int16)
+        size = steps.dtype.itemsize
+        assert size == 2
+
+        self._sync_write_impl(param=[signed_to_proto_param_bytes_v2(value=int(_v), size=size)
+                                     for _v in steps],  # addr 46,
+                              address=SMS_STS_SRAM_Table_RW.GOAL_VEL_L,
                               write_ids=motor_ids)
 
         # self.sync_write_2_bytes(_motor_ids=_motor_ids,

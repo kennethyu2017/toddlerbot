@@ -765,7 +765,7 @@ def run_policy(*,
 
                 # every 6 seconds.
                 # if _step_count % 300 == 0:
-                if _step_count % 100 == 1:
+                if _step_count % 200 == 1:
                     # NOTE: set/get value should be normalized by feite_controller.init_pos
                     logger.info(f'{step_record_list[-1].motor_act=:}, {obs.motor_pos=:}, {motor_target_arr=:}')
 

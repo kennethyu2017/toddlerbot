@@ -141,7 +141,7 @@ class DynamixelController(BaseController):
             self.init_pos = np.asarray(config.init_pos, dtype=np.float32)
             self.normalize_init_pos()
 
-    def connect_to_client(self, latency_value: int = 1):
+    def connect_to_client(self, usb_com_latency_timer_ms:int, latency_value: int = 1):
         """Connects to a Dynamixel client and sets the USB latency timer.
 
         This method sets the USB latency timer for the specified port and attempts to connect to a Dynamixel client. The latency timer is set differently based on the operating system. If the connection fails, an error is logged or raised.

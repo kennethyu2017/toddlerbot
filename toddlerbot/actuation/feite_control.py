@@ -3,6 +3,8 @@ experimented for feite sm40bl actuator.  according to feite sms&sts_memory_table
 by kenneth yu.
 """
 
+import sys
+import subprocess
 import time
 from threading import Lock
 from typing import Dict, NamedTuple, Sequence, Tuple
@@ -26,7 +28,11 @@ CONTROL_MODE_DICT: Dict[str, int] = {
 # TODO: move into yaml config file.
 # receive timeout.
 # TODO> NOTE: must set latency_timer of usb-rs485 converter to 1~5ms to guarantee USB COM port latency.
+# for pySerial.serial.Serial.read_port().
 _USB_SERIAL_DEFAULT_RCV_TIMEOUT_MS = 10  #5 #1
+
+# set FT232 device, control the COM port interrupt freq to OS.
+_USB_COM_PORT_LATENCY_TIMER_MS = 5
 
 
 # def get_env_path():
@@ -46,8 +52,8 @@ _USB_SERIAL_DEFAULT_RCV_TIMEOUT_MS = 10  #5 #1
 #         return sys.prefix
 
 
-# on linux, default usb-serial latency timer usally is 16ms.
-# def set_latency_timer(latency_value: int = 1):
+# on linux, default usb-serial latency timer is 16ms, too large, so we reduce it to 5ms.
+# def set_latency_timer(latency_value: int): # = 1):
 #     """Sets the LATENCY_TIMER variable in the port_handler.py file to the specified value.
 #
 #     This function locates the port_handler.py file within the dynamixel_sdk package and updates the LATENCY_TIMER variable to the given `latency_value`. If the file or the variable is not found, an error message is printed.
@@ -58,7 +64,7 @@ _USB_SERIAL_DEFAULT_RCV_TIMEOUT_MS = 10  #5 #1
 #     # env_path = get_env_path()
 #
 #     # Construct the path to port_handler.py
-#     port_handler_path = os.path.join(
+#     port_handler_path = Patos.path.join(
 #         env_path,
 #         "lib",
 #         f"python{sys.version_info.major}.{sys.version_info.minor}",
@@ -97,6 +103,44 @@ _USB_SERIAL_DEFAULT_RCV_TIMEOUT_MS = 10  #5 #1
 #         print(f"Error while modifying the file: {e}")
 
 
+# set USB COM port latency timer:
+# on linux, default usb-serial latency timer is 16ms, too large for multicore CPU, so we reduce it to 5ms.
+def _set_usb_com_latency_timer(*, device_name: str, latency_ms: int):
+    os_type = sys.platform.casefold()
+
+    try:
+        # set_latency_timer(latency_value)
+        # NOTE can not write into CH340, only FT232.
+        if os_type == "linux":
+            # Construct the command to set the latency timer on Linux
+            # command = f"echo {latency_ms} | sudo tee /sys/bus/usb-serial/devices/{self.config.port.split('/')[-1]}/latency_timer"
+            command = f"echo {latency_ms} | sudo tee /sys/bus/usb-serial/devices/{device_name}/latency_timer"
+
+        elif os_type == "darwin":
+            # command = f"./toddlerbot/actuation/latency_timer_setter_macOS/set_latency_timer -l {latency_value}"
+            raise OSError(f'can not set USB COM port latency timer on {os_type}')
+
+        else:
+            raise OSError(f'can not set USB COM port latency timer on {os_type}')
+
+        # Run the command
+        logger.info(f'set latency timer through cmd: {command}')
+        result = subprocess.run(
+            command, shell=True, text=True, check=True, stdout=subprocess.PIPE,
+        )
+        logger.info(f"Latency Timer set result: {result.stdout.strip()}")
+
+    except Exception as e:
+        if os_type == "Windows":
+            logger.error("Make sure you're set the latency in the device manager!")
+        else:
+            logger.error(f"Failed to set latency timer: {e}")
+
+        raise
+
+    time.sleep(0.1)
+
+
 class FeiteConfig(NamedTuple):
     """Data class for storing Feite SM40BL configuration parameters."""
 
@@ -108,10 +152,11 @@ class FeiteConfig(NamedTuple):
     kD: Sequence[int] = []
     # kFF2: Seq[float]
     # kFF1: Seq[float]
-    init_pos: Sequence[float] | None = None
-    default_vel: float = 0. #np.pi
-    # TODO:
-    # default_acc: float =...
+    # TODO: adjust according to tracking result.
+    default_accel: npt.NDArray[np.float32] |None = None   # [1.6 * np.pi]
+    default_vel: npt.NDArray[np.float32] |None = None      # [1.4 * np.pi]
+    init_goal_pos: npt.NDArray[np.float32] |None = None    # None = None
+
     # interp_method: str = "cubic"
     return_delay_us: int = SMS_STS_DEFAULT_RETURN_DELAY_US
 
@@ -147,21 +192,26 @@ class FeiteController(BaseController):
 
         self.lock = Lock()
 
-        self.client =self.connect_to_client(rcv_timeout_ms=_USB_SERIAL_DEFAULT_RCV_TIMEOUT_MS)
+        self.client =self.connect_to_client(usb_com_latency_timer_ms=_USB_COM_PORT_LATENCY_TIMER_MS,
+                                            rcv_timeout_ms=_USB_SERIAL_DEFAULT_RCV_TIMEOUT_MS)
         self.initialize_motors()
 
         # if len(self.config.init_pos) == 0:
 
+        # NOTE: first set goal pos to init_pos in config.json, then normalize init pos read from motor.
         # if config.init_pos is None, that is for calibrate_zero.
         # TODO: during calibrate_zero , setting init_pos to pi ??
-        if self.config.init_pos is None:
-            self.init_pos = np.zeros(len(self._motor_ids), dtype=np.float32)
+        self.normalized_init_pos: npt.NDArray[np.float32] | None = None
+
+        if self.config.init_goal_pos is None:
+            self.normalized_init_pos = np.zeros(len(self._motor_ids), dtype=np.float32)
         else:
-            assert len(config.init_pos) == len(self._motor_ids)
-            self.init_pos = np.asarray(config.init_pos, dtype=np.float32)
+            assert len(config.init_goal_pos) == len(self._motor_ids)
+            # self.normalized_init_pos = np.asarray(config.init_pos, dtype=np.float32)
+
             self.normalize_init_pos()
 
-    def connect_to_client(self, rcv_timeout_ms: int)->FeiteGroupClient:
+    def connect_to_client(self, usb_com_latency_timer_ms:int, rcv_timeout_ms: int)->FeiteGroupClient:
         """Connects to a Feite client and sets the USB latency timer.
 
         This method sets the USB latency timer for the specified port and attempts to connect to a Feite client.
@@ -169,51 +219,17 @@ class FeiteController(BaseController):
          If the connection fails, an error is logged or raised.
 
         Args:
+            usb_com_latency_timer_ms:
             rcv_timeout_ms (int): The desired latency timer value. Defaults to 1.
 
         Raises:
             ConnectionError: If the connection to the Feite port fails.
         """
-        # os_type = platform.system()
-        # try:
-            # change the port_handler.py in dynamixel sdk.
-            # set_latency_timer(latency_value)
-            # TODO: can not write into CH340.
-            # if os_type == "Linux":
-            #     # Construct the command to set the latency timer on Linux
-            #     command = f"echo {latency_value} | sudo tee /sys/bus/usb-serial/devices/{self.config.port.split('/')[-1]}/latency_timer"
-            # elif os_type == "Darwin":
-            #     command = f"./toddlerbot/actuation/latency_timer_setter_macOS/set_latency_timer -l {latency_value}"
-            # else:
-            #     raise Exception()
 
-            # Run the command
-            # result = subprocess.run(
-            #     command, shell=True, text=True, check=True, stdout=subprocess.PIPE
-            # )
-            # logger.info(f"Latency Timer set: {result.stdout.strip()}", header="Feite")
-
-        # except Exception as e:
-        #     if os_type == "Windows":
-        #         logger.error(
-        #             "Make sure you're set the latency in the device manager!",
-        #             header="Feite",
-        #             level="warning",
-        #         )
-        #     else:
-        #         logger.error(
-        #             f"Failed to set latency timer: {e}",
-        #             header="Feite",
-        #             level="error",
-        #         )
-
-        # time.sleep(0.1)
+        _set_usb_com_latency_timer(device_name=self.config.port.split('/')[-1],
+                                   latency_ms=usb_com_latency_timer_ms)
 
         try:
-            # TODO:
-            logger.warning(f'\n----- Remember to set latency-timer of FT232 USB-RS485 converter--- ')
-            logger.warning(f'\n----- Remember to set latency-timer of FT232 USB-RS485 converter--- ')
-            logger.warning(f'\n----- Remember to set latency-timer of FT232 USB-RS485 converter--- ')
 
             client = FeiteGroupClient(
                 motor_ids = self._motor_ids,
@@ -277,6 +293,21 @@ class FeiteController(BaseController):
 
         self.client.set_kp_kd_ki(kp=self.config.kP, kd=self.config.kD, ki=self.config.kI)
 
+        # check protection:
+        _, protect_mode = self.client.read_protect_mode()
+        np.set_printoptions(formatter={'int': '0x{:02x}'.format})
+        logger.info(f'===> motor protection mode: {protect_mode}')
+
+        if np.any(protect_mode != 0x2c):
+            raise ValueError(f'motor protection mode read value:{protect_mode},'
+                             f' but every feite motor should be set to 0x2c to enable: overload / over current/ over therm.'
+                             f'pls set it and other relative memory table values. ')
+
+        # TODO:
+        # check torque limit: EEPROM-16 and SRAM-48
+        # check overload torque threshold/protection-duration/protection-torque:  EEPROM-34/35/36
+
+
         #
         # self.client.sync_write_3_bytes(_motor_ids=self._motor_ids,
         #                              params=[ bytes([_p, _d, _i]) for _p, _d, _i in
@@ -301,9 +332,16 @@ class FeiteController(BaseController):
         # self.client.sync_write(self._motor_ids, self.config.kFF1, 90, 2)
         # self.client.sync_write(self._motor_ids, self.config.current_limit, 102, 2)
 
+        # set acc, vel, adjust present pos as init_pos from config.
+        self.client.set_goal_accel(motor_ids=self._motor_ids, accel=self.config.default_accel)
+        self.client.set_goal_vel(motor_ids=self._motor_ids, vel=self.config.default_vel)
+
+        # NOTE: first set goal pos to init_pos in config.json, then normalize init pos read from motor.
+        self.client.set_goal_pos(motor_ids=self._motor_ids, pos=self.config.init_goal_pos)
+
         self.client.set_torque_enabled(motor_ids=self._motor_ids, enabled=True)
 
-        time.sleep(0.2)
+        time.sleep(1.0)
 
     def normalize_init_pos(self):
         """Update the initial position to account for any changes in position.
@@ -313,14 +351,20 @@ class FeiteController(BaseController):
         position to reflect any changes, ensuring that the position remains within
         the range of [-π, π].
         """
-        _, pos_arr = self.client.read_pos(retries=-1)
-        delta_pos = pos_arr - self.init_pos
-        delta_pos = (delta_pos + np.pi) % (2 * np.pi) - np.pi
-        self.init_pos = pos_arr - delta_pos
+        _, read_pos = self.client.read_pos(retries=-1)
+        # delta_pos = read_pos - self.normalized_init_pos
 
-        logger.warning(f'====== normalized init pos: {self.init_pos} =============')
-        logger.warning(f'====== normalized init pos: {self.init_pos} =============')
-        logger.warning(f'====== normalized init pos: {self.init_pos} =============')
+        delta_pos = read_pos - np.asarray(self.config.init_goal_pos, dtype=np.float32)
+
+        delta_pos = (delta_pos + np.pi) % (2 * np.pi) - np.pi
+
+        self.normalized_init_pos = read_pos - delta_pos
+
+        assert np.all( abs(self.normalized_init_pos) <= np.pi )
+
+        logger.warning(f'====== normalized init pos: {self.normalized_init_pos} =============')
+        logger.warning(f'====== normalized init pos: {self.normalized_init_pos} =============')
+        logger.warning(f'====== normalized init pos: {self.normalized_init_pos} =============')
 
 
     def close_motors(self):
@@ -444,6 +488,8 @@ class FeiteController(BaseController):
     #             self.client.sync_write(ids, [kff2], 88, 2)
 
     # @profile()
+
+    # NOTE: will offset using self.normalized_init_pos
     def set_pos(self, pos: Sequence[float]):
         """Sets the position of the motors by updating the desired position.
 
@@ -455,10 +501,10 @@ class FeiteController(BaseController):
 
         pos_arr: npt.NDArray[np.float32] = np.array(pos)
         # add init_pos as offset.
-        pos_arr_drive = self.init_pos + pos_arr
+        pos_arr_drive = self.normalized_init_pos + pos_arr
 
         with self.lock:
-            self.client.set_desired_pos(motor_ids=self._motor_ids, positions=pos_arr_drive)
+            self.client.set_goal_pos(motor_ids=self._motor_ids, pos=pos_arr_drive)
 
         # try:
         #     with self.lock:
@@ -467,6 +513,7 @@ class FeiteController(BaseController):
         #     logger.error(f' set pos exception: {err} {type(err)}')
         #     raise
 
+    # NOTE: will offset using self.normalized_init_pos
     # @profile()
     def get_motor_state(self, retries: int = 0) -> Dict[int, JointState]:
         """Retrieves the current state of the motors, including position, velocity, and current.
@@ -493,7 +540,7 @@ class FeiteController(BaseController):
         assert len(self._motor_ids) == len(read_value.pos) == len(read_value.vel) == len(read_value.load)
 
         # relative to init pos.
-        relative_pos = read_value.pos - self.init_pos
+        relative_pos = read_value.pos - self.normalized_init_pos
 
         for _id, _pos, _vel, _load in zip(self._motor_ids,
                                           relative_pos,
