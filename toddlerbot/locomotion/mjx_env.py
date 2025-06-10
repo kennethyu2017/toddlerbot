@@ -10,7 +10,7 @@ from brax.envs.base import PipelineEnv, State
 from brax.io import mjcf
 from jax import numpy as jnp
 from mujoco import mjx
-from mujoco.mjx._src import support  # type: ignore
+from mjx._src import support  # type: ignore
 
 from .mjx_config import MJXConfig
 from ..sim import Robot, MotorController

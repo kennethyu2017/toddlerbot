@@ -326,7 +326,8 @@ def train(
     )()
 
 
-if __name__ == "__main__":
+def _main():
+
     parser = argparse.ArgumentParser(description="Process raw data to create dataset.")
     parser.add_argument(
         "--robot",
@@ -399,3 +400,7 @@ if __name__ == "__main__":
         args.action_horizon,
         action_dim=8 if args.task == "pick" else 16,
     )
+
+
+if __name__ == "__main__":
+    _main()

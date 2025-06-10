@@ -1,7 +1,7 @@
 import platform
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed, Future
-from typing import Dict, List, Optional, Mapping, Set, Any,Callable
+from typing import Dict, List, Optional, Mapping, Set, Any,Callable, Tuple
 from collections import OrderedDict
 
 import numpy as np
@@ -15,8 +15,8 @@ from .base_env import BaseEnv, Obs
 from .robot import Robot
 from ._module_logger import logger
 
-_DEFAULT_FEITE_ACCEL :float = 1.6 * np.pi
-_DEFAULT_FEITE_VEL :float = 1.4 * np.pi
+_DEFAULT_FEITE_ACCEL :float =  5 * np.pi #  1.6 * np.pi
+_DEFAULT_FEITE_VEL :float =  2.5 * np.pi # 75rpm.    #/ 4 * np.pi  #1.4 * np.pi
 
 def _init_dynamixel_actuators(*, robot:Robot, executor: ThreadPoolExecutor)->Future:
     # from ..actuation.dynamixel_control import (
@@ -413,23 +413,31 @@ class RealWorld(BaseEnv, env_name='real_world'):
         # futures: Dict[str, Any] = {}
         # future_seq: Dict[Future, Callable[[Mapping[int|str,Any] | None],None]] = {}
         obs = Obs()
+        # io_future : io_name.
         future_seq: Dict[Future, str] = {}
         if self.actuator_controller is not None:
-            future_seq[self._executor.submit(self.read_motor_state, retries) ] = 'read_motor_state'
+            _, mtr_ftr = self._create_io_set_future('motor',self.read_motor_state, retries)
+            future_seq[mtr_ftr] = 'motor'
+
+            # future_seq[self._executor.submit(self.read_motor_state, retries) ] = 'read_motor_state'
 
         if self._imu is not None:
-            future_seq[ self._executor.submit(self.read_imu_state, retries) ] = 'read_imu_state'
+            _, imu_ftr = self._create_io_set_future('imu', self.read_imu_state, retries)
+            future_seq[imu_ftr] = 'imu'
 
         # results["dynamixel"] = self.actuator_controller.get_motor_state(retries)
         # results["_imu"] = self._imu.get_state()
 
         for _f in as_completed(future_seq):
-            read_sensor = future_seq[_f]
+            io_name = future_seq[_f]
             try:
-                ste: Mapping[str, float|npt.NDArray[np.float32]] = _f.result()
+                ste: Mapping[str, float|npt.NDArray[np.float32]] = self._finish_io_set_future(io_name)
+
+                # ste: Mapping[str, float|npt.NDArray[np.float32]] = _f.result()
+
             except Exception as exc:
                 # let the corresponding attrs in obs be inited `None`.
-                logger.error(f' {read_sensor} generated an exception: {exc} {type(exc)}')
+                logger.error(f' read {io_name} generated an exception: {exc} {type(exc)}')
                 raise
 
             else:
@@ -439,7 +447,7 @@ class RealWorld(BaseEnv, env_name='real_world'):
                     else:
                         raise ValueError(f'read state key: {_k} not in obs.')
 
-                logger.debug(f' {read_sensor} succeed, got obs keys: {ste.keys()} ')
+                logger.debug(f' read {io_name} succeed, got obs keys: {ste.keys()} ')
 
         # # start_times = {key: time.time() for key in futures.keys()}
         # for future in as_completed(futures.values()):
@@ -459,20 +467,41 @@ class RealWorld(BaseEnv, env_name='real_world'):
         return obs
 
 
-    def _create_io_set_future(self, name:str, fn: Callable, *args, **kwargs):
+    # will guarantee clear self._io_set_future_dict.
+    def _finish_io_set_future(self, name:str)->Any:
         assert name in self._io_set_future_dict
+
+        result : Any = None
 
         # wait for exiting future to complete.
         ftr = self._io_set_future_dict[name]
         if ftr is not None:
             # NOTE: to catch the exception to previous IO set operation future.
             try:
-                _ = ftr.result()
+                # after calling result(), ftr is None. ( self=None in result() ).
+                result = ftr.result()
+
             except Exception as exc:
                 logger.error(f' {name} IO set future generated an exception: {exc} {type(exc)}')
                 raise
 
-        self._io_set_future_dict[name] = self._executor.submit(fn, *args, **kwargs)
+            finally:
+                # after calling result(), self._io_set_future_dict[name] is also None.
+                self._io_set_future_dict[name] = None
+
+        return result
+
+
+    def _create_io_set_future(self, name:str, fn: Callable, *args, **kwargs)->Tuple[Any, Future]:
+        assert name in self._io_set_future_dict
+
+        # complete prev future first, causing half-duplex of USB-COM port.
+        result = self._finish_io_set_future(name)
+
+        new_ftr = self._executor.submit(fn, *args, **kwargs)
+        self._io_set_future_dict[name] = new_ftr
+
+        return result, new_ftr
 
 
     # @profile()
@@ -510,7 +539,7 @@ class RealWorld(BaseEnv, env_name='real_world'):
         # write_pos *= self.negated_motor_direction_mask
 
         # wait for exiting future to complete.
-        self._create_io_set_future('motor',
+        _,_ = self._create_io_set_future('motor',
                                    self.actuator_controller.set_pos,
                                    write_pos * self.negated_motor_direction_mask)
 
@@ -581,7 +610,7 @@ class RealWorld(BaseEnv, env_name='real_world'):
                 write_kps.append(self.robot.config["joints"][_name]["kp_real"])
 
         # wait for exiting future to complete.
-        self._create_io_set_future('motor',
+        _,_ = self._create_io_set_future('motor',
                                    self.actuator_controller.set_kp,
                                    write_kps)
 

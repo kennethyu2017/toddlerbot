@@ -25,7 +25,7 @@ from toddlerbot.visualization import (
     plot_joint_tracking_frequency,
 )
 
-from ._module_logger import logger
+from toddlerbot.tools._module_logger import logger
 
 # This script is used to optimize the parameters of the robot's dynamics model using system identification (SysID) techniques.
 
@@ -75,7 +75,7 @@ class _SysIDEpisodeData:
 
 
 # yield one episode per iter.
-def _load_dataset(*,robot: Robot, step_record_file: Path, kp_file: Path)->Generator[_SysIDEpisodeData]:
+def _load_dataset(*,robot: Robot, step_record_file: Path, kp_file: Path)->Generator[_SysIDEpisodeData, None, None]:
     #  ->Tuple[Dict[str, List[npt.NDArray[np.float32]]],Dict[str, List[npt.NDArray[np.float32]]],Dict[str, List[float]]]:
     """Loads and processes datasets from a specified path for a given robot, extracting observation positions, actions, and motor gains.
 
@@ -371,7 +371,7 @@ def _sim_run_sysID_episode_helper(*, ep_list:List[_SysIDEpisodeData],
 
 def _build_objective(*,
                      robot:Robot,
-                     sim:MuJoCoSim,
+                     sim: MuJoCoSim | None,
                      jnt_name: str,
                      ep_list: List[_SysIDEpisodeData],
                      freq_max: float = 10,
@@ -401,6 +401,12 @@ def _build_objective(*,
             float: The combined error metric, consisting of the RMSE and a weighted frequency domain error.
         """
         # gain = trial.suggest_float("gain", *gain_range[:2], step=gain_range[2])
+
+        # TODO: each run of objective, will rollout all the episodes again, so we should reset sim to begging....
+        # sim.reset....
+        # TODO : use individual sim env for each objective, parallel...
+        sim = MuJoCoSim(robot, fixed_base=True)
+
         damping = trial.suggest_float(
             "damping", *damping_range[:2], step=damping_range[2]
         )
@@ -542,11 +548,11 @@ def _optimize_for_one_jnt_with_multiple_episodes(*,
         ValueError: If an invalid simulator or sampler is specified.
     """
 
-    if sim_name == "mujoco":
-        sim = MuJoCoSim(robot, fixed_base=True)
-
-    else:
-        raise ValueError("Invalid simulator")
+    # if sim_name == "mujoco":
+    #     sim = MuJoCoSim(robot, fixed_base=True)
+    #
+    # else:
+    #     raise ValueError("Invalid simulator")
 
     tau_max_range: Tuple[float, float, float] |None = None
     if "sysID".casefold() in robot.name.casefold():
@@ -589,13 +595,13 @@ def _optimize_for_one_jnt_with_multiple_episodes(*,
         load_if_exists=True,
     )
 
-    initial_trial = dict(
-        damping=float(sim.model.joint(jnt_name).damping),
-        armature=float(sim.model.joint(jnt_name).armature),
-        frictionloss=float(sim.model.joint(jnt_name).frictionloss),
-    )
+    # initial_trial = dict(
+    #     damping=float(sim.model.joint(jnt_name).damping[0]),
+    #     armature=float(sim.model.joint(jnt_name).armature[0]),
+    #     frictionloss=float(sim.model.joint(jnt_name).frictionloss[0]),
+    # )
     if "sysID" in robot.name:
-        assert isinstance(sim.controller, MotorController)
+        # assert isinstance(sim.controller, MotorController)
         motor_name: List[str] = robot.active_joint_to_motor_name[jnt_name]
         # this joint has more than one corresponding motors, e.g. , waist_roll  -> waist_act_1, waist_act_2.
         if not len(motor_name) == 1:
@@ -604,19 +610,20 @@ def _optimize_for_one_jnt_with_multiple_episodes(*,
 
         motor_idx:int = robot.motor_name_ordering.index(motor_name[0])
 
-        initial_trial.update(
-            dict(
-                tau_max= sim.controller.tau_max[motor_idx],
-                q_dot_tau_max= sim.controller.q_dot_tau_max[motor_idx],
-                q_dot_max= sim.controller.q_dot_max[motor_idx],
-            )
-        )
+        # initial_trial.update(
+        #     dict(
+        #         tau_max= float(sim.controller.tau_max[motor_idx]),
+        #         q_dot_tau_max= float(sim.controller.q_dot_tau_max[motor_idx]),
+        #         q_dot_max=float(sim.controller.q_dot_max[motor_idx]),
+        #     )
+        # )
 
-    study.enqueue_trial(initial_trial)
+    # logger.info(f'study enqueue : {initial_trial=:}')
+    # study.enqueue_trial(initial_trial)
 
     objective = _build_objective(
         robot=robot,
-        sim=sim,
+        sim=None,  # sim,
         jnt_name=jnt_name,
         ep_list=ep_list,
         freq_max=freq_max,
@@ -633,7 +640,8 @@ def _optimize_for_one_jnt_with_multiple_episodes(*,
     study.optimize(
         objective,
         n_trials=n_iters,  # after optimize, study.trials will include `enqueued` trials.
-        n_jobs=1,
+        # TODO: parrallel possible when using a single Mujoco env?
+        n_jobs=12, # 8,  # 1,
         show_progress_bar=True,
         # callbacks=[partial(early_stop_check, early_stopping_rounds=early_stop_rounds)],
         callbacks=[early_stop_cb]
@@ -987,10 +995,12 @@ def _main(args: argparse.Namespace):
     """
 
     # data_path = Path("results") / f'{args.robot}_{args.policy}_real_world_{args.time_str} '
-    data_folder:Path = Path( RUN_POLICY_LOG_FOLDER_FMT.format(robot_name=args.robot,
-                                                      policy_name=args.policy,
-                                                      env_name='real_world',
-                                                      cur_time=args.time_str))
+    # data_folder:Path = Path( RUN_POLICY_LOG_FOLDER_FMT.format(robot_name=args.robot,
+    #                                                   policy_name=args.policy,
+    #                                                   env_name='real_world',
+    #                                                   cur_time=args.time_str))
+    data_folder: Path = Path(args.data_folder)
+
     step_record_file: Path = data_folder / RUN_STEP_RECORD_PICKLE_FILE
     kp_file: Path = data_folder/ RUN_EPISODE_MOTOR_KP_PICKLE_FILE #  .format(policy_name = args.policy)
 
@@ -1005,7 +1015,7 @@ def _main(args: argparse.Namespace):
     time_str = time.strftime('%Y%m%d_%H%M%S')
     exp_folder = Path(f'run_sysID/{exp_name}_{time_str}')
 
-    exp_folder.mkdir(exist_ok=True)
+    exp_folder.mkdir(parents=True, exist_ok=True)
 
     with open( exp_folder/'opt_config.json', 'wt') as _f:
         json.dump(vars(args), _f, indent=4)
@@ -1116,13 +1126,21 @@ def _args_parsing() -> argparse.Namespace:
         default=200,
         help="The number of iterations to early stop the optimization.",
     )
+    # parser.add_argument(
+    #     "--time-str",
+    #     type=str,
+    #     default="",
+    #     required=True,
+    #     dest='time_str',
+    #     help="The name of the run.",
+    # )
+
     parser.add_argument(
-        "--time-str",
+        "--data-folder",
         type=str,
         default="",
         required=True,
-        dest='time_str',
-        help="The name of the run.",
+        help="The name of the data folder.",
     )
 
     return parser.parse_args()
