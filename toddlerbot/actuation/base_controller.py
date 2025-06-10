@@ -21,7 +21,7 @@ class BaseController(ABC):
         pass
 
     @abstractmethod
-    def connect_to_client(self, timeout_ms: int):
+    def connect_to_client(self, usb_com_latency_timer_ms:int, timeout_ms: int):
         pass
 
     @abstractmethod

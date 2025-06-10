@@ -15,6 +15,9 @@ from .base_env import BaseEnv, Obs
 from .robot import Robot
 from ._module_logger import logger
 
+_DEFAULT_FEITE_ACCEL :float = 1.6 * np.pi
+_DEFAULT_FEITE_VEL :float = 1.4 * np.pi
+
 def _init_dynamixel_actuators(*, robot:Robot, executor: ThreadPoolExecutor)->Future:
     # from ..actuation.dynamixel_control import (
     #     DynamixelConfig,
@@ -121,6 +124,7 @@ def _init_feite_actuators(*, robot:Robot, executor: ThreadPoolExecutor)-> Option
     init_pos = np.asarray( [robot.motor_init_pos[_n] for _n in robot.motor_name_ordering], dtype=np.float32)
     assert len(init_pos) == len(feite_ids)
 
+    # value from config.json
     feite_config = FeiteConfig(
         port=feite_ports[0],
         baudrate=robot.config["general"]["feitei_baudrate"],
@@ -128,7 +132,10 @@ def _init_feite_actuators(*, robot:Robot, executor: ThreadPoolExecutor)-> Option
         kP=kP,
         kI=kI,
         kD=kD,
-        init_pos=init_pos,
+        # TODO> same for all till now.
+        default_accel=np.asarray([_DEFAULT_FEITE_ACCEL] * len(feite_ids), dtype=np.float32),
+        default_vel=np.asarray([_DEFAULT_FEITE_VEL] * len(feite_ids),dtype=np.float32),
+        init_goal_pos=init_pos,
         return_delay_us = 250,  #us. same as default EEPROM value of feite SM40BL.
     )
     return executor.submit(FeiteController,feite_config, feite_ids)
