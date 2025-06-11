@@ -352,12 +352,17 @@ def _sim_run_sysID_episode_helper(*, ep_list:List[_SysIDEpisodeData],
         # TODO: why not adjust joint pos in Mujoco at beginning of each episode ?
         # sim.set_motor_kps(dict(zip(motor_names, [kp] * len(motor_names))))
         sim.set_motor_kps(_ep.motor_kp )
-        logger.info(f'set jnt: {jnt_name} kp: {_ep.motor_kp}')
+        logger.info(f'start a new episode, set jnt: {jnt_name} kp: {_ep.motor_kp}')
 
         # for a in action:
         for _act in _ep.motor_act:
             obs = sim.get_observation(1)
             sim.set_motor_target(_act)
+
+            logger.info(f'mujoco sim motor pos: {obs.motor_pos}')
+            logger.info(f'set target act:{_act}')
+            time.sleep(1)
+
             sim.step()
 
             assert obs.joint_pos is not None
@@ -488,6 +493,8 @@ def _build_objective(*,
             f"{jnt_name} root mean squared error: {error}, fft error: {error_fft}."
             f"final error: {error + error_fft * 0.01 =:.3f} "
         )
+
+        sim.close()
         return error + error_fft * 0.01
 
     return objective
@@ -595,11 +602,16 @@ def _optimize_for_one_jnt_with_multiple_episodes(*,
         load_if_exists=True,
     )
 
-    # initial_trial = dict(
-    #     damping=float(sim.model.joint(jnt_name).damping[0]),
-    #     armature=float(sim.model.joint(jnt_name).armature[0]),
-    #     frictionloss=float(sim.model.joint(jnt_name).frictionloss[0]),
-    # )
+    initial_trial = dict(
+        damping=robot.config['joints'][jnt_name]['damping'],
+        armature=robot.config['joints'][jnt_name]['armature'],
+        frictionloss=robot.config['joints'][jnt_name]['frictionloss'],
+
+        # damping=float(sim.model.joint(jnt_name).damping[0]),
+        # armature=float(sim.model.joint(jnt_name).armature[0]),
+        # frictionloss=float(sim.model.joint(jnt_name).frictionloss[0]),
+    )
+
     if "sysID" in robot.name:
         # assert isinstance(sim.controller, MotorController)
         motor_name: List[str] = robot.active_joint_to_motor_name[jnt_name]
@@ -610,16 +622,22 @@ def _optimize_for_one_jnt_with_multiple_episodes(*,
 
         motor_idx:int = robot.motor_name_ordering.index(motor_name[0])
 
-        # initial_trial.update(
-        #     dict(
-        #         tau_max= float(sim.controller.tau_max[motor_idx]),
-        #         q_dot_tau_max= float(sim.controller.q_dot_tau_max[motor_idx]),
-        #         q_dot_max=float(sim.controller.q_dot_max[motor_idx]),
-        #     )
-        # )
+        initial_trial.update(
+            dict(
+                tau_max = robot.motor_tau_max[jnt_name],
+                q_dot_tau_max = robot.motor_q_dot_tau_max[jnt_name],
+                q_dot_max = robot.motor_q_dot_max[jnt_name],
 
-    # logger.info(f'study enqueue : {initial_trial=:}')
-    # study.enqueue_trial(initial_trial)
+                # tau_max= float(sim.controller.tau_max[motor_idx]),
+                # q_dot_tau_max= float(sim.controller.q_dot_tau_max[motor_idx]),
+                # q_dot_max=float(sim.controller.q_dot_max[motor_idx]),
+            )
+        )
+
+    logger.info(f'study enqueue : {initial_trial=:}')
+    time.sleep(3.)
+
+    study.enqueue_trial(initial_trial)
 
     objective = _build_objective(
         robot=robot,
@@ -641,7 +659,7 @@ def _optimize_for_one_jnt_with_multiple_episodes(*,
         objective,
         n_trials=n_iters,  # after optimize, study.trials will include `enqueued` trials.
         # TODO: parrallel possible when using a single Mujoco env?
-        n_jobs=12, # 8,  # 1,
+        n_jobs=1, # 12, # 8,  # 1,
         show_progress_bar=True,
         # callbacks=[partial(early_stop_check, early_stopping_rounds=early_stop_rounds)],
         callbacks=[early_stop_cb]
@@ -652,7 +670,7 @@ def _optimize_for_one_jnt_with_multiple_episodes(*,
         f"best value: {study.best_value}"
     )
 
-    sim.close()
+    # sim.close()
 
     return study.best_params, study.best_value
 
@@ -1150,7 +1168,8 @@ if __name__ == "__main__":
     _parsed_args = _args_parsing()
     # TODO: move into yaml config.
     config_logging(root_logger_level=logging.INFO, root_handler_level=logging.NOTSET,
-                   root_fmt='--- {levelname} - module:{module} - func:{funcName} ---> \n{message}',
+                   # root_fmt='--- {levelname} - module:{module} - func:{funcName} ---> \n{message}',
+                   root_fmt='--- {levelname} - module:{module} ---> \n{message}',
                    root_date_fmt='%Y-%m-%d %H:%M:%S',
                    # log_file='/tmp/toddler/imitate_episode.log',
                    log_file=None,
