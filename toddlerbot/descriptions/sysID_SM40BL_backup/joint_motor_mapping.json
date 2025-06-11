@@ -1,7 +1,7 @@
 {
     "joint_0": {
         "motor": "SM40BL",
-        "init_pos": 3.1415926,
+        "init_pos": 0.0,
         "default_pos": 0.0,
         "kp": 32.0,
         "ki": 0.0,

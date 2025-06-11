@@ -26,22 +26,22 @@
   
   <link name="sm40bl_mu_20190118">
     <inertial>
-      <origin xyz="0.0859302 1.5004e-11 0.0209496" rpy="0 0 0"/>
-      <mass value="0.544624"/>
-      <inertia ixx="0.000609139" ixy="1.05209e-13" ixz="-1.76479e-08" iyy="0.00103372" iyz="1.88524e-12" izz="0.000598089"/>
+      <origin xyz="0.0679425 2.90485e-11 0.0209492" rpy="0 0 0"/>
+      <mass value="0.236902"/>
+      <inertia ixx="0.000343673" ixy="3.29797e-14" ixz="-1.40372e-08" iyy="0.000499905" iyz="1.88524e-12" izz="0.000298438"/>
     </inertial>
     
     <visual>
-      <origin xyz="0.0859302 1.50041e-11 0.0209496" rpy="1.5708 -5.25809e-17 -3.14159"/>
+      <origin xyz="0.0679425 2.90485e-11 0.0209492" rpy="1.5708 -5.25809e-17 -3.14159"/>
       <geometry>
         <mesh filename="package:///meshes/sm40bl_mu_20190118_visual.stl"/>
       </geometry>
       <material name="sm40bl_mu_20190118_parts_material">
-        <color rgba="0.614787 0.725509 0.801025 1.0"/>
+        <color rgba="0.64664 0.655575 0.662099 1.0"/>
       </material>
     </visual>
     <collision>
-      <origin xyz="0.0859302 1.50041e-11 0.0209496" rpy="1.5708 -5.25809e-17 -3.14159"/>
+      <origin xyz="0.0679425 2.90485e-11 0.0209492" rpy="1.5708 -5.25809e-17 -3.14159"/>
       <geometry>
         <mesh filename="package:///meshes/sm40bl_mu_20190118_collision.stl"/>
       </geometry>

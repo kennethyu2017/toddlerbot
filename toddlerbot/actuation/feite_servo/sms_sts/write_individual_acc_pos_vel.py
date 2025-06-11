@@ -44,9 +44,10 @@ def _main():
             time.sleep(.5)
             # Servo (ID1) runs at a maximum speed of V=60 * 0.732=43.92rpm
             # and an acceleration of A=50 * 8.7deg/s ^ 2 until it reaches position P1=4095
-            TARGET_ACC_RADIUS: float = 5.0  # 7.5
-            TARGET_VEL_RADIUS: float = 4.5
-            TARGET_POS_RADIUS: float = 2 * pi * .99
+            TARGET_ACC_RADIUS: float = 3.0 #   5.0  # 7.5
+            TARGET_VEL_RADIUS: float = 2.0 #  4.5
+
+            TARGET_POS_RADIUS: float = 0.7 * pi
 
             # comm_result, error = packet_handler.WritePosEx(1, 4095, 60, 50)
             write_acc_pos_vel_helper(writer=packet_handler,
@@ -64,7 +65,8 @@ def _main():
             # Servo (ID1) runs at a maximum speed of V=60 * 0.732=43.92rpm and an acceleration of A=50 * 8.7deg/s ^ 2 until P0=0 position
             # scs_comm_result, scs_error = packet_handler.WritePosEx(1, 0, 60, 50)
 
-            TARGET_POS_RADIUS = 0.
+            TARGET_POS_RADIUS = 1.3 * pi
+
             write_acc_pos_vel_helper(writer=packet_handler,
                                       motor_id=MOTOR_ID,
                                       acc_radius=TARGET_ACC_RADIUS,

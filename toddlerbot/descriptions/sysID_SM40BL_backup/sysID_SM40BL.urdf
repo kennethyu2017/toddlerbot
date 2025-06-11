@@ -1,0 +1,56 @@
+<robot name="sysID_SM40BL">
+  <mujoco>
+    <compiler strippath="false" balanceinertia="true" discardvisual="false" />
+  </mujoco>
+  <link name="mount_sm40bl">
+    <inertial>
+      <origin xyz="0.061853 0.0904812 0.072305" rpy="0 0 0" />
+      <mass value="0.113746" />
+      <inertia ixx="8.41104e-05" ixy="-1.98862e-05" ixz="-6.81899e-08" iyy="4.31852e-05" iyz="-3.30358e-08" izz="0.000109658" />
+    </inertial>
+    <visual>
+      <origin xyz="0.061853 0.0904812 0.072305" rpy="0 -0 0" />
+      <geometry>
+        <mesh filename="../assemblies/使用长U支架_SM40BL_sysID_assembly/meshes/mount_sm40bl_visual.stl" />
+      </geometry>
+      <material name="mount_sm40bl_parts_material">
+        <color rgba="0.597754 0.750234 0.577238 1.0" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0.061853 0.0904812 0.072305" rpy="0 -0 0" />
+      <geometry>
+        <mesh filename="../assemblies/使用长U支架_SM40BL_sysID_assembly/meshes/mount_sm40bl_collision.stl" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="sm40bl_mu_20190118">
+    <inertial>
+      <origin xyz="0.0859302 -4.80375e-17 0.0209496" rpy="0 0 0" />
+      <mass value="0.544624" />
+      <inertia ixx="0.000609139" ixy="1.59259e-19" ixz="-1.76478e-08" iyy="0.000602169" iyz="-1.88626e-12" izz="0.00102964" />
+    </inertial>
+    <visual>
+      <origin xyz="0.0859302 -1.38778e-17 0.0209496" rpy="1.5708 -6.12323e-17 -3.14159" />
+      <geometry>
+        <mesh filename="../assemblies/使用长U支架_SM40BL_sysID_assembly/meshes/sm40bl_mu_20190118_visual.stl" />
+      </geometry>
+      <material name="sm40bl_mu_20190118_parts_material">
+        <color rgba="0.614787 0.725509 0.801025 1.0" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0.0859302 -1.38778e-17 0.0209496" rpy="1.5708 -6.12323e-17 -3.14159" />
+      <geometry>
+        <mesh filename="../assemblies/使用长U支架_SM40BL_sysID_assembly/meshes/sm40bl_mu_20190118_collision.stl" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="joint_0" type="revolute">
+    <origin xyz="0.0470055 0.0647694 0.0722778" rpy="1.5708 3.06162e-16 3.14159" />
+    <parent link="mount_sm40bl" />
+    <child link="sm40bl_mu_20190118" />
+    <axis xyz="0 0 1" />
+    <limit effort="10" velocity="10" lower="-1.5708" upper="1.5708" />
+  </joint>
+</robot>

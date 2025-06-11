@@ -76,11 +76,13 @@ while [[ $# -gt 0 ]]; do
             DOC_ID_LIST='4eead3e2f69aeca38dc2c804'
             WORKSPACE_ID_LIST='b0a9fe02cd9deb301fa36b12'
             # BODY_NAME should be the assembly name.
-            BODY_NAME="使用长U支架_SM40BL_sysID_assembly"
+#            BODY_NAME="使用长U支架_SM40BL_sysID_assembly"
+            BODY_NAME="使用长U支架_No_BATTERY_NO_CAP_SM40BL_sysID_assembly"
             #  TODO: make use of element_id.
             #ELEMENT_ID_LIST=...
-#            ASSEMBLY_LIST='使用长U支架_SM40BL_sysID_assembly 仅带长U型支架_SM40BL_Actuator_Sub_Assembly'
-            ASSEMBLY_LIST='使用长U支架_SM40BL_sysID_assembly'
+#           ASSEMBLY_LIST='使用长U支架_SM40BL_sysID_assembly 仅带长U型支架_SM40BL_Actuator_Sub_Assembly'
+#           ASSEMBLY_LIST='使用长U支架_SM40BL_sysID_assembly'
+            ASSEMBLY_LIST="使用长U支架_No_BATTERY_NO_CAP_SM40BL_sysID_assembly"
             ;;
             *)
             echo -e "${YELLOW}Unknown robot name: $ROBOT_NAME.${NC}"

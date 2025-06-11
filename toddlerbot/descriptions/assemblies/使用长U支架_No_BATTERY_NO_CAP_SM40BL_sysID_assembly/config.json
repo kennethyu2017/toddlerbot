@@ -1,0 +1,10 @@
+{
+    "document_id": "4eead3e2f69aeca38dc2c804",
+    "workspace_id": "b0a9fe02cd9deb301fa36b12",
+    "output_format": "urdf",
+    "assembly_name": "\u4f7f\u7528\u957fU\u652f\u67b6_No_BATTERY_NO_CAP_SM40BL_sysID_assembly",
+    "robot_name": "sysID_SM40BL",
+    "merge_stls": "all",
+    "simplify_stls": "all",
+    "max_stl_size": 1
+}

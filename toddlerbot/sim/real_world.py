@@ -15,7 +15,7 @@ from .base_env import BaseEnv, Obs
 from .robot import Robot
 from ._module_logger import logger
 
-_DEFAULT_FEITE_ACCEL :float =  5 * np.pi #  1.6 * np.pi
+_DEFAULT_FEITE_ACCEL :float =   5 * np.pi #
 _DEFAULT_FEITE_VEL :float =  2.5 * np.pi # 75rpm.    #/ 4 * np.pi  #1.4 * np.pi
 
 def _init_dynamixel_actuators(*, robot:Robot, executor: ThreadPoolExecutor)->Future:
