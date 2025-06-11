@@ -19,8 +19,8 @@
             "is_passive": false,
             "transmission": "none",
             "group": "none",
-            "lower_limit": -1.5708,
-            "upper_limit": 1.5708,
+            "lower_limit": -1.570795,
+            "upper_limit": 1.570795,
             "id": 0,
             "type": "feite",
             "spec": "SM40BL",
@@ -39,7 +39,7 @@
             "frictionloss": 0.935,
             "tau_max": 1.08,
             "q_dot_tau_max": 4.15,
-            "q_dot_max": 7.0
+            "q_dot_max": 5.7
         }
     }
 }

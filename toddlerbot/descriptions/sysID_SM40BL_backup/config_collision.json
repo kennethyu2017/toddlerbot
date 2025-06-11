@@ -1,8 +1,8 @@
 {
-    "sm40bl_mu_20190118": {
+    "mount_sm40bl": {
         "has_collision": false
     },
-    "mount_sm40bl": {
+    "sm40bl_mu_20190118": {
         "has_collision": false
     }
 }

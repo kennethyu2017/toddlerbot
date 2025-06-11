@@ -207,6 +207,8 @@ class SysIDPolicy(BasePolicy, policy_name="sysID"):
         super().__init__(name, robot, init_motor_pos)
         set_seed(0)
 
+        self._start_step :bool = False
+
         # self.prep_duration = 2.0   # 2 sec.
         # _WARM_UP_DURATION = 2.0
         # _SIGNAL_DURATION = 10.0
@@ -599,9 +601,22 @@ class SysIDPolicy(BasePolicy, policy_name="sysID"):
         Returns:
             Tuple[Dict[str, float], npt.NDArray[np.float32]]: A tuple containing an empty dictionary and the interpolated action as a NumPy array.
         """
+
         action = np.asarray(
             interpolate_action(obs.time, self._sysID_time_seq, self._sysID_motor_act_seq)
         )
+
+        # check at 1st step:
+        if not self._start_step:
+            choice:str = input(f'===> Pls confirm whether start step: current pos (normalized): {obs.motor_pos} ,'
+                           f'action target pos: {action},'
+                           f'check whether the load box position is safe, and confirm to action [y/n] : ')
+            if choice.casefold() == 'n':
+                exit(f'Abort policy step....')
+                # raise AssertionError(f'abort policy step.')
+
+            self._start_step = True
+
         return {}, action
 
 

@@ -8,6 +8,8 @@ from collections import OrderedDict
 
 import numpy as np
 
+from toddlerbot.actuation.feite_servo.scservo_sdk import SMS_STS_DEFAULT_BAUD_RATE
+
 
 _DYNAMIXEL_DEFAULT_KP_CASEFOLD :Dict[str, float] = {'2xc430':2100.,
                                                     '2xl430': 2100.,
@@ -40,8 +42,7 @@ def _build_general_config(urdf_root: ET.Element, robot_name: str)->OrderedDict[s
 
         "dynamixel_baudrate": dynamixel_baud * 1000000,
         # TODO:  use 1Mbps, or 115200 for feite
-        "feitei_baudrate": feite_baud * 1000000,
-        # "feitei_baudrate": feite_baud * 115200,  # default for SMS/STS series.,
+        "feitei_baudrate": feite_baud * SMS_STS_DEFAULT_BAUD_RATE,  # 115200,  # default for SMS/STS series.,
         "solref": [0.004, 1],
     } )
 
@@ -223,14 +224,24 @@ def _parse_dynamics(*, robot_name: str,
         elif "sysID" in robot_name:
             # default to zero.
             joint_dict_dyn_part.update({
-                "damping": 0.0,
-                "armature": 0.0,
-                "frictionloss": 0.0,
-                # TODO: value in range of corresponding trial, see
-                # _optimize_for_one_jnt_with_multiple_episodes() in sysID_opt.py
-                "tau_max": 0.5,
-                "q_dot_tau_max": 2.0,
+                # # TODO: as initial trial in sysID opt ( optuna ). value in range of corresponding trial, see
+                # # _optimize_for_one_jnt_with_multiple_episodes() in sysID_opt.py
+
+                "damping": 0.262,
+                "armature": 0.0099,
+                "frictionloss": 0.935,
+                "tau_max": 1.08,
+                "q_dot_tau_max": 4.15,
                 "q_dot_max": 7.0,
+
+                # "damping": 0.0,
+                # "armature": 0.0,
+                # "frictionloss": 0.0,
+                # # TODO: value in range of corresponding trial, see
+                # # _optimize_for_one_jnt_with_multiple_episodes() in sysID_opt.py
+                # "tau_max": 0.5,
+                # "q_dot_tau_max": 2.0,
+                # "q_dot_max": 7.0,
                  }
             )
 
@@ -504,7 +515,10 @@ def _build_joint_motor_mapping(robot_cfg_dir: Path, robot_name: str  )->OrderedD
         joint_motor_mapping = OrderedDict(
             # joint_0 = {"motor": str(args.robot_name.split("_")[-1]), "init_pos": 0.0}
             joint_0={"motor": mtr_model,
-                     "init_pos": 0.0,  # will be updated during calibrate_zero.
+
+                     # TODO: for feite actuator, set `pi` as the middle position and init pos.
+                     "init_pos":  3.1415926 if mtr_model.casefold() in _FEITE_DEFAULT_KP_CASEFOLD else 0.0,  # will be updated during calibrate_zero.
+
                      "default_pos": 0.0,
                      "kp": _default_kp,
                      "ki": 0.0,

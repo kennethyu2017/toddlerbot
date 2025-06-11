@@ -1,0 +1,35 @@
+<?xml version="1.0" ?>
+<mujoco model="sysID_SM40BL">
+  <compiler angle="radian" autolimits="true"/>
+  <asset>
+    <mesh name="mount_sm40bl_visual" file="../assemblies/使用长U支架_SM40BL_sysID_assembly/meshes/mount_sm40bl_visual.stl"/>
+    <mesh name="sm40bl_mu_20190118_visual" file="../assemblies/使用长U支架_SM40BL_sysID_assembly/meshes/sm40bl_mu_20190118_visual.stl"/>
+  </asset>
+  <worldbody>
+    <geom pos="0.061853 0.0606422 0.0785395" quat="1 0 0 0" type="mesh" rgba="0.597754 0.750234 0.577238 1" mesh="mount_sm40bl_visual" class="visual"/>
+    <body name="sm40bl_mu_20190118" pos="0.0470055 0.0606694 0.0528278" quat="1 0 0 0">
+      <inertial pos="-1.18458e-11 0.0859302 0.0209496" quat="1 -0.00079854 0 0" mass="0.544624" diaginertia="0.00103372 0.000609139 0.000598089"/>
+      <joint name="joint_0" pos="0 0 0" axis="0 0 1" range="0 3.14159" damping="0.0" armature="0.0" frictionloss="0.0"/>
+      <geom pos="-1.18458e-11 0.0859302 0.0209496" quat="1 0 0 0" type="mesh" rgba="0.614787 0.725509 0.801025 1" mesh="sm40bl_mu_20190118_visual" class="visual"/>
+    </body>
+  </worldbody>
+  <option>
+    <flag eulerdamp="disable"/>
+  </option>
+  <equality/>
+  <contact/>
+  <actuator>
+    <position name="joint_0" joint="joint_0" kp="32.0" ctrlrange="0 3.14159" class="SM40BL"/>
+  </actuator>
+  <default>
+    <default class="visual">
+      <geom type="mesh" contype="0" conaffinity="0" group="2"/>
+    </default>
+    <default class="collision">
+      <geom group="3"/>
+    </default>
+    <default class="SM40BL">
+      <position forcerange="-4 4"/>
+    </default>
+  </default>
+</mujoco>

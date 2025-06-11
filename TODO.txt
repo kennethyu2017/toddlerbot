@@ -90,6 +90,7 @@ action will not interfere against the sysID motors ?
 36. config.json we manually set "lower_limit": -1.570795,  "upper_limit": 1.570795, but then should come from
  urdf and add_configs, but it is 0 ~ pi in urdf, should modify from onshape.
 
+37. for motor , the `init_pos ` should be the `mid-position` of real motor range, so we can limit qpos as [-pi/2, pi/2].
 
 
 

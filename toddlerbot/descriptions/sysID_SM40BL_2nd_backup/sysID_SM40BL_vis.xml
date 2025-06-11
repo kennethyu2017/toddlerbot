@@ -2,15 +2,15 @@
 <mujoco model="sysID_SM40BL">
   <compiler angle="radian" autolimits="true"/>
   <asset>
-    <mesh name="mount_sm40bl_visual" content_type="model/stl" file="../assemblies/使用长U支架_No_BATTERY_NO_CAP_SM40BL_sysID_assembly/meshes/mount_sm40bl_visual.stl"/>
-    <mesh name="sm40bl_mu_20190118_visual" content_type="model/stl" file="../assemblies/使用长U支架_No_BATTERY_NO_CAP_SM40BL_sysID_assembly/meshes/sm40bl_mu_20190118_visual.stl"/>
+    <mesh name="mount_sm40bl_visual" content_type="model/stl" file="../assemblies/使用长U支架_SM40BL_sysID_assembly/meshes/mount_sm40bl_visual.stl"/>
+    <mesh name="sm40bl_mu_20190118_visual" content_type="model/stl" file="../assemblies/使用长U支架_SM40BL_sysID_assembly/meshes/sm40bl_mu_20190118_visual.stl"/>
   </asset>
   <worldbody>
     <geom pos="0.061853 0.0904812 0.072305" quat="1 0 0 0" type="mesh" rgba="0.597754 0.750234 0.577238 1" mesh="mount_sm40bl_visual" class="visual"/>
     <body name="sm40bl_mu_20190118" pos="0.0470055 0.0647694 0.0722778" quat="9.38184e-07 9.38187e-07 0.707108 0.707105">
-      <inertial pos="0.0679425 2.90485e-11 0.0209492" quat="0.707107 0.000109714 0.000109714 0.707107" mass="0.236902" diaginertia="0.000499905 0.000343673 0.000298438"/>
-      <joint name="joint_0" pos="0 0 0" axis="0 0 1" range="-1.5708 1.5708" damping="0.262" armature="0.0099" frictionloss="0.935"/>
-      <geom pos="0.0679425 2.90485e-11 0.0209492" quat="9.38184e-07 9.38187e-07 -0.707108 -0.707105" type="mesh" rgba="0.64664 0.655575 0.662099 1" mesh="sm40bl_mu_20190118_visual" class="visual"/>
+      <inertial pos="0.0859302 1.5004e-11 0.0209496" quat="0.707107 0.000564656 0.000564656 0.707107" mass="0.544624" diaginertia="0.00103372 0.000609139 0.000598089"/>
+      <joint name="joint_0" pos="0 0 0" axis="0 0 1" range="-1.5708 1.5708" damping="0.0" armature="0.0" frictionloss="0.0"/>
+      <geom pos="0.0859302 1.50041e-11 0.0209496" quat="9.38184e-07 9.38187e-07 -0.707108 -0.707105" type="mesh" rgba="0.614787 0.725509 0.801025 1" mesh="sm40bl_mu_20190118_visual" class="visual"/>
     </body>
   </worldbody>
   <option>
