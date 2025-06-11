@@ -407,7 +407,7 @@ def add_default_settings(
              "XL430":2,
              "2XL430":2,
              "XC330":1,
-             'SM40BL':4 }.items()) :
+             'SM40BL':3.9 }.items()) :
         # TODO: keep same value as () in _optimize_for_one_jnt_with_multiple_episodes() in sysID_opt.py
 
         has_motor = False

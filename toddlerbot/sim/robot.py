@@ -65,7 +65,7 @@ class _RobotCfgData:
     config: Mapping[str, Any] = None
     collision_config: Mapping[str, Any] = None
 
-    # TODO: motor params.integrate into one struct.
+    # TODO: motor joint params.integrate into one struct.
     motor_type: OrderedDict[str, str] = field(default_factory=OrderedDict)
     motor_control_mode: OrderedDict[str, str] = field(default_factory=OrderedDict)
 

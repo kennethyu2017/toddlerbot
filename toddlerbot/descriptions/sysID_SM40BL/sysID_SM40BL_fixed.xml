@@ -29,7 +29,7 @@
       <geom group="3"/>
     </default>
     <default class="SM40BL">
-      <motor ctrlrange="-4 4"/>
+      <motor ctrlrange="-3.9 3.9"/>
     </default>
   </default>
 </mujoco>

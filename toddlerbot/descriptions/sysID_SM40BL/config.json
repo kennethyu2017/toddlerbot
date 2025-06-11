@@ -34,12 +34,12 @@
             "kff1_real": 0.0,
             "kp_sim": 32.0,
             "kd_sim": 0.0,
-            "damping": 0.0,
-            "armature": 0.0,
-            "frictionloss": 0.0,
-            "tau_max": 0.5,
-            "q_dot_tau_max": 2.0,
-            "q_dot_max": 7.0
+            "damping": 0.262,
+            "armature": 0.0099,
+            "frictionloss": 0.935,
+            "tau_max": 1.08,
+            "q_dot_tau_max": 4.15,
+            "q_dot_max": 5.7
         }
     }
 }
