@@ -106,8 +106,10 @@ _USB_COM_PORT_LATENCY_TIMER_MS = 5
 
 # set USB COM port latency timer:
 # on linux, default usb-serial latency timer is 16ms, too large for multicore CPU, so we reduce it to 5ms.
-def _set_usb_com_latency_timer(*, device_name: str, latency_ms: int):
-    assert  0 < latency_ms <= 16
+def _set_usb_com_latency_timer(*, port_name: str, latency_ms: int):
+    assert 0 < latency_ms <= 16
+
+    device_name : str = port_name.split('/')[-1]
     os_type = sys.platform.casefold()
     sh_cmd = ''
 
@@ -253,7 +255,7 @@ class FeiteController(BaseController):
             ConnectionError: If the connection to the Feite port fails.
         """
 
-        _set_usb_com_latency_timer(device_name=self.config.port.split('/')[-1],
+        _set_usb_com_latency_timer(port_name=self.config.port,
                                    latency_ms=usb_com_latency_timer_ms)
 
         try:

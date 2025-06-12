@@ -15,6 +15,8 @@ from toddlerbot.actuation.feite_servo.scservo_sdk import (PortHandler,SMS_STS_DE
                                                           signed_to_proto_param_bytes_v2,
                                                           CommResult, )
 
+from toddlerbot.actuation.feite_control import _set_usb_com_latency_timer
+
 # define constants.
 URT_1_DEV_NAME : str = r'/dev/ttyUSB0'
 MOTOR_ID_SET: Set[int] = {0}
@@ -128,6 +130,8 @@ def _input_int_value_helper(*, legal_set: range | Set[int], illegal_sentinel: in
 
 
 def _main():
+
+    _set_usb_com_latency_timer(port_name=URT_1_DEV_NAME, latency_ms=5)
 
     # Initialize PortHandler instance
     # Set the port path
