@@ -434,7 +434,9 @@ class MuJoCoSim(BaseEnv, env_name="mujoco"):
 
             elif self.robot.motor_type[_name].casefold() == 'feite':
                 # TODO: for feite actuator, not divide 128. maybe need some co-eff after sysID?
-                write_kp = _kp
+                # assert write_kp > 41
+                # write_kp = _kp
+                write_kp = _kp / 41.
 
             else:
                 write_kp = _kp

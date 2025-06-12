@@ -347,7 +347,8 @@ def _parse_motor_mapping(*, jnt_name: str,
         joint_dict_mtr_part["kp_sim"] = mtr_param["kp"] / 128.
 
     elif joint_dict_mtr_part["type"] == "feite":
-        joint_dict_mtr_part["kp_sim"] = mtr_param["kp"]
+        # TODO> add temply. for trial.
+        joint_dict_mtr_part["kp_sim"] = mtr_param["kp"] / 41.
 
     else:
         raise ValueError(f'motor type error: {joint_dict_mtr_part["type"]} ')
