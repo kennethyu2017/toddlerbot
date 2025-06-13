@@ -34,7 +34,7 @@ from toddlerbot.policies._module_logger import logger
 
 # import from ./__init__.py
 from toddlerbot.policies import (RUN_EPISODE_MOTOR_KP_PICKLE_FILE,RUN_STEP_RECORD_PICKLE_FILE,
-               RUN_POLICY_LOG_FOLDER_FMT,StepRecord)
+               RUN_POLICY_LOG_FOLDER_FMT,StepRecord,get_ep_trajectory_stat)
 
 
 class _ModuleAndClsName(NamedTuple):
@@ -149,6 +149,7 @@ def _plot_loop_time_helper(step_record_list: List[StepRecord], plot_dir: Path):
 
 
 def _plot_obs_helper(*, robot: Robot,
+                     policy:BasePolicy,
                      time_obs_list: List[float],
                      ang_vel_obs_list: List[npt.NDArray[np.float32]],
                      euler_obs_list: List[npt.NDArray[np.float32]],
@@ -164,39 +165,40 @@ def _plot_obs_helper(*, robot: Robot,
             save_path=plot_dir.resolve().__str__(),
         )
 
-    plot_line_graph(
-        tor_obs_total_list,
-        time_obs_list,
-        legend_labels=["Torque (Nm) or Current (mA)"],
-        title="Total Torque or Current  Over Time",
-        x_label="Time (s)",
-        y_label="Torque (Nm) or Current (mA)",
-        save_config=True,
-        save_path=plot_dir.resolve().__str__(),
-        file_name="total_tor_tracking",
-    )()
-    plot_line_graph(
-        np.array(ang_vel_obs_list).T,
-        time_obs_list,
-        legend_labels=["Roll (X)", "Pitch (Y)", "Yaw (Z)"],
-        title="Angular Velocities Over Time",
-        x_label="Time (s)",
-        y_label="Angular Velocity (rad/s)",
-        save_config=True,
-        save_path=plot_dir.resolve().__str__(),
-        file_name="ang_vel_tracking",
-    )()
-    plot_line_graph(
-        np.array(euler_obs_list).T,
-        time_obs_list,
-        legend_labels=["Roll (X)", "Pitch (Y)", "Yaw (Z)"],
-        title="Euler Angles Over Time",
-        x_label="Time (s)",
-        y_label="Euler Angles (rad)",
-        save_config=True,
-        save_path=plot_dir.resolve().__str__(),
-        file_name="euler_tracking",
-    )()
+    else:
+        plot_line_graph(
+            tor_obs_total_list,
+            time_obs_list,
+            legend_labels=["Torque (Nm) or Current (mA)"],
+            title="Total Torque or Current  Over Time",
+            x_label="Time (s)",
+            y_label="Torque (Nm) or Current (mA)",
+            save_config=True,
+            save_path=plot_dir.resolve().__str__(),
+            file_name="total_tor_tracking",
+        )()
+        plot_line_graph(
+            np.array(ang_vel_obs_list).T,
+            time_obs_list,
+            legend_labels=["Roll (X)", "Pitch (Y)", "Yaw (Z)"],
+            title="Angular Velocities Over Time",
+            x_label="Time (s)",
+            y_label="Angular Velocity (rad/s)",
+            save_config=True,
+            save_path=plot_dir.resolve().__str__(),
+            file_name="ang_vel_tracking",
+        )()
+        plot_line_graph(
+            np.array(euler_obs_list).T,
+            time_obs_list,
+            legend_labels=["Roll (X)", "Pitch (Y)", "Yaw (Z)"],
+            title="Euler Angles Over Time",
+            x_label="Time (s)",
+            y_label="Euler Angles (rad)",
+            save_config=True,
+            save_path=plot_dir.resolve().__str__(),
+            file_name="euler_tracking",
+        )()
 
     # if len(control_inputs_dict) > 0:
     #     plot_path_tracking(
@@ -209,6 +211,7 @@ def _plot_obs_helper(*, robot: Robot,
 
 
 def _plot_action_helper(*, robot:Robot,
+                        policy:BasePolicy,
                         time_seq_dict: Dict[str, List[float]],
                         time_seq_ref_dict: Dict[str, List[float]],
                         motor_pos_dict: Dict[str, List[float]],
@@ -225,18 +228,6 @@ def _plot_action_helper(*, robot:Robot,
         robot.joint_cfg_limits,
         save_path=plot_dir.resolve().__str__(),
     )
-    plot_joint_tracking_single(
-        time_seq_dict,
-        motor_tor_dict,
-        save_path=plot_dir.resolve().__str__(),
-        y_label="Torque (Nm) or Current (mA)",
-        file_name="motor_tor_tracking",
-    )
-    plot_joint_tracking_single(
-        time_seq_dict,
-        motor_vel_dict,
-        save_path=plot_dir.resolve().__str__(),
-    )
     plot_joint_tracking_frequency(
         time_seq_dict,
         time_seq_ref_dict,
@@ -245,9 +236,70 @@ def _plot_action_helper(*, robot:Robot,
         save_path=plot_dir.resolve().__str__(),
     )
 
+    # plot vel/acc tracking for sysID.
+    if 'sysID' in robot.name:
+        target_acc_arr, acc_time_arr, target_vel_arr, vel_time_arr = get_ep_trajectory_stat(policy=policy)
+        logger.info(f'{target_acc_arr.shape=:} {acc_time_arr.shape=:}'
+                    f' {target_vel_arr.shape=:} {vel_time_arr.shape=:}')
+
+        target_acc_dict: OrderedDict[str,np.ndarray[np.float32]] = OrderedDict()
+        acc_time_dict: OrderedDict[str, np.ndarray[np.float32]] = OrderedDict()
+
+        target_vel_dict: OrderedDict[str,np.ndarray[np.float32]] = OrderedDict()
+        vel_time_dict: OrderedDict[str, np.ndarray[np.float32]] = OrderedDict()
+
+        # should be (time_seq_len-1/-2, num_of_motors)
+        assert target_acc_arr.shape[1] == len(robot.motor_name_ordering)
+        assert target_vel_arr.shape[1] == len(robot.motor_name_ordering)
+
+        for _x, _n in enumerate(robot.motor_name_ordering):
+            target_acc_dict[_n] = target_acc_arr[:,_x]
+            acc_time_dict[_n] = acc_time_arr
+            target_vel_dict[_n] = target_vel_arr[:,_x]
+            vel_time_dict[_n] = vel_time_arr
+
+        plot_joint_tracking(
+            vel_time_dict,
+            vel_time_dict,
+            motor_vel_dict,
+            target_vel_dict,
+            joint_limits=None,
+            x_label = "Time (s)",
+            y_label = "Vel (rad/s)",
+            file_name = "motor_vel_tracking",
+            line_suffix = ["_obs_vel", "_target_vel"],
+            set_ylim=False,
+            save_path=plot_dir.resolve().__str__(),
+        )
+
+        # TODO: plot acc tracking:
+        # calc motor acc:
+        vel_diff = np.diff(target_vel, n=1, axis=0)
+        # rad/s**2
+        target_acc = (vel_diff.transpose() / time_diff[1:]).transpose()
+        # round per s**2
+        target_acc_rps2 = target_acc / (2 * np.pi)
+
+    # if 'sysID' not in robot.name:
+    if True:
+        plot_joint_tracking_single(
+            time_seq_dict,
+            motor_tor_dict,
+            save_path=plot_dir.resolve().__str__(),
+            y_label="Torque (Nm) or Current (mA)",
+            file_name="motor_tor_tracking",
+        )
+
+        # plot_joint_tracking_single(
+        #     time_seq_dict,
+        #     motor_vel_dict,
+        #     save_path=plot_dir.resolve().__str__(),
+        # )
+
 
 def _plot_run_log(
     robot: Robot,
+    policy:BasePolicy,
     step_record_list: List[StepRecord],
     # loop_time_list: List[List[float]],
     # obs_list: List[Obs],
@@ -271,7 +323,8 @@ def _plot_run_log(
     if not plot_dir.exists():
         plot_dir.mkdir()
 
-    _plot_loop_time_helper(step_record_list, plot_dir)
+    if 'sysID' not in robot.name:
+        _plot_loop_time_helper(step_record_list, plot_dir)
 
     time_obs_list: List[float] = []
     # lin_vel_obs_list: List[npt.NDArray[np.float32]] = []
@@ -356,6 +409,17 @@ def _plot_run_log(
             ctrl_inputs_dict[_n].append(_c)
 
 
+    _plot_action_helper(robot=robot,
+                        policy=policy,
+                        time_seq_dict=time_seq_dict,
+                        time_seq_ref_dict=time_seq_ref_dict,
+                        motor_pos_dict=motor_pos_dict,
+                        motor_vel_dict=motor_vel_dict,
+                        motor_tor_dict=motor_tor_dict,
+                        action_dict=action_dict,
+                        plot_dir=plot_dir)
+
+
     _plot_obs_helper(robot=robot,
                      time_obs_list=time_obs_list,
                      ang_vel_obs_list=ang_vel_obs_list,
@@ -365,14 +429,7 @@ def _plot_run_log(
                      motor_tor_dict=motor_tor_dict,
                      plot_dir=plot_dir)
 
-    _plot_action_helper(robot=robot,
-                        time_seq_dict=time_seq_dict,
-                        time_seq_ref_dict=time_seq_ref_dict,
-                        motor_pos_dict=motor_pos_dict,
-                        motor_vel_dict=motor_vel_dict,
-                        motor_tor_dict=motor_tor_dict,
-                        action_dict=action_dict,
-                        plot_dir=plot_dir)
+
 
     # plt.switch_backend("Agg")
     #

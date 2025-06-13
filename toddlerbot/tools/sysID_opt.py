@@ -524,12 +524,19 @@ def _optimize_for_one_jnt_with_multiple_episodes(*,
                                                  sampler_name: str = "CMA",
                                                  # gain_range: Tuple[float, float, float] = (0, 50, 0.1),
 
-                                                 damping_range: Tuple[float, float, float] = (0.0, 0.5, 1e-3),
-                                                 armature_range: Tuple[float, float, float] = (0.0, 0.01, 1e-4),
-                                                 frictionloss_range: Tuple[float, float, float] = (0.0, 1.0, 1e-3),
+                                                 # damping_range: Tuple[float, float, float] = (0.0, 0.5, 1e-3),
+                                                 # armature_range: Tuple[float, float, float] = (0.0, 0.01, 1e-4),
+                                                 # frictionloss_range: Tuple[float, float, float] = (0.0, 1.0, 1e-3),
+                                                 # q_dot_tau_max_range: Tuple[float, float, float] = (0.0, 5.0, 1e-2),
+                                                 # q_dot_max_range: Tuple[float, float, float] = (5.0, 10.0, 1e-1),
 
-                                                 q_dot_tau_max_range: Tuple[float, float, float] = (0.0, 5.0, 1e-2),
-                                                 q_dot_max_range: Tuple[float, float, float] = (5.0, 10.0, 1e-1),
+                                                 #TODO: temply try:
+                                                 damping_range: Tuple[float, float, float] = (0.0, 5.0, 1e-1),
+                                                 armature_range: Tuple[float, float, float] = (0.0, 5.0, 1e-1),
+                                                 frictionloss_range: Tuple[float, float, float] = (0.0, 5.0, 1e-1),
+
+                                                 q_dot_tau_max_range: Tuple[float, float, float] = (1.0, 10.0, 1e-1),
+                                                 q_dot_max_range: Tuple[float, float, float] = (1.0, 30.0, 1e-1),
 
                                                  ) -> Tuple[Dict[str, float], float]:
     """Optimize the parameters of a robot joint using simulation and Optuna.
@@ -640,10 +647,11 @@ def _optimize_for_one_jnt_with_multiple_episodes(*,
             )
         )
 
-    logger.info(f'study enqueue : {initial_trial=:}')
+    logger.info(f'--- study enqueue : {initial_trial=:} ---')
     time.sleep(3.)
 
-    study.enqueue_trial(initial_trial)
+    TODO: temply disable.
+    # study.enqueue_trial(initial_trial)
 
     objective = _build_objective(
         robot=robot,

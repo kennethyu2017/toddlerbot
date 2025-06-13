@@ -15,8 +15,8 @@ from .base_env import BaseEnv, Obs
 from .robot import Robot
 from ._module_logger import logger
 
-_DEFAULT_FEITE_ACCEL :float =   5 * np.pi #
-_DEFAULT_FEITE_VEL :float =  2.5 * np.pi # 75rpm.    #/ 4 * np.pi  #1.4 * np.pi
+_DEFAULT_FEITE_ACCEL :float = 12 * np.pi   #  7 * np.pi   #5 * np.pi #
+_DEFAULT_FEITE_VEL :float = 3 * np.pi  # 2.5 * np.pi # 75rpm.    #/ 4 * np.pi  #1.4 * np.pi
 
 def _init_dynamixel_actuators(*, robot:Robot, executor: ThreadPoolExecutor)->Future:
     # from ..actuation.dynamixel_control import (
@@ -360,6 +360,7 @@ class RealWorld(BaseEnv, env_name='real_world'):
 
     def read_motor_state(self, retries:int) ->Optional[Mapping[str, float|npt.NDArray[np.float32]]]:
         if self.actuator_controller is not None:
+            # normalized ste.
             ste: Mapping[int, JointState] = self.actuator_controller.get_motor_state(retries)
             # for _k,_v in self.process_motor_reading(state):
             #       setattr(obs, __name=_k, __value=_v)
@@ -416,13 +417,14 @@ class RealWorld(BaseEnv, env_name='real_world'):
         # io_future : io_name.
         future_seq: Dict[Future, str] = {}
         if self.actuator_controller is not None:
-            _, mtr_ftr = self._create_io_set_future('motor',self.read_motor_state, retries)
+            # get normalized motor state.
+            _, mtr_ftr = self._create_io_half_duplex_op_future('motor', self.read_motor_state, retries)
             future_seq[mtr_ftr] = 'motor'
 
             # future_seq[self._executor.submit(self.read_motor_state, retries) ] = 'read_motor_state'
 
         if self._imu is not None:
-            _, imu_ftr = self._create_io_set_future('imu', self.read_imu_state, retries)
+            _, imu_ftr = self._create_io_half_duplex_op_future('imu', self.read_imu_state, retries)
             future_seq[imu_ftr] = 'imu'
 
         # results["dynamixel"] = self.actuator_controller.get_motor_state(retries)
@@ -431,7 +433,7 @@ class RealWorld(BaseEnv, env_name='real_world'):
         for _f in as_completed(future_seq):
             io_name = future_seq[_f]
             try:
-                ste: Mapping[str, float|npt.NDArray[np.float32]] = self._finish_io_set_future(io_name)
+                ste: Mapping[str, float|npt.NDArray[np.float32]] = self._finish_io_half_duplex_op_future(io_name)
 
                 # ste: Mapping[str, float|npt.NDArray[np.float32]] = _f.result()
 
@@ -468,7 +470,7 @@ class RealWorld(BaseEnv, env_name='real_world'):
 
 
     # will guarantee clear self._io_set_future_dict.
-    def _finish_io_set_future(self, name:str)->Any:
+    def _finish_io_half_duplex_op_future(self, name:str)->Any:
         assert name in self._io_set_future_dict
 
         result : Any = None
@@ -492,11 +494,11 @@ class RealWorld(BaseEnv, env_name='real_world'):
         return result
 
 
-    def _create_io_set_future(self, name:str, fn: Callable, *args, **kwargs)->Tuple[Any, Future]:
+    def _create_io_half_duplex_op_future(self, name:str, fn: Callable, *args, **kwargs)->Tuple[Any, Future]:
         assert name in self._io_set_future_dict
 
         # complete prev future first, causing half-duplex of USB-COM port.
-        result = self._finish_io_set_future(name)
+        result = self._finish_io_half_duplex_op_future(name)
 
         new_ftr = self._executor.submit(fn, *args, **kwargs)
         self._io_set_future_dict[name] = new_ftr
@@ -539,9 +541,9 @@ class RealWorld(BaseEnv, env_name='real_world'):
         # write_pos *= self.negated_motor_direction_mask
 
         # wait for exiting future to complete.
-        _,_ = self._create_io_set_future('motor',
-                                   self.actuator_controller.set_pos,
-                                   write_pos * self.negated_motor_direction_mask)
+        _,_ = self._create_io_half_duplex_op_future('motor',
+                                                    self.actuator_controller.set_pos,
+                                                    write_pos * self.negated_motor_direction_mask)
 
 
         # for _id, _name in zip(self.robot.motor_id_ordering, self.robot.motor_name_ordering):
@@ -610,9 +612,9 @@ class RealWorld(BaseEnv, env_name='real_world'):
                 write_kps.append(self.robot.config["joints"][_name]["kp_real"])
 
         # wait for exiting future to complete.
-        _,_ = self._create_io_set_future('motor',
-                                   self.actuator_controller.set_kp,
-                                   write_kps)
+        _,_ = self._create_io_half_duplex_op_future('motor',
+                                                    self.actuator_controller.set_kp,
+                                                    write_kps)
 
     # TODO: use context manager.
     def close(self):

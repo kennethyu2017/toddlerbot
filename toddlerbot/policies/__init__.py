@@ -31,13 +31,14 @@ class sysIDEpisodeInfo(NamedTuple):
     sysID_jnt_name: List[str]
     motor_kp: Dict[str, float]
 
-from .implementations.sysID import _CHIRP_END_FREQ
+from .implementations.sysID import _CHIRP_END_FREQ,get_ep_trajectory_stat
 
 __all__ = ['sysIDEpisodeInfo',
            'RUN_POLICY_LOG_FOLDER_FMT',
            'RUN_STEP_RECORD_PICKLE_FILE',
            'RUN_EPISODE_MOTOR_KP_PICKLE_FILE',
            'StepRecord',
-           '_CHIRP_END_FREQ']
+           '_CHIRP_END_FREQ',
+           'get_ep_trajectory_stat']
 
 
