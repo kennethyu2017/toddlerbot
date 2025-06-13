@@ -33,7 +33,7 @@ CONTROL_MODE_DICT: Dict[str, int] = {
 _USB_SERIAL_DEFAULT_RCV_TIMEOUT_MS = 10  #5 #1
 
 # set FT232 device, control the COM port interrupt freq to OS.
-_USB_COM_PORT_LATENCY_TIMER_MS = 5
+_USB_COM_PORT_LATENCY_TIMER_MS = 1 #5
 
 
 # def get_env_path():

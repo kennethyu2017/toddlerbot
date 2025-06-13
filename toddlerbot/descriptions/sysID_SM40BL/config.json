@@ -32,7 +32,7 @@
             "kd_real": 0.0,
             "kff2_real": 0.0,
             "kff1_real": 0.0,
-            "kp_sim": 0.78,
+            "kp_sim": 3.0,
             "kd_sim": 0.0,
             "damping": 0.262,
             "armature": 0.0099,

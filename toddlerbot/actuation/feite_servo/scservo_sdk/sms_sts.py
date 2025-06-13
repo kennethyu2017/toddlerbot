@@ -4,7 +4,7 @@ from numpy import pi
 from .protocol_packet_handler import *
 from .group_sync_write import *
 
-SMS_STS_DEFAULT_BAUD_RATE = 115_200   # 1_000_000
+SMS_STS_DEFAULT_BAUD_RATE = 115_200  # 1_000_000
 SMS_STS_DEFAULT_RETURN_DELAY_US = 250
 
 POS_RESOLUTION = 2.0 * pi / 4096.  # in radius. 0.001534 rad / 0.088 degrees per step.

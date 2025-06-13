@@ -535,15 +535,20 @@ def plot_joint_tracking_frequency(
         legend_labels.append(name + line_suffix[0])  # Observation label
         legend_labels.append(name + line_suffix[1])  # Reference label
 
-    n_plots = len(time_seq_dict)
-    n_rows = int(np.ceil(n_plots / 3))
-    n_cols = 3
+    n_joints = len(time_seq_dict)
+    n_rows = int(np.ceil(n_joints / 3))
+    n_cols = min(n_joints, 3)
 
-    fig, axs = plt.subplots(n_rows, n_cols, figsize=(n_cols * 5, n_rows * 3))
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(n_cols * 5, n_rows * 3))
     plt.subplots_adjust(hspace=0.4, wspace=0.4)
 
-    for i, ax in enumerate(axs.flat):
-        if i >= n_plots:
+    if isinstance(axes, Axes):
+        ax_seq = [axes]
+    else:
+        ax_seq = axes.flat
+
+    for i, ax in enumerate(ax_seq):
+        if i >= n_joints:
             ax.set_visible(False)
             continue
 
@@ -558,9 +563,9 @@ def plot_joint_tracking_frequency(
             title=f"{joint_name_list[i]}" if len(title_list) == 0 else title_list[i],
             x_label=x_label,
             y_label=y_label,
-            save_config=True if i == n_plots - 1 else False,
-            save_path=save_path if i == n_plots - 1 else None,
-            file_name=file_name if i == n_plots - 1 else "",
+            save_config=True if i == n_joints - 1 else False,
+            save_path=save_path if i == n_joints - 1 else None,
+            file_name=file_name if i == n_joints - 1 else "",
             file_suffix=file_suffix,
             ax=ax,
             legend_labels=legend_labels[2 * i : 2 * i + 2],
@@ -586,15 +591,20 @@ def plot_joint_tracking_single(
         y_list.append(joint_data_dict[name])
         legend_labels.append(name)
 
-    n_plots = len(time_seq_dict)
-    n_rows = int(np.ceil(n_plots / 3))
-    n_cols = 3
+    n_joints = len(time_seq_dict)
+    n_rows = int(np.ceil(n_joints / 3))
+    n_cols = min(n_joints, 3)
 
-    fig, axs = plt.subplots(n_rows, n_cols, figsize=(n_cols * 5, n_rows * 3))
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(n_cols * 5, n_rows * 3))
     plt.subplots_adjust(hspace=0.4, wspace=0.4)
 
-    for i, ax in enumerate(axs.flat):
-        if i >= n_plots:
+    if isinstance(axes, Axes):
+        ax_seq = [axes]
+    else:
+        ax_seq = axes.flat
+
+    for i, ax in enumerate(ax_seq):
+        if i >= n_joints:
             ax.set_visible(False)
             continue
 
@@ -607,9 +617,9 @@ def plot_joint_tracking_single(
             title=f"{legend_labels[i]}" if len(title_list) == 0 else title_list[i],
             x_label=x_label,
             y_label=y_label,
-            save_config=True if i == n_plots - 1 else False,
-            save_path=save_path if i == n_plots - 1 else None,
-            file_name=file_name if i == n_plots - 1 else "",
+            save_config=True if i == n_joints - 1 else False,
+            save_path=save_path if i == n_joints - 1 else None,
+            file_name=file_name if i == n_joints - 1 else "",
             file_suffix=file_suffix,
             ax=ax,
             legend_labels=[legend_labels[i]],
