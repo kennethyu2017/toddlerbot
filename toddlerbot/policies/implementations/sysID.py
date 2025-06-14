@@ -32,9 +32,9 @@ _CHIRP_SIGNAL_DURATION = 10.0
 _CHIRP_START_FREQ = 0.1
 
 # TODO: 3 is enough?
-_CHIRP_END_FREQ = 10.
+_CHIRP_END_FREQ = 2 # 10.
+_CHIRP_DECAY_RATE = 0.1  #0.1
 
-_CHIRP_DECAY_RATE = 0.1
 _RESET_DURATION = 2.0
 
 
@@ -68,14 +68,14 @@ def _build_jnt_sysID_spec(robot_name: str)->Mapping[str, _SysIDSpecs]:
             kp_list = list(range(900, 2400, 300))
         elif 'sm40bl' in robot_name.casefold():
             # kp_list = list(range(17, 47, 4))  # defualt kp is `32` for SM40BL.
-            kp_list = [16]
+            kp_list = list(range(7000//(3*128), 12000//(3*128), 4))
         else:
             kp_list = list(range(1500, 3600, 300))
 
         # single motor joint.
         specs = {
             # "joint_0": _SysIDSpecs(amplitude_ratio_list=[0.25, 0.5, 0.75], kp_list=kp_list)
-            "joint_0": _SysIDSpecs(amplitude_ratio_list=[0.25], kp_list=kp_list)
+            "joint_0": _SysIDSpecs(amplitude_ratio_list=[0.5], kp_list=kp_list)
         }
 
     else:  # for multi-links sysID.
@@ -641,33 +641,68 @@ class SysIDPolicy(BasePolicy, policy_name="sysID"):
     #     return len(self._sysID_time_seq)
 
 
-def get_ep_trajectory_stat(policy:SysIDPolicy)\
-        ->Dict[str,npt.NDArray[np.float32]]:
+def get_ep_trajectory_stat(robot:Robot, policy:SysIDPolicy)\
+        ->Dict[str,OrderedDict[str,npt.NDArray[np.float32]]]:
 
     time_diff = np.diff(policy._sysID_time_seq, n=1, axis=0)
     # calc vel
     act_diff = np.diff(policy._sysID_motor_act_seq, n=1, axis=0)
+
     # rad/s
     target_vel = (act_diff.transpose() / time_diff).transpose()
+    # trick: keep dimension consistent as len(time_seq).
+    target_vel = np.concatenate([np.zeros_like(target_vel[0], dtype=np.float32)[np.newaxis, :], target_vel],
+                              axis=0, dtype=np.float32)
+
     # rpm
     target_rpm = target_vel * 60/(2*3.14)
 
     # calc acc
     vel_diff = np.diff(target_vel, n=1, axis=0)
     # rad/s**2
-    target_acc = (vel_diff.transpose() / time_diff[1:]).transpose()
+    # target_acc = (vel_diff.transpose() / time_diff[1:]).transpose()
+    target_acc = (vel_diff.transpose() / time_diff).transpose()
+    # trick: keep dimension consistent as len(time_seq).
+    target_acc = np.concatenate([np.zeros_like(target_acc[0], dtype=np.float32)[np.newaxis, :], target_acc],
+                                axis=0, dtype=np.float32)
+
     # round per s**2
     target_acc_rps2 = target_acc/(2*np.pi)
 
     logger.info(f'--- episode trajectory vel / acc stats: ---')
-    logger.info(f'chirp_max_freq:{_CHIRP_END_FREQ}Hz {act_diff.shape=:} {time_diff.shape=:} {target_vel.shape=:} {target_rpm.shape=:} {target_acc.shape}')
+    logger.info(f'chirp_max_freq:{_CHIRP_END_FREQ}Hz {act_diff.shape=:} {time_diff.shape=:} '
+                f'{target_vel.shape=:} {target_rpm.shape=:} {target_acc.shape=:}')
+
     logger.warning(f'{max(act_diff)=:} {max(time_diff)=:} {max(target_vel)=:} rad/s '
                    f'\n{max(target_rpm)=:} {max(target_acc)=:} rad/s**2 {max(target_acc_rps2)=:} round/s**2')
 
-    return   { 'target_acc_arr': target_acc.astype(np.float32),
-               'acc_time_seq': policy._sysID_time_seq[2:],
-               'target_vel_arr': target_rpm.astype(np.float32),
-               'vel_time_seq': policy._sysID_time_seq[1:]
+    # construct dict:
+
+    target_pos_dict: OrderedDict[str, npt.NDArray[np.float32]] = OrderedDict()
+    pos_time_dict: OrderedDict[str, npt.NDArray[np.float32]] = OrderedDict()
+
+    target_acc_rps2_dict: OrderedDict[str, npt.NDArray[np.float32]] = OrderedDict()
+    acc_time_dict: OrderedDict[str, npt.NDArray[np.float32]] = OrderedDict()
+
+    target_rpm_dict: OrderedDict[str, npt.NDArray[np.float32]] = OrderedDict()
+    vel_time_dict: OrderedDict[str, npt.NDArray[np.float32]] = OrderedDict()
+
+    for _x, _n in enumerate(robot.motor_name_ordering):
+        target_pos_dict[_n] = policy._sysID_motor_act_seq[:, _x]
+        pos_time_dict[_n] = policy._sysID_time_seq
+
+        target_acc_rps2_dict[_n] = target_acc_rps2[:, _x]
+        acc_time_dict[_n] = policy._sysID_time_seq #[2:]
+
+        target_rpm_dict[_n] = target_rpm[:, _x]
+        vel_time_dict[_n] = policy._sysID_time_seq #[1:]
+
+    return   { 'target_pos_dict': target_pos_dict,
+               'pos_time_dict': pos_time_dict,
+               'target_acc_rps2_dict': target_acc_rps2_dict,
+               'acc_time_dict': acc_time_dict,
+               'target_rpm_dict': target_rpm_dict,
+               'vel_time_dict': vel_time_dict,
                }
 
 
@@ -690,28 +725,8 @@ def _test_main():
     init_motor_pos = np.zeros_like(robot.motor_id_ordering, dtype=np.float32)
     policy = SysIDPolicy('sysID', robot=robot,init_motor_pos=init_motor_pos )
 
-    stat_dict:Dict[str,npt.NDArray[np.float32]] = get_ep_trajectory_stat(policy=policy)
+    stat_dict = get_ep_trajectory_stat(robot=robot, policy=policy)
 
-    target_acc_arr: npt.NDArray[np.float32] = stat_dict['target_acc_arr']
-    acc_time_seq: npt.NDArray[np.float32] = stat_dict['acc_time_seq']
-    target_vel_arr: npt.NDArray[np.float32] = stat_dict['target_vel_arr']
-    vel_time_seq: npt.NDArray[np.float32] = stat_dict['vel_time_seq']
-
-    target_acc_dict: OrderedDict[str, np.ndarray[np.float32]] = OrderedDict()
-    acc_time_dict: OrderedDict[str, np.ndarray[np.float32]] = OrderedDict()
-
-    target_vel_dict: OrderedDict[str, np.ndarray[np.float32]] = OrderedDict()
-    vel_time_dict: OrderedDict[str, np.ndarray[np.float32]] = OrderedDict()
-
-    # should be (time_seq_len-1/-2, num_of_motors)
-    assert target_acc_arr.shape[1] == len(robot.motor_name_ordering)
-    assert target_vel_arr.shape[1] == len(robot.motor_name_ordering)
-
-    for _x, _n in enumerate(robot.motor_name_ordering):
-        target_acc_dict[_n] = target_acc_arr[:, _x]
-        acc_time_dict[_n] = acc_time_seq
-        target_vel_dict[_n] = target_vel_arr[:, _x]
-        vel_time_dict[_n] = vel_time_seq
 
     exp_folder = Path(RUN_POLICY_LOG_FOLDER_FMT.format(robot_name=robot.name,
                                                        policy_name=policy.name,
@@ -721,26 +736,33 @@ def _test_main():
     if not plot_dir.exists():
         plot_dir.mkdir(parents=True, exist_ok=True)
 
-
-    TODO: plot target pos....
-
     plot_joint_tracking_single(
-        time_seq_dict=vel_time_dict,
-        joint_data_dict=target_vel_dict,
+        time_seq_dict=stat_dict['pos_time_dict'],
+        joint_data_dict=stat_dict['target_pos_dict'],
         save_path=plot_dir.resolve().__str__(),
         x_label="Time (s)",
-        y_label="Target Vel (RPM)",
-        file_name = "target_vel_trajectory",
+        y_label="Pos (rad)",
+        file_name="target_pos_trajectory",
         set_ylim=False,
     )
 
     plot_joint_tracking_single(
-        time_seq_dict=acc_time_dict,
-        joint_data_dict=target_acc_dict,
+        time_seq_dict=stat_dict['vel_time_dict'],
+        joint_data_dict=stat_dict['target_rpm_dict'],
         save_path=plot_dir.resolve().__str__(),
         x_label="Time (s)",
-        y_label="Target Acc (RP/S**2)",
-        file_name="target_acc_trajectory",
+        y_label="Vel (RPM)",
+        file_name = "target_vel_rpm_trajectory",
+        set_ylim=False,
+    )
+
+    plot_joint_tracking_single(
+        time_seq_dict=stat_dict['acc_time_dict'],
+        joint_data_dict=stat_dict['target_acc_rps2_dict'],
+        save_path=plot_dir.resolve().__str__(),
+        x_label="Time (s)",
+        y_label="Acc (RP/S**2)",
+        file_name="target_acc_rps2_trajectory",
         set_ylim=False,
     )
 

@@ -1,5 +1,5 @@
 import argparse
-from typing import Any, Callable, Dict, List, Tuple,Mapping
+from typing import Any, Callable, Dict, List, Tuple,Mapping,Sequence
 
 from matplotlib import pyplot as plt
 from matplotlib.axes import Axes
@@ -422,19 +422,19 @@ def plot_path_tracking(
 
 
 def plot_joint_tracking(
-    time_seq_dict: Dict[str, List[float]],
-    time_seq_ref_dict: Dict[str, List[float]],
-    joint_data_dict: Dict[str, List[float]],
-    joint_data_ref_dict: Dict[str, List[float]],
-    joint_limits: Dict[str, List[float]],
+    time_seq_dict: Dict[str, Sequence[float]],
+    time_seq_ref_dict: Dict[str, Sequence[float]],
+    joint_data_dict: Dict[str, Sequence[float]],
+    joint_data_ref_dict: Dict[str, Sequence[float]],
+    joint_limits: Dict[str, Sequence[float]] | None,
     save_path: str,
-    x_label: str = "Time (s)",
-    y_label: str = "Position (rad)",
-    file_name: str = "motor_pos_tracking",
+    x_label: str, # = "Time (s)",
+    y_label: str, #= "Position (rad)",
+    file_name: str , #= "motor_pos_tracking",
     file_suffix: str = "",
     title_list: List[str] = [],
     set_ylim: bool = False,
-    line_suffix: List[str] = ["_obs", "_act"],
+    line_suffix: Sequence[str] = ["_obs", "_target"],
 ):
     x_list: List[List[float]] = []
     y_list: List[List[float]] = []

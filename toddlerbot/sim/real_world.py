@@ -15,6 +15,10 @@ from .base_env import BaseEnv, Obs
 from .robot import Robot
 from ._module_logger import logger
 
+# NOTE: limit of feite SM40BL:
+# ACC: 38rad/s2, 6 Round/s2, 12pi/s2. limited by memory tbl addr-41.
+# VEL: 88RPM, 1.47 Round/s, 3pi/s. limited by SM40BL max RPM 88.
+
 _DEFAULT_FEITE_ACCEL :float = 12 * np.pi   #  7 * np.pi   #5 * np.pi #
 _DEFAULT_FEITE_VEL :float = 3 * np.pi  # 2.5 * np.pi # 75rpm.    #/ 4 * np.pi  #1.4 * np.pi
 

@@ -17,7 +17,8 @@ _DYNAMIXEL_DEFAULT_KP_CASEFOLD :Dict[str, float] = {'2xc430':2100.,
                                                     'xc430': 2100.,
                                                     'xm430': 2700.,}
 
-_FEITE_DEFAULT_KP_CASEFOLD :Dict[str, float] = {'sm40bl':32. }
+# will be amplified by 3 according to experiment. we start from small kp.
+_FEITE_DEFAULT_KP_CASEFOLD :Dict[str, float] = {'sm40bl': 5 } #   32. }
 
 def _build_general_config(urdf_root: ET.Element, robot_name: str)->OrderedDict[str, Any]:
 
@@ -347,8 +348,8 @@ def _parse_motor_mapping(*, jnt_name: str,
         joint_dict_mtr_part["kp_sim"] = mtr_param["kp"] / 128.
 
     elif joint_dict_mtr_part["type"] == "feite":
-        # TODO> add temply. for trial.
-        joint_dict_mtr_part["kp_sim"] = mtr_param["kp"] / 41.
+        # TODO> will be amplified by 3 according to experiment.so we start from small kp.
+        joint_dict_mtr_part["kp_sim"] = mtr_param["kp"] * 3.
 
     else:
         raise ValueError(f'motor type error: {joint_dict_mtr_part["type"]} ')
