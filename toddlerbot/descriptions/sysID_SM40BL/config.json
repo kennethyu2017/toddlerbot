@@ -27,7 +27,7 @@
             "control_mode": "position",
             "init_pos": 3.1415926,
             "default_pos": 0.0,
-            "kp_real": 32.0,
+            "kp_real": 5,
             "ki_real": 0.0,
             "kd_real": 0.0,
             "kff2_real": 0.0,

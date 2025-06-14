@@ -650,7 +650,7 @@ def _optimize_for_one_jnt_with_multiple_episodes(*,
     logger.info(f'--- study enqueue : {initial_trial=:} ---')
     time.sleep(3.)
 
-    TODO: temply disable.
+    # TODO: temply disable.
     # study.enqueue_trial(initial_trial)
 
     objective = _build_objective(

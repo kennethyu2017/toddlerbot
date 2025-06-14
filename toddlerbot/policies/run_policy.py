@@ -226,8 +226,14 @@ def _plot_action_helper(*, robot:Robot,
         motor_pos_dict,
         action_dict,
         robot.joint_cfg_limits,
+        x_label="Time (s)",
+        y_label="Pos (rad)",
+        file_name="motor_pos_tracking",
+        line_suffix=["_obs_pos", "_target_pos"],
+        set_ylim=False,
         save_path=plot_dir.resolve().__str__(),
     )
+
     plot_joint_tracking_frequency(
         time_seq_dict,
         time_seq_ref_dict,
@@ -238,47 +244,63 @@ def _plot_action_helper(*, robot:Robot,
 
     # plot vel/acc tracking for sysID.
     if 'sysID' in robot.name:
-        target_acc_arr, acc_time_arr, target_vel_arr, vel_time_arr = get_ep_trajectory_stat(policy=policy)
-        logger.info(f'{target_acc_arr.shape=:} {acc_time_arr.shape=:}'
-                    f' {target_vel_arr.shape=:} {vel_time_arr.shape=:}')
+        # target_acc_arr, acc_time_arr, target_vel_arr, vel_time_arr = get_ep_trajectory_stat(robot=robot, policy=policy)
+        traj_stat_dict = get_ep_trajectory_stat(robot=robot, policy=policy)
 
-        target_acc_dict: OrderedDict[str,np.ndarray[np.float32]] = OrderedDict()
-        acc_time_dict: OrderedDict[str, np.ndarray[np.float32]] = OrderedDict()
+        # logger.info(f'{target_acc_arr.shape=:} {acc_time_arr.shape=:}'
+        #             f' {target_vel_arr.shape=:} {vel_time_arr.shape=:}')
 
-        target_vel_dict: OrderedDict[str,np.ndarray[np.float32]] = OrderedDict()
-        vel_time_dict: OrderedDict[str, np.ndarray[np.float32]] = OrderedDict()
+        # convert to RPM:
+        motor_rpm_dict : OrderedDict[str, npt.NDArray[np.float32]]= OrderedDict()
+        for _n in motor_vel_dict:
+            motor_rpm_dict[_n] = np.array(  np.asarray( motor_vel_dict[_n], dtype=np.float32) * 60 / (2 * 3.14) ).astype(np.float32)
 
-        # should be (time_seq_len-1/-2, num_of_motors)
-        assert target_acc_arr.shape[1] == len(robot.motor_name_ordering)
-        assert target_vel_arr.shape[1] == len(robot.motor_name_ordering)
-
-        for _x, _n in enumerate(robot.motor_name_ordering):
-            target_acc_dict[_n] = target_acc_arr[:,_x]
-            acc_time_dict[_n] = acc_time_arr
-            target_vel_dict[_n] = target_vel_arr[:,_x]
-            vel_time_dict[_n] = vel_time_arr
-
+        # vel tracking
         plot_joint_tracking(
-            vel_time_dict,
-            vel_time_dict,
-            motor_vel_dict,
-            target_vel_dict,
+            traj_stat_dict['vel_time_dict'],
+            traj_stat_dict['vel_time_dict'],
+            motor_rpm_dict,
+            traj_stat_dict['target_rpm_dict'],
             joint_limits=None,
             x_label = "Time (s)",
-            y_label = "Vel (rad/s)",
-            file_name = "motor_vel_tracking",
+            y_label = "Vel (RPM)",
+            file_name = "motor_vel_rpm_tracking",
             line_suffix = ["_obs_vel", "_target_vel"],
             set_ylim=False,
             save_path=plot_dir.resolve().__str__(),
         )
 
-        # TODO: plot acc tracking:
-        # calc motor acc:
-        vel_diff = np.diff(target_vel, n=1, axis=0)
-        # rad/s**2
-        target_acc = (vel_diff.transpose() / time_diff[1:]).transpose()
-        # round per s**2
-        target_acc_rps2 = target_acc / (2 * np.pi)
+        # calc motor obs acc:
+        motor_acc_rps2_dict: OrderedDict[str, npt.NDArray[np.float32]] = OrderedDict()
+        for _jnt_name, _obs_vel in motor_vel_dict.items():
+            vel_diff = np.diff(_obs_vel, n=1, axis=0)
+            time_diff = np.diff(time_seq_dict[_jnt_name], n=1, axis=0)
+            # rad/s**2
+            # acc = (vel_diff.transpose() / time_diff[1:]).transpose()
+            acc = vel_diff / time_diff
+            assert len(acc.shape) == 1
+            # trick: keep dimension consistent as len(time_seq).
+            acc = np.concatenate([[0.], acc],
+                                        axis=0, dtype=np.float32)
+            # round per s**2
+            acc_rps2 = acc / (2 * np.pi)
+            motor_acc_rps2_dict[_jnt_name] = acc_rps2
+
+        # acc tracking
+        plot_joint_tracking(
+            traj_stat_dict['acc_time_dict'],
+            traj_stat_dict['acc_time_dict'],
+            motor_acc_rps2_dict,
+            traj_stat_dict['target_acc_rps2_dict'],
+            joint_limits=None,
+            x_label = "Time (s)",
+            y_label = "Acc (RP/S**2)",
+            file_name = "motor_acc_rps2_tracking",
+            line_suffix = ["_obs_acc", "_target_acc"],
+            set_ylim=False,
+            save_path=plot_dir.resolve().__str__(),
+        )
+
 
     # if 'sysID' not in robot.name:
     if True:
@@ -421,6 +443,7 @@ def _plot_run_log(
 
 
     _plot_obs_helper(robot=robot,
+                     policy=policy,
                      time_obs_list=time_obs_list,
                      ang_vel_obs_list=ang_vel_obs_list,
                      euler_obs_list=euler_obs_list,
@@ -930,6 +953,7 @@ def run_policy(*,
         logger.info("Plot policy run logg->")
         _plot_run_log(
             robot,
+            policy,
             step_record_list,
             exp_folder / 'plot'
         )
