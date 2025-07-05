@@ -92,5 +92,6 @@ action will not interfere against the sysID motors ?
 
 37. for motor , the `init_pos ` should be the `mid-position` of real motor range, so we can limit qpos as [-pi/2, pi/2].
 
-
+38. in real_world.py, _init_feite_actuators(),  default_torque_limit/ default_acc/default vel/ goal pos,
+     use individual value from config.json and different for motors.
 

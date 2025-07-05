@@ -182,6 +182,8 @@ class FeiteConfig(NamedTuple):
     # kFF2: Seq[float]
     # kFF1: Seq[float]
     # TODO: adjust according to tracking result.
+    # TODO: move into config.json.
+    default_torque_limit: npt.NDArray[np.uint16] |None = None
     default_accel: npt.NDArray[np.float32] |None = None   # [1.6 * np.pi]
     default_vel: npt.NDArray[np.float32] |None = None      # [1.4 * np.pi]
     init_goal_pos: npt.NDArray[np.float32] |None = None    # None = None
@@ -364,6 +366,10 @@ class FeiteController(BaseController):
         # set acc, vel, adjust present pos as init_pos from config.
         self.client.set_goal_accel(motor_ids=self._motor_ids, accel=self.config.default_accel)
         self.client.set_goal_vel(motor_ids=self._motor_ids, vel=self.config.default_vel)
+
+        # set torque limit. for safety or perf.
+        # TODO: temply set to 90% for sysID.
+        self.client.set_torque_limit(motor_ids=self._motor_ids, limit_percentage=self.config.default_torque_limit)
 
         # NOTE: first set goal pos to init_pos in config.json, then normalize init pos read from motor.
         self.client.set_goal_pos(motor_ids=self._motor_ids, pos=self.config.init_goal_pos)

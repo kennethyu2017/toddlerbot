@@ -1,108 +1,20 @@
-"""Communication using the Feite SDK."""
 
-##This is based off of the dynamixel SDK
 import atexit
 import time
 from enum import Enum
 from typing import (Any, Dict, List, Optional, Sequence,Type,Mapping,
                     Set, Tuple, ClassVar,Iterable,NamedTuple,Callable, OrderedDict)
-# from itertools import islice
-# from functools import partial
+
 import numpy as np
 import numpy.typing as npt
+from can.interfaces.pcan import *
+import can
 
-from .feite_servo.scservo_sdk import *
+from .robstride_sdk import *
 from ._module_logger import logger
 
-class TableValueName(Enum):
-    pos = 1
-    vel = 2
-    load = 3
-    vin = 4
-    model = 5
-    pos_vel_load = 6  # together.
-    protect_mode = 7
-
-class PosVelLoadRead(NamedTuple):
-    comm_time: float
-    pos: npt.NDArray[np.float32]
-    vel: npt.NDArray[np.float32]
-    load: npt.NDArray[np.float32]
-
-
-# # TODO: for feite protocol, the Two’s complement is not applied for the negative value. Use the BIT15 instead...
-# def signed_to_proto_param_bytes_v1(value: int, size: int) -> bytes:
-#     """Converts a signed integer to its unsigned equivalent based on the specified size.
-#
-#     Args:
-#         value (int): The signed integer to convert.
-#         size (int): The size in bytes of the integer type.
-#
-#     Returns:
-#         int: The unsigned integer representation of the input value.the highest bit, e.g., BIT15, representing sign
-#     """
-#     # use the highest bit, e.g., BIT15, to represent sign.
-#     param = None
-#     if value < 0:
-#         bit_size = 8 * size
-#         highest_bit_1_value = 1 << (bit_size - 1)   # got unsigned int.
-#         assert abs(value) < highest_bit_1_value
-#         param = highest_bit_1_value + abs(value)
-#     else:
-#         param = value
-#
-#     return param.to_bytes(length=size, byteorder='little', signed=False)
-
-
-class _ReadSpec(NamedTuple):
-    start_addr: int
-    size: Sequence[int]  # for multi-params read, e.g., `pos,vel,load` together.
-    parser: Sequence[ Callable[[bytes|bytearray], float|int] ]
-    result_dtype: Sequence[Type]
-
-
-_TableValueReadSpec : Dict[TableValueName, _ReadSpec] = {
-    TableValueName.pos: _ReadSpec(start_addr=SMS_STS_SRAM_Table_ReadOnly.PRESENT_POSITION_L,
-                     size=[SMS_STS_Table_Data_Length.PRESENT_POSITION],
-                     parser=[parse_pos],
-                     result_dtype=[np.float32]),
-
-    TableValueName.vel: _ReadSpec(start_addr=SMS_STS_SRAM_Table_ReadOnly.PRESENT_VELOCITY_L,
-                     size=[SMS_STS_Table_Data_Length.PRESENT_VELOCITY],
-                     parser=[parse_vel],
-                     result_dtype=[np.float32]),
-
-    TableValueName.load: _ReadSpec(start_addr=SMS_STS_SRAM_Table_ReadOnly.PRESENT_LOAD_L,
-                      size=[SMS_STS_Table_Data_Length.PRESENT_LOAD],
-                      parser=[parse_load],
-                      result_dtype=[np.float32]),
-
-    TableValueName.vin: _ReadSpec(start_addr=SMS_STS_SRAM_Table_ReadOnly.PRESENT_VOLTAGE,
-                                     size=[SMS_STS_Table_Data_Length.PRESENT_VOLTAGE],
-                                     parser=[parse_vin],
-                                     result_dtype=[np.float16]),
-
-    TableValueName.model: _ReadSpec(start_addr=SMS_STS_EEPROM_Table_ReadOnly.MODEL_L,
-                        size=[SMS_STS_Table_Data_Length.MODEL_NUMBER],
-                        parser=[parse_model],
-                        result_dtype=[np.uint16]),
-
-    # consecutive-address multiple values read.
-    TableValueName.pos_vel_load: _ReadSpec(start_addr=SMS_STS_SRAM_Table_ReadOnly.PRESENT_POSITION_L,
-                        size=[SMS_STS_Table_Data_Length.PRESENT_POSITION,
-                              SMS_STS_Table_Data_Length.PRESENT_VELOCITY,
-                              SMS_STS_Table_Data_Length.PRESENT_LOAD],
-                        parser=[parse_pos, parse_vel, parse_load],
-                        result_dtype=[np.float32, np.float32, np.float32]),
-
-    TableValueName.protect_mode: _ReadSpec(start_addr=SMS_STS_EEPROM_Table_RW.PROTECT_MODE,
-                                           size=[SMS_STS_Table_Data_Length.PROTECT_MODE],
-                                           parser=[parse_protect_mode],
-                                           result_dtype=[np.uint8]),
-}
-
 # @dataclass(init=False)
-class FeiteGroupClient:
+class RobStrideClient:
     """Client for communicating with a group of Feite motors.
 
     NOTE: This only supports Protocol 2.
@@ -112,12 +24,12 @@ class FeiteGroupClient:
     OPEN_CLIENTS: ClassVar[Set[Any] ] = set()
 
     # instance variable.
-    port_handler: PortHandler
+    bus: PcanBus | None
 
     def __init__(
         self,*,
         motor_ids: Sequence[int],  # ids of a group of actuators.
-        port_name: str,             #= "/dev/ttyUSB0",
+        interface_name: str,             #= "can0",
         baud_rate: int,             # = 115200,  # default for SMS/STS series.
         lazy_connect: bool,          #= False,
         rcv_timeout_ms: int,              #= 5,    #usb serial latency timer, default 5 ms.
@@ -127,219 +39,150 @@ class FeiteGroupClient:
         Args:
         """
 
+        """
+           初始化CAN电机控制器。
+
+           参数:
+           bus: CAN总线对象。
+           motor_id: 电机的CAN ID。
+           main_can_id: 主CAN ID。
+           """
+
         # NOTE: _motor_ids is not guaranteed to be consecutive, i.e, could be [44, 1, 230,...]. so we
         # could not use id as array index directly.
         self._motor_ids = motor_ids  # not changed after instantiating a FeiteClient instance.
-        self.port_name = port_name
+        self.interface_name = interface_name
         self.baud_rate = baud_rate
         self.lazy_connect = lazy_connect
         self.rcv_timeout_ms = rcv_timeout_ms
+        self.bus = None
 
-        self.port_handler = PortHandler(port_name=self.port_name,
-                                        baud_rate=self.baud_rate,
-                                        rcv_timeout_ms=self.rcv_timeout_ms)
-
-        # self.packet_handler = SMS_STS_PacketHandler(self.port_handler)
-        self.packet_handler = ProtocolPacketHandler(port_handler=self.port_handler, byte_order=ByteOrder.LITTLE)
-
-        self._sync_readers: Dict[Tuple[int, int], GroupSyncReader] = {}
-        self._sync_writers: Dict[Tuple[int, int], GroupSyncWriter] = {}
-
-        # NOTE: data array is indexed by idx of self._motor_ids, not by the id value.
-        cached_value_names = [ TableValueName.pos, TableValueName.vel, TableValueName.load, TableValueName.vin] # ['pos', 'vel', 'load', 'vin']
-        self._cached_read_data_dict: Dict[TableValueName, npt.NDArray[Any]] = {}
-
-        for _name in cached_value_names:
-            if len(_TableValueReadSpec[_name].result_dtype) != 1:
-                assert TypeError(f'cached value array dtype error: {_TableValueReadSpec[_name].result_dtype}')
-
-            self._cached_read_data_dict[_name] = np.full(shape=len(self._motor_ids),
-                                                         fill_value=np.nan,
-                                                         dtype=_TableValueReadSpec[_name].result_dtype[0])
-
-        # self._cur_scale_arr: Optional[npt.NDArray[np.float32]] = None
-
-        # func wrappers:
-        # self.sync_write_1_byte = partial(self._sync_write_impl, size=1)
-        # self.sync_write_2_bytes = partial(self._sync_write_impl, size=2)
-        # self.sync_write_3_bytes = partial(self._sync_write_impl, size=3)
-        # self.sync_write_4_bytes = partial(self._sync_write_impl, size=4)
-
-        # self.sync_read_1_byte = partial(self._sync_read_impl, size=1)
-        # self.sync_read_2_bytes = partial(self._sync_read_impl, size=2)
-        # self.sync_read_4_bytes = partial(self._sync_read_impl, size=4)
-        # self.sync_read_6_bytes = partial(self._sync_read_impl, size=6)
-
-        # print(f'{FeiteGroupClient.OPEN_CLIENTS=:}')
-        # if FeiteGroupClient.OPEN_CLIENTS is None:
-        #     FeiteGroupClient.OPEN_CLIENTS = set()
-
-        # ??????
-        FeiteGroupClient.OPEN_CLIENTS.add(self)
+        RobStrideClient.OPEN_CLIENTS.add(self)
 
     @property
     def is_connected(self) -> bool:
-        return self.port_handler.is_open
+        return self.bus is not None
 
     def connect(self):
-        """Connects to the Feite motors.
+        """Connects to the motors.
 
-        NOTE: This should be called after all FeiteClients on the same
+        NOTE: This should be called after all RobstrideClients on the same
             process are created.
         """
         assert not self.is_connected, "Client is already connected."
 
-        if self.port_handler.openPort():
-            logger.info(f"Succeeded to open port: {self.port_name}")
-        else:
-            raise OSError(
-                (
-                    "Failed to open port at {} (Check that the device is powered "
-                    "on and connected to your computer)."
-                ).format(self.port_name)
-            )
+        self.bus = PcanBus(channel=,
+                           device_id=,
+                           state=,
+                           timing=,
+                           bitrate=self.baud_rate,
+                           receive_own_messages=,)
 
-        if self.port_handler.setBaudRate(self.baud_rate):
-            logger.info(f"Succeeded to set baud_rate to {self.baud_rate}")
+        if self.bus.status_is_ok():
+            logger.info(f"Succeeded to open can interface: {self.interface_name}"
+                        f",with baud_rate:{self.baud_rate}")
         else:
             raise OSError(
                 (
-                    "Failed to set the baud_rate to {} (Ensure that the device was "
-                    "configured for this baud_rate)."
-                ).format(self.baud_rate)
+                    "Failed to open can interface at {}, bus status:{} (Check that the device is powered "
+                    "on and connected to your computer)."
+                ).format(self.interface_name,self.bus.status_string())
             )
 
         # Start with all motors enabled.  NO, I want to set settings before enabled
         # self.set_torque_enabled(self._motor_ids, True)
 
     def disconnect(self):
-        """Disconnects from the Feite device."""
+        """Disconnects from the RobStride motors."""
         if not self.is_connected:
             return
-        if self.port_handler.is_using:
-            logger.error("Port handler in use; cannot disconnect.")
-            return
+        # if self.port_handler.is_using:
+        #     logger.error("Port handler in use; cannot disconnect.")
+        #     return
         # Ensure motors are disabled at the end.
         self.set_torque_enabled(motor_ids=self._motor_ids, enabled=False)
-        self.port_handler.closePort()
-        if self in FeiteGroupClient.OPEN_CLIENTS:
-            FeiteGroupClient.OPEN_CLIENTS.remove(self)
+        self.bus.shutdown()
+        self.bus = None
 
-
-
-    def _sync_read_impl(
-        self, *, address:int, size: int,
-            #, scale: float
-    ) -> Tuple[float,Sequence[bytearray|None]]:
-        """Reads values from a group of motors.
-
-        Args:
-            address: The control table address to read from.
-            size: The size of the control table value being read.
-
-        Returns:
-            The values read from the motors.
-        """
-        self.check_connected()
-        key = (address, size)
-
-        if key not in self._sync_readers:
-            self._sync_readers[key] = GroupSyncReader(
-                packet_handler=self.packet_handler,
-                start_address=address,
-                data_length=size)
-
-            # only add param once, causing we will not change _motor_ids after instantiate of `self`.
-            for _id in self._motor_ids:
-                # we never clear sync reader's param.
-                if not self._sync_readers[key].addParam(_id):
-                    raise ValueError(
-                        "[Motor ID: {}] Could not add parameter to sync read.".format(_id)
-                    )
-
-        sync_reader: GroupSyncReader = self._sync_readers[key]
-
-        comm_time = 0.0
-        success = False
-        # TODO: count failure and return.
-        while not success:
-            # fastSyncRead does not work for 2XL and 2XC
-            # time_1 = time.time()
-            comm_time = time.time()
-            comm_result = sync_reader.txRxPacket()
-
-            # time_2 = time.time()
-            # print(f"RTT: {time_2 - time_1}")
-
-            success = self.handle_packet_result(comm_result, context="sync_read")
-            #TODO: if not success, sleep 5ms.
-            time.sleep(0.005)
-
-        errored_ids: List[int] = []
-        # data_dict : Dict[int, bytearray] = {}  # [[] for _ in range(len(self._motor_ids))]     # = np.zeros(len(self._motor_ids), dtype=np.float32)
-        # NOTE: data array is indexed by idx of self._motor_ids, not by the id value.
-        param_list : List[bytearray|None] = [None for _ in range(len(self._motor_ids)) ]
-
-        for _x, _id in enumerate(self._motor_ids):
-            # Check if the data is available.
-            if not sync_reader.isAvailable(_id, address, size):
-                # corresponding data of error id in param_list keeps as `None`.
-                errored_ids.append(_id)
-                continue
-
-            # data_dict[_id]=sync_reader.getDataAsBytes(_id, address, size)
-            param_list[_x]=sync_reader.getDataAsBytes(scs_id=_id, address=address, size=size)
-
-        if errored_ids:
-            # TODO: add handel for failure read: we can not get pos/vel states from actuators, which is
-            # dangerous for controlling. maybe we should halt any action?
-            # logger.error( f"Sync read failed for motor id: {str(errored_ids)}")
-            raise ValueError(f"Sync read failed for motor id: {errored_ids}")
-
-        # TODO: cause we will not change _motor_ids after instantiate of `self`,  so no need to call clearParam.
-        # recv_data_dict,param are set/cleared after every sync_read.
-        # sync_reader.clearParam()
-
-        return comm_time, param_list
-
+        if self in RobStrideClient.OPEN_CLIENTS:
+            RobStrideClient.OPEN_CLIENTS.remove(self)
 
     def check_connected(self):
-        """Ensures the robot is connected."""
+        """Ensures the motor is connected."""
         if self.lazy_connect and not self.is_connected:
             self.connect()
         if not self.is_connected:
             raise OSError("Must call connect() first.")
 
-    def handle_packet_result(
-        self,
-        comm_result: CommResult,
-        motor_error: Optional[int] = None,
-        motor_id: Optional[int] = None,
-        context: Optional[str] = None,
-    ) -> bool:
-        """Handles the result from a communication request."""
-        error_message = None
-        if comm_result != CommResult.SUCCESS:
-            error_message = self.packet_handler.getTxRxResult(comm_result)
-        elif motor_error is not None:
-            error_message = self.packet_handler.getRxPacketError(motor_error)
+    def _send_recv_can_message(self, *,
+                                 motor_can_id: int,
+                                 comm_type: int,
+                                 data2: int,
+                                 data1: bytes | bytearray,
+                                 timeout_sec=0.01) \
+        ->Tuple[bytearray, int]:
+        """
+        发送CAN消息并接收响应。
 
-        if error_message:
-            if motor_id is not None:
-                error_message = "[Motor ID: {}] {}".format(motor_id, error_message)
-            if context is not None:
-                error_message = "> {}: {}".format(context, error_message)
+        参数:
+        cmd_mode: 命令模式。
+        data2: 数据区2。
+        data1: 要发送的数据字节。
+        timeout: 发送消息的超时时间(默认为10ms)。
 
-            logger.error(error_message)
+        返回:
+        一个元组, 包含接收到的消息数据和接收到的消息仲裁ID(如果有)。
+        """
+        assert 0 <= motor_can_id <= 0xff  # 1-byte
+        assert 0 < comm_type <= 0b11111   # 5-bit
+        assert 0 < data2 <= 0xffff        # 2-bytes
+        assert len(data1) == 8            # always 8-bytes
 
-            raise IOError(f'pkt read/write error: {error_message}, pls check motor ID/motor connections.')
+        # Calculate the arbitration ID
+        arbitration_id = (comm_type << 24) | (data2 << 8) | motor_can_id
+        try:
+            # will check arbitration ID in can.Message.
+            snd_msg = can.Message(
+                arbitration_id=arbitration_id,
+                dlc=8,
+                data=data1,
+                is_extended_id=True
+            )
+        except Exception as exc:
+            logger.error(f'build can msg error: {exc=:} {type(exc)=:}')
+            raise exc
 
-        return True
+        logger.debug(
+            f"Sent message with ID {hex(arbitration_id)}, data: {data1}")
+
+        # Send the CAN message
+        try:
+            self.bus.send(snd_msg)
+        except PcanError as exc:
+            logger.error(f"Failed to send the can message, {exc=:} {type(exc)=:}")
+            raise exc
+
+        # TODO: use The Notifier object is used as a message distributor for a bus.
+        #  The Notifier uses an event loop or creates a thread to read messages
+        #  from the bus and distributes them to listeners.
+        # or use the asyncio.
+        # 10ms timeout for receiving
+        try:
+            rcv_msg = self.bus.recv(timeout=timeout_sec)
+        except can.CanError as exc:
+            logger.error(f"Failed to recv the can message, {exc=:} {type(exc)=:}")
+            raise exc
+
+        if rcv_msg is not None:
+            assert rcv_msg.is_extended_id
+            return rcv_msg.data, rcv_msg.arbitration_id
+        else:
+            raise IOError(f'recv can msg timeout.')
 
     def set_torque_limit(
         self, *,
         motor_ids: Sequence[int],
-        limit_percentage: npt.NDArray[np.uint16],
+        max_torque: npt.NDArray[np.float32],
         retries: int = -1,
         retry_interval: float = 0.25,
     ):
@@ -347,35 +190,31 @@ class FeiteGroupClient:
 
         Args:
             motor_ids:
-            limit_percentage: array.
+            max_torque: array.
             retries: The number of times to retry. If this is <0, will retry
                 forever.
             retry_interval: The number of seconds to wait between retries.
         """
-        # if isinstance(limit, List):
-        #     assert np.all( np.asarray(limit,dtype=np.uint16) > 0 ) and np.all( np.asarray(limit,dtype=np.uint16) <= 1000)
-        # elif isinstance(limit,int):
-        #     assert 0 < limit <= 1000
-        # else:
-        #     raise TypeError(f'type of limit error: {type(limit)}')
-        #
+        assert np.all(max_torque > 0)
+        # uint_max_torque = ParamConverter.float_normalized_to_uint(x=max_torque,
+        #                                         x_min=0.,
+        #                                         # TODO: this is for RS02 only.
+        #                                         x_max=ParamThreshold.T_MAX,
+        #                                         n_bytes=4)
 
-        # unit is 0.1%
-        limit_dict:OrderedDict[str, npt.NDArray[np.uint16]] = OrderedDict( zip(motor_ids,
-                                                                               (limit_percentage / TORQUE_LIMIT_PERCENTAGE_RESOLUTION).astype(np.uint16) ) )
+        limit_dict:OrderedDict[int, npt.NDArray[np.float32]] = OrderedDict( zip(motor_ids,
+                                                                               max_torque) )
 
         logger.info(f'set torque limit: {limit_dict}')
 
         remaining_id = [*limit_dict.keys()] #list(motor_ids)
         while len(remaining_id) > 0 :
             # guarantee order.
-            limit_value : List[int] = [ int(limit_dict[_id]) for _id in remaining_id ] # [ *remaining_ids.values() ]
-            assert np.all(np.asarray(limit_value, dtype=np.uint16) > 0 )
-            # unit is 0.1%
-            assert np.all(np.asarray(limit_value, dtype=np.uint16) <= 1000 )
 
-            remaining_id = self._write_and_recv_answer_impl(param=[_l.to_bytes(length=2, byteorder='little', signed=False)
-                                         for _l in limit_value],  # addr 48, 49,
+            limit_bytes: List[bytes] = [ ParamConverter.float_to_param_bytes(limit_dict[_id])
+                                        for _id in remaining_id ] # [ *remaining_ids.values() ]
+
+            remaining_id = self._write_and_recv_answer_impl(param=limit_bytes,
                                   address=SMS_STS_SRAM_Table_RW.TORQUE_LIMIT_L,
                                   write_ids=remaining_id)
 
@@ -456,29 +295,6 @@ class FeiteGroupClient:
         # NOTE: if the ID does not return pkt, the corresponding value is `0`.
         return comm_time, value_arr_list
 
-    # def read_model_number(self, retries: int = 0) -> npt.NDArray[np.uint16]:
-    #     """Returns the model number of the motors."""
-    #     param_list: List[bytearray|None]
-    #     _, param_list = self.sync_read_2_bytes(address=SMS_STS_EEPROM_Table_ReadOnly.MODEL_L)
-    #     assert len(param_list) == len(self._motor_ids)
-    #
-    #     model_numbers = np.zeros(shape= len(self._motor_ids), dtype=np.uint16)
-    #
-    #     # TODO: corresponding data of error id in param_list keeps as `None`. check the valid value ?
-    #     for _x, _bytes in enumerate(param_list):
-    #         value = None
-    #         if _bytes is None:
-    #             value = 0
-    #             raise ValueError(f'the read data of ID:{self._motor_ids[_x]} is None.')
-    #         else:
-    #             assert len(_bytes) == 2
-    #             value = int.from_bytes(_bytes, byteorder='little',signed=False)
-    #
-    #         model_numbers[_x] = value
-    #
-    #     # NOTE: if the ID does not return version, the corresponding version value is `0`.
-    #     return model_numbers
-
     def _read_table_single_value_helper(self,*, name: TableValueName, into_cache: bool, retries: int = 0) \
             -> Tuple[float,npt.NDArray[Any]]:
         comm_time, value_arr_list = self._sync_read_helper(_TableValueReadSpec[name])
@@ -509,42 +325,14 @@ class FeiteGroupClient:
     def read_pos(self, retries: int = 0) -> Tuple[float,npt.NDArray[np.float32]]:
         return self._read_table_single_value_helper(name=TableValueName.pos, into_cache=True)
 
-    # def read_pos(self, retries: int = 0) -> Tuple[float,npt.NDArray[np.float32]]:
-    #     """Returns the current positions."""
-    #     value_name: str = 'pos'
-    #     comm_time, self._cached_read_data_dict[value_name] = self.sync_read_helper(_TableValueReadSpec[value_name])
-    #
-    #     # NOTE: if the ID does not return pkt, the corresponding value is `np.inf`.
-    #     return comm_time, self._cached_read_data_dict[value_name].copy()
 
     def read_vel(self, retries: int = 0) -> Tuple[float, npt.NDArray[np.float32]]:
         return self._read_table_single_value_helper(name=TableValueName.vel, into_cache=True)
 
-    # def read_vel(self, retries: int = 0) -> Tuple[float,npt.NDArray[np.float32]]:
-    #     """Returns the current velocities."""
-    #     attr: str = 'vel'
-    #     comm_time, self._cached_read_data_dict[attr] = self.sync_read_helper(addr=SMS_STS_SRAM_Table_ReadOnly.PRESENT_VELOCITY_L,
-    #                                                                           size=2,
-    #                                                                           parser=parse_vel)
-    #
-    #     # NOTE: if the ID does not return pkt, the corresponding value is `np.inf`.
-    #     return comm_time, self._cached_read_data_dict[attr].copy()
-
-    def read_vin(self, retries: int = 0) -> Tuple[float, npt.NDArray[np.float16]]:
+     def read_vin(self, retries: int = 0) -> Tuple[float, npt.NDArray[np.float16]]:
         return self._read_table_single_value_helper(name=TableValueName.vin, into_cache=True)
 
-    #
-    # def read_vin(self, retries: int = 0) -> Tuple[float, npt.NDArray[np.float32]]:
-    #     """Reads the input voltage to the motors."""
-    #     attr:str = 'vin'
-    #     comm_time, self._cached_read_data_dict[attr] = self.sync_read_helper(addr=SMS_STS_SRAM_Table_ReadOnly.PRESENT_VOLTAGE,
-    #                                                                           size=1,
-    #                                                                           parser=parse_vin)
-    #
-    #     # NOTE: if the ID does not return pkt, the corresponding value is `np.inf`.
-    #     return comm_time, self._cached_read_data_dict[attr].copy()
-
-    def read_pos_vel_load(
+     def read_pos_vel_load(
         self, retries: int = 0
     ) -> PosVelLoadRead:
         comm_time, value_arr_list = self._read_table_multiple_values_helper(name=TableValueName.pos_vel_load)
@@ -564,38 +352,6 @@ class FeiteGroupClient:
     def read_protect_mode(self, retries: int = 0) -> Tuple[float, npt.NDArray[np.uint8]]:
             return self._read_table_single_value_helper(name=TableValueName.protect_mode,
                                                         into_cache=False)
-
-    # def read_pos_vel_load(
-    #     self, retries: int = 0
-    # ) -> PosVelLoadRead:
-    #     # NEED to update line 115 and 349 if calling this function
-    #     """Returns the current positions and velocities, and torque"""
-    #     param_list: List[bytearray]
-    #
-    #     # read addr 56,58,60.
-    #     comm_time, param_list = self.sync_read_6_bytes(address=SMS_STS_SRAM_Table_ReadOnly.PRESENT_POSITION_L)
-    #                                                   #size= SMS_STS_SRAM_Table_ReadOnly.PRESENT_LOAD_H - SMS_STS_SRAM_Table_ReadOnly.PRESENT_POSITION_L + 1) #  6, )
-    #
-    #     assert len(param_list) == len(self._motor_ids)
-    #
-    #     # TODO: corresponding data of error id in param_list keeps as `None`. check the valid value ?
-    #     for _x, _bytes in enumerate(param_list):
-    #         assert len(_bytes) == 6
-    #         # get pos.
-    #         self._cached_read_data_dict["pos"][_x] = parse_pos(_bytes[0:2])
-    #         # get vel
-    #         self._cached_read_data_dict["vel"][_x] = parse_vel(_bytes[2:4])
-    #         # get load, percentage of stall torque.
-    #         self._cached_read_data_dict["load"][_x] = parse_load(_bytes[4:6])
-    #
-    #     # NOTE: if the ID does not return pkt, the corresponding value is timed value...
-    #     return PosVelLoadRead(
-    #         comm_time,
-    #         pos=self._cached_read_data_dict["pos"].copy(),
-    #         vel=self._cached_read_data_dict["vel"].copy(),
-    #         load=self._cached_read_data_dict["load"].copy(),
-    #     )
-
 
     def _sync_write_impl(
         self,*,
@@ -873,23 +629,6 @@ class FeiteGroupClient:
         self._set_multiple_bytes_param_helper(address=SMS_STS_EEPROM_Table_RW.KP,
                                               value=list(zip(kp, kd, ki)) )
 
-    # TODO: SMS/STS has no reboot function
-    # def reboot(self, _motor_ids: Sequence[int]):
-    #     """Reboots the specified motors.
-    #
-    #     Args:
-    #         _motor_ids (Sequence[int]): A sequence of motor IDs to reboot.
-    #     """
-    #     for motor_id in _motor_ids:
-    #         self.packet_handler.reboot(self.port_handler, motor_id)
-
-    # def convert_to_unsigned(self, value: int, size: int) -> int:
-    #     """Converts the given value to its unsigned representation."""
-    #     if value < 0:
-    #         max_value = (1 << (8 * size)) - 1
-    #         value = max_value + value
-    #     return value
-
     def __enter__(self):
         """Enables use as a context manager."""
         if not self.is_connected:
@@ -905,14 +644,14 @@ class FeiteGroupClient:
         self.disconnect()
 
 
-def _feite_cleanup_handler():
+def _client_cleanup_handler():
     """Handles cleanup of open Feite clients by forcibly closing active connections.
 
     Iterates over all open Feite clients and checks if their port handlers are in use.
     If a port handler is active, logs a warning message and forces the client to close
     by setting the port handler's `is_using` attribute to False and disconnecting the client.
     """
-    open_clients: List[FeiteClient] = list(FeiteGroupClient.OPEN_CLIENTS)  # type: ignore
+    open_clients: List[RobStrideClient] = list(RobStrideClient.OPEN_CLIENTS)  # type: ignore
     for open_client in open_clients:
         if open_client.port_handler.is_using:
             logger.warning("Forcing client to close.")
@@ -920,4 +659,4 @@ def _feite_cleanup_handler():
         open_client.disconnect()
 
 # Register global cleanup function.
-atexit.register(_feite_cleanup_handler)
+atexit.register(_client_cleanup_handler)

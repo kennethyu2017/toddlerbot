@@ -21,6 +21,7 @@ from ._module_logger import logger
 
 _DEFAULT_FEITE_ACCEL :float = 12 * np.pi   #  7 * np.pi   #5 * np.pi #
 _DEFAULT_FEITE_VEL :float = 3 * np.pi  # 2.5 * np.pi # 75rpm.    #/ 4 * np.pi  #1.4 * np.pi
+_DEFAULT_FEITE_TORQUE_LIMIT_PERCENTAGE : int = 90  # limit to 90%
 
 def _init_dynamixel_actuators(*, robot:Robot, executor: ThreadPoolExecutor)->Future:
     # from ..actuation.dynamixel_control import (
@@ -136,7 +137,8 @@ def _init_feite_actuators(*, robot:Robot, executor: ThreadPoolExecutor)-> Option
         kP=kP,
         kI=kI,
         kD=kD,
-        # TODO> same for all till now.
+        # TODO> use value from config.json and different for motors.
+        default_torque_limit=np.asarray([_DEFAULT_FEITE_TORQUE_LIMIT_PERCENTAGE] * len(feite_ids), dtype=np.uint16),
         default_accel=np.asarray([_DEFAULT_FEITE_ACCEL] * len(feite_ids), dtype=np.float32),
         default_vel=np.asarray([_DEFAULT_FEITE_VEL] * len(feite_ids),dtype=np.float32),
         init_goal_pos=init_pos,
@@ -472,6 +474,39 @@ class RealWorld(BaseEnv, env_name='real_world'):
 
         return obs
 
+    def get_observation_blocked(self, retries:int = 0) ->Optional[Obs]:
+        """Retrieve and process sensor observations asynchronously.
+
+        This method collects data from available sensors, such as Dynamixel motors and IMU, using asynchronous calls. It processes the collected data to generate a comprehensive observation object.
+
+        Args:
+            retries (int, optional): The number of retry attempts for obtaining motor state data. Defaults to 0.
+
+        Returns:
+            An observation object containing processed sensor data, including motor states and, if available, IMU angular velocity and Euler angles.
+        """
+
+        obs = Obs()
+        if self.actuator_controller is not None:
+            try:
+                ste: Mapping[str, float|npt.NDArray[np.float32]] = self.read_motor_state(retries)
+
+            except Exception as exc:
+                # let the corresponding attrs in obs be inited `None`.
+                logger.error(f' read motor state generated an exception: {exc} {type(exc)}')
+                raise
+
+            else:
+                for _k,_v in ste.items():
+                    if hasattr(obs, _k):
+                        setattr(obs, _k, _v)
+                    else:
+                        raise ValueError(f'read state key: {_k} not in obs.')
+                logger.debug(f' read motor state succeed, got obs keys: {ste.keys()} ')
+
+        return obs
+
+
 
     # will guarantee clear self._io_set_future_dict.
     def _finish_io_half_duplex_op_future(self, name:str)->Any:
@@ -590,6 +625,85 @@ class RealWorld(BaseEnv, env_name='real_world'):
 
         # # TODO: not waiting for the future to complete?
         # self._executor.submit(self.actuator_controller.set_pos, write_pos)
+
+
+    def set_motor_target_blocked(self, motor_angles: Dict[str, float]| npt.NDArray[np.float32]):
+        """Sets the target angles for the robot's motors, adjusting for any negated motor directions and updating
+         the positions of Dynamixel motors if present.
+
+        Args:
+            motor_angles (Dict[str, float]): A dictionary mapping motor names to their target angles in degrees
+             or a NumPy array of target angles. If a dictionary is provided, the values are converted to a NumPy array of type float32.
+        """
+
+        # Directions are tuned to match the assembly of the robot.
+        # motor_angles must contain all the robot motors.
+        assert len(motor_angles)==self.robot.nu
+        if self.actuator_controller is None:
+            raise ValueError(f'self.actuator_controller is None.')
+
+        write_pos: npt.NDArray[np.float32]= np.full_like(self.robot.motor_name_ordering,
+                                                         fill_value=np.inf,
+                                                         dtype=np.float32)
+
+        if isinstance(motor_angles, (dict, OrderedDict)):
+            for _x, _n in enumerate(self.robot.motor_name_ordering):
+                # assert _name in motor_angles
+                write_pos[_x]=(motor_angles[_n])
+
+        elif isinstance(motor_angles, np.ndarray):
+            write_pos = motor_angles
+
+        else:
+            raise TypeError(f'motor_angles type error: {type(motor_angles)=:} ')
+
+        assert np.all(write_pos != np.inf)
+        # write_pos *= self.negated_motor_direction_mask
+
+        self.actuator_controller.set_pos( write_pos * self.negated_motor_direction_mask)
+
+
+        # for _id, _name in zip(self.robot.motor_id_ordering, self.robot.motor_name_ordering):
+        # if isinstance(motor_angles, (dict, OrderedDict)):
+        #     for _id in self.robot.motor_id_ordering:
+        #         _name = self.robot.id_to_motor_name[_id]
+        #         # assert _name in motor_angles
+        #
+        #         if _id in self.negated_motor_ids:
+        #             write_pos.append( -motor_angles[_name])
+        #         else:
+        #             write_pos.append(motor_angles[_name])
+        # elif isinstance(motor_angles, npt.NDArray[np.float32]):
+        #     write_pos = list(motor_angles)
+        #     for _id in self.robot.motor_id_ordering:
+        #         if _id in self.negated_motor_ids:
+        #             write_pos.append(-motor_angles[_name])
+        #         else:
+        #             write_pos.append(motor_angles[_name])
+        #
+        # else:
+        #     raise TypeError(f'motor_angles type error: {type(motor_angles)=:} ')
+
+        # assert len(write_pos) == len(motor_angles)
+
+        # motor_angles_updated: Dict[int, float] = {}
+        # for _name, _angle in motor_angles.items():
+        #     mtr_id = self.robot.motor_name_to_id[_name]
+        #
+        #     if mtr_id in self.negated_motor_ids:
+        #         motor_angles_updated[mtr_id] = - _angle
+        #     else:
+        #         motor_angles_updated[mtr_id] = _angle
+
+        # if self.actuator_controller is not None:
+        #     dynamixel_pos = [
+        #         motor_angles_updated[k]
+        #         for k in self.robot.get_joint_config_attrs("type", "dynamixel")
+        #     ]
+
+        # # TODO: not waiting for the future to complete?
+        # self._executor.submit(self.actuator_controller.set_pos, write_pos)
+
 
     # NOTE: sync write to all.
     def set_motor_kps(self, motor_kps: Dict[str, float]):

@@ -29,6 +29,22 @@ from toddlerbot.visualization import (
 
 from toddlerbot.tools._module_logger import logger
 
+_DAMPING_RANGE: Tuple[float, float, float] = (0.0, 0.5, 1e-3)
+_ARMATURE_RANGE: Tuple[float, float, float] = (0.0, 0.01, 1e-4)
+_FRICTIONLOSS_RANGE: Tuple[float, float, float] = (0.01, 1.5, 1e-3)
+
+_Q_DOT_TAU_MAX_RANGE: Tuple[float, float, float] = (1.0, 5.0, 1e-3)
+_Q_DOT_MAX_RANGE: Tuple[float, float, float] = (5.0, 14., 1e-3)
+_TAU_MAX_RANGE_SM40BL: Tuple[float, float, float] = (1., 2.5, 1e-3)
+
+_KP_RATIO_RANGE: Tuple[float,float,float] = (0.5, 4.0, 1e-2)
+
+# damping_range: Tuple[float, float, float] = (0.0, 0.5, 1e-3),
+# armature_range: Tuple[float, float, float] = (0.0, 0.01, 1e-4),
+# frictionloss_range: Tuple[float, float, float] = (0.0, 1.0, 1e-3),
+# q_dot_tau_max_range: Tuple[float, float, float] = (0.0, 5.0, 1e-2),
+# q_dot_max_range: Tuple[float, float, float] = (5.0, 10.0, 1e-1),
+
 # This script is used to optimize the parameters of the robot's dynamics model using system identification (SysID) techniques.
 
 # TODO> use optuna logger?
@@ -346,6 +362,7 @@ def _sim_run_sysID_episode_helper(*, ep_list:List[_SysIDEpisodeData],
                                   jnt_name:str,
                                   jnt_ordering_idx:int,
                                   sim:MuJoCoSim,
+                                  kp_ratio:float
                                   )->npt.NDArray[np.float32]:
     jnt_pos_sim_list: List[float] = []
     # each `action` is a sequence belongs to one episode with a kp value.
@@ -353,8 +370,9 @@ def _sim_run_sysID_episode_helper(*, ep_list:List[_SysIDEpisodeData],
     for _ep in ep_list:
         # TODO: why not adjust joint pos in Mujoco at beginning of each episode ?
         # sim.set_motor_kps(dict(zip(motor_names, [kp] * len(motor_names))))
-        sim.set_motor_kps(_ep.motor_kp )
-        logger.info(f'start a new episode, set jnt: {jnt_name} kp: {_ep.motor_kp}')
+        sim.set_motor_kps(_ep.motor_kp, kp_ratio)
+
+        logger.info(f'start a new episode, set jnt: {jnt_name} kp: {_ep.motor_kp} kp_ratio: {kp_ratio}')
 
         # for a in action:
         for _act in _ep.motor_act:
@@ -428,6 +446,7 @@ def _build_objective(*,
                 damping=damping, armature=armature, frictionloss=frictionloss
             )
         }
+
         sim.set_joint_dynamics(joint_dyn)
 
         if "sysID" in robot_name:
@@ -440,6 +459,11 @@ def _build_objective(*,
             q_dot_max = trial.suggest_float(
                 "q_dot_max", *q_dot_max_range[:2], step=q_dot_max_range[2]
             )
+
+            # # TODO: temply debug.
+            # kp_ratio = trial.suggest_float(
+            #     'kp_ratio', *_KP_RATIO_RANGE[0:2], step=_KP_RATIO_RANGE[2]
+            # )
 
             # TODO: tau_max, q_dot_max, q_dot_tqu_max is array in mujoco_controller.....
             # sim.set_motor_dynamics(
@@ -465,6 +489,7 @@ def _build_objective(*,
                                       jnt_name=jnt_name,
                                       jnt_ordering_idx=jnt_ordering_idx,
                                       sim=sim,
+                                      kp_ratio=2.0  #kp_ratio
                                       )
         assert jnt_pos_real_arr.shape == jnt_pos_sim_arr.shape
 
@@ -531,12 +556,12 @@ def _optimize_for_one_jnt_with_multiple_episodes(*,
                                                  # q_dot_max_range: Tuple[float, float, float] = (5.0, 10.0, 1e-1),
 
                                                  #TODO: temply try:
-                                                 damping_range: Tuple[float, float, float] = (0.0, 5.0, 1e-1),
-                                                 armature_range: Tuple[float, float, float] = (0.0, 5.0, 1e-1),
-                                                 frictionloss_range: Tuple[float, float, float] = (0.0, 5.0, 1e-1),
+                                                 damping_range: Tuple[float, float, float] = _DAMPING_RANGE,
+                                                 armature_range: Tuple[float, float, float] = _ARMATURE_RANGE,
+                                                 frictionloss_range: Tuple[float, float, float] = _FRICTIONLOSS_RANGE,
 
-                                                 q_dot_tau_max_range: Tuple[float, float, float] = (1.0, 10.0, 1e-1),
-                                                 q_dot_max_range: Tuple[float, float, float] = (1.0, 30.0, 1e-1),
+                                                 q_dot_tau_max_range: Tuple[float, float, float] = _Q_DOT_TAU_MAX_RANGE,
+                                                 q_dot_max_range: Tuple[float, float, float] = _Q_DOT_MAX_RANGE,
 
                                                  ) -> Tuple[Dict[str, float], float]:
     """Optimize the parameters of a robot joint using simulation and Optuna.
@@ -583,7 +608,7 @@ def _optimize_for_one_jnt_with_multiple_episodes(*,
             tau_max_range = (0.0, 3.0, 1e-2)
         elif 'SM40BL'.casefold() in robot.name.casefold():
             # TODO: keep same value as add_default_settings() in process_mjcf.py
-            tau_max_range = (0.0, 4.0, 1e-2)
+            tau_max_range =  _TAU_MAX_RANGE_SM40BL  #(0.0, 4.0, 1e-2)
 
     # motor_names = robot.active_joint_to_motor_name[jnt_name]
     # joint_idx = robot.active_joint_name_ordering.index(jnt_name)
@@ -651,7 +676,7 @@ def _optimize_for_one_jnt_with_multiple_episodes(*,
     time.sleep(3.)
 
     # TODO: temply disable.
-    # study.enqueue_trial(initial_trial)
+    study.enqueue_trial(initial_trial)
 
     objective = _build_objective(
         robot=robot,
@@ -936,6 +961,7 @@ def _evaluate(
                                                                                  jnt_name=_jnt_name,
                                                                                  jnt_ordering_idx=jnt_ordering_idx,
                                                                                  sim=sim,
+                                                                                 kp_ratio=2.0, # dyn_config[_jnt_name]["kp_ratio"]
                                                                                  )
         assert jnt_pos_real_arr.shape == jnt_pos_sim_arr.shape
 
@@ -995,6 +1021,8 @@ def _evaluate(
         jnt_pos_sim_dict,
         jnt_pos_real_dict,
         robot.joint_cfg_limits,
+        x_label="Time (s)",
+        y_label="Position (rad)",
         save_path=plot_folder_str,
         file_name="sim2real_joint_pos",
         line_suffix=["_sim", "_real"],
@@ -1014,6 +1042,8 @@ def _evaluate(
         jnt_pos_sim_dict,
         action_sim_dict,
         robot.joint_cfg_limits,
+        x_label= "Time (s)",
+        y_label= "Position (rad)",
         save_path=plot_folder_str,
         file_name="sim_tracking",
     )
@@ -1031,6 +1061,8 @@ def _evaluate(
         jnt_pos_real_dict,
         action_real_dict,
         robot.joint_cfg_limits,
+        x_label="Time (s)",
+        y_label="Position (rad)",
         save_path=plot_folder_str,
         file_name="real_tracking",
     )
@@ -1130,7 +1162,7 @@ def _main(args: argparse.Namespace):
                 jnt_name=_jnt_name,
                 ep_list=_ep_list,
                 n_jobs = args.n_jobs,
-                freq_max = _CHIRP_END_FREQ,   #2 Hz
+                freq_max = _CHIRP_END_FREQ,  # 10
                 n_iters=args.n_iters,
                 early_stop_rounds=args.early_stop,
             )

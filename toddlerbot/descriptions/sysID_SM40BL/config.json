@@ -29,17 +29,19 @@
             "default_pos": 0.0,
             "kp_real": 5,
             "ki_real": 0.0,
-            "kd_real": 0.0,
+            "kd_real": 2.0,
             "kff2_real": 0.0,
             "kff1_real": 0.0,
             "kp_sim": 3.0,
             "kd_sim": 0.0,
-            "damping": 0.262,
-            "armature": 0.0099,
-            "frictionloss": 0.935,
-            "tau_max": 1.08,
-            "q_dot_tau_max": 4.15,
-            "q_dot_max": 7.0
+            "damping": 0.498,
+            "armature": 0.0024000000000000002,
+            "frictionloss": 0.757,
+            "tau_max": 2.491,
+            "q_dot_tau_max": 4.234,
+            "q_dot_max": 8.814,
+            "kp_ratio": 0.5
+
         }
     }
 }
