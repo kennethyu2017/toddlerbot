@@ -12,6 +12,7 @@ VEL_RESOLUTION = 50 * POS_RESOLUTION  # in radius. unit in 50 steps / second, i.
 ACCEL_RESOLUTION = 100 * POS_RESOLUTION  # in radius. unit in 100 steps / s2 i.e.,  0.1534 rad/s2,  1.465 rpm/s2.
 VOLTAGE_RESOLUTION = 0.1
 LOAD_PERCENTAGE_RESOLUTION = 0.1  # 0.1%
+TORQUE_LIMIT_PERCENTAGE_RESOLUTION = 0.1  # 0.1%
 
 
 #波特率定义
@@ -60,6 +61,7 @@ class SMS_STS_SRAM_Table_RW:
     # GOAL_TIME_H = 45
     GOAL_VEL_L = 46
     # GOAL_VEL_H = 47
+    TORQUE_LIMIT_L = 48
     LOCK = 55
 
 class SMS_STS_SRAM_Table_ReadOnly:

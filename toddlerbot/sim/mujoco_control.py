@@ -184,8 +184,11 @@ class MotorController:
             tau_max,  # Value when condition 1 is True
             np.where(
                 abs_q_dot <= q_dot_max,  # Condition 2
-                tau_max / (q_dot_tau_max - q_dot_max) * (abs_q_dot - q_dot_tau_max)
-                + tau_max,  # Value when condition 2 is True
+                tau_max * (q_dot_max - abs_q_dot) / (q_dot_max - q_dot_tau_max),
+
+                # tau_max / (q_dot_tau_max - q_dot_max) * (abs_q_dot - q_dot_tau_max),
+                # + tau_max,  # Value when condition 2 is True
+
                 # np.zeros_like(tau_m),  # Value when all conditions are False
                 0.
             ),

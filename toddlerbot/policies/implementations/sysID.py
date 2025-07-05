@@ -32,9 +32,8 @@ _CHIRP_SIGNAL_DURATION = 10.0
 _CHIRP_START_FREQ = 0.1
 
 # TODO: 3 is enough?
-_CHIRP_END_FREQ = 2 # 10.
+_CHIRP_END_FREQ = 6 # 10.
 _CHIRP_DECAY_RATE = 0.1  #0.1
-
 _RESET_DURATION = 2.0
 
 
@@ -68,7 +67,8 @@ def _build_jnt_sysID_spec(robot_name: str)->Mapping[str, _SysIDSpecs]:
             kp_list = list(range(900, 2400, 300))
         elif 'sm40bl' in robot_name.casefold():
             # kp_list = list(range(17, 47, 4))  # defualt kp is `32` for SM40BL.
-            kp_list = list(range(7000//(3*128), 12000//(3*128), 4))
+            # kp_list = list(range(7000//(3*128), 12000//(3*128), 4))
+            kp_list = [24,32]
         else:
             kp_list = list(range(1500, 3600, 300))
 
@@ -222,7 +222,10 @@ class SysIDPolicy(BasePolicy, policy_name="sysID"):
         super().__init__(name, robot, init_motor_pos)
         set_seed(0)
 
-        self._start_step :bool = False
+        # TODO: temply try 10ms.
+        self.control_dt_sec = 0.01
+
+        # self._start_step :bool = False
 
         # self.prep_duration = 2.0   # 2 sec.
         # _WARM_UP_DURATION = 2.0

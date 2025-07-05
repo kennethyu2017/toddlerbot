@@ -411,7 +411,7 @@ class MuJoCoSim(BaseEnv, env_name="mujoco"):
         """
         self.data.joint(0).qpos[3:7] = torso_quat
 
-    def set_motor_kps(self, motor_kps: Dict[str, float]):
+    def set_motor_kps(self, motor_kps: Dict[str, float], kp_ratio:float):
         """Sets the proportional gain (Kp) values for the motors.
 
         This method updates the Kp values for each motor specified in the `motor_kps` dictionary.
@@ -420,6 +420,7 @@ class MuJoCoSim(BaseEnv, env_name="mujoco"):
 
         Args:
             motor_kps (Dict[str, float]): A dictionary where keys are motor names and values are the Kp values to be set.
+            kp_ratio
         """
 
 
@@ -434,8 +435,8 @@ class MuJoCoSim(BaseEnv, env_name="mujoco"):
 
             elif self.robot.motor_type[_name].casefold() == 'feite':
                 # TODO: for feite actuator, not divide 128. maybe need some co-eff after sysID?
-                # write_kp = _kp
-                write_kp = _kp * 3.
+                write_kp = _kp * kp_ratio
+                # write_kp = _kp * 3.0
 
             else:
                 write_kp = _kp

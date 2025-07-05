@@ -800,7 +800,7 @@ def run_policy(*,
     #              colour='CYAN', unit='step', unit_scale=True)
     run_start_time = timelib.time()
     _step_count:int = 0
-    time_until_next_step = 0.0
+    # time_until_next_step = 0.0
     # update tqdm every 1 sec.
     p_bar_steps:int = max(1, int(1 / policy.control_dt_sec))
 
@@ -809,6 +809,8 @@ def run_policy(*,
     motor_kp_setter: _MotorKpSetter | None = _MotorKpSetter() \
         if type(policy).__name__ == 'SysIDPolicy' else None
 
+    loop_interval_ns = policy.control_dt_sec * 1_000_000_000
+
     # TODO: for tqdm,  if total is float('inf'), Infinite iterations,
     #  behave same as `total-unknown`: can not show progress bar.
     # not use tqdm for n_steps_total is inf?
@@ -816,11 +818,20 @@ def run_policy(*,
                  colour='CYAN', unit='step', unit_scale=True) as p_bar:
         try:
             while _step_count < policy.n_steps_total:
+                # TODO: temply try.
+                _loop_start_ns: int = timelib.perf_counter_ns()
+
                 _record = StepRecord()
                 _record.time_pnt.step_start = timelib.time()
 
+
+
                 # Get the latest state from the queue
-                obs = env.get_observation(1)
+                # obs = env.get_observation(1)
+                _cnt1=timelib.perf_counter_ns()
+                obs = env.get_observation_blocked(1)
+                print(f'get obs ms: { ((timelib.perf_counter_ns() - _cnt1)/1_000_000):.2f}' )
+
                 # change to epoch time.
                 obs.time -= run_start_time
 
@@ -875,20 +886,30 @@ def run_policy(*,
 
                 # loop_time_record_list.append( time_record)
 
-                time_until_next_step = (run_start_time +
-                                        policy.control_dt_sec * _step_count
-                                        - _record.time_pnt.step_end)
+                # time_until_next_step = (run_start_time +
+                #                         policy.control_dt_sec * _step_count
+                #                         - _record.time_pnt.step_end)
 
                 step_record_list.append(_record)
 
-                logger.debug(f"time_until_next_step: {time_until_next_step * 1000:.2f} ms")
+                _until_next_step_ns = (_loop_start_ns
+                                       + loop_interval_ns
+                                       - timelib.perf_counter_ns() )
 
-                if time_until_next_step < 0:
-                    logger.warning(f'time_until_next_step < 0 : {time_until_next_step}')
+                logger.info(f"until_next_step_ns: {_until_next_step_ns/1_000_000:.1f} ms")
+                if _until_next_step_ns > 0:
+                    # logger.debug(f'+++++ sleep for {until_next_step_sec:.4f} sec ')
+                    timelib.sleep(_until_next_step_ns / 1_000_000_000.)
 
-                if ("real" in env.env_name or vis_type == "view") and time_until_next_step > 0:
-                    logger.debug(f'+++++ sleep for {time_until_next_step * 1000:.2f} ms')
-                    timelib.sleep(time_until_next_step)
+                # logger.debug(f"time_until_next_step: {time_until_next_step * 1000:.2f} ms")
+                #
+                # if time_until_next_step < 0:
+                #     logger.warning(f'time_until_next_step < 0 : {time_until_next_step}')
+                #
+                # if ("real" in env.env_name or vis_type == "view") and time_until_next_step > 0:
+                #     logger.debug(f'+++++ sleep for {time_until_next_step * 1000:.2f} ms')
+                #     timelib.sleep(time_until_next_step)
+
 
         except KeyboardInterrupt:
             # only catch Keyboard Interrupt as normal exit from while loop,
