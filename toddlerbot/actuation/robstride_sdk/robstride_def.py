@@ -3,72 +3,129 @@ from numpy import pi
 
 ROBSTRIDE_DEFAULT_BAUD_RATE = 1_000_000
 
-class _ReadSpec(NamedTuple):
+# ParamTableNamedIndex: Dict[str, int] = {
+#     'run_mode': 0x7005,
+#     'limit_torque': 0x700B,
+#     # target pos in PP mode./CSP mode.
+#     'loc_ref': 0x7016,
+#     'mechPos': 0x7019,
+#     'mechVel': 0x701B,
+#     'loc_kp': 0x701E,
+#     'spd_kp': 0x701F,
+#     # vel max abs value in PP mode.
+#     'vel_max': 0x7024,
+#     # acc abs value in PP mode.
+#     'acc_set': 0x7025,
+#     'EPScan_time': 0x7026,
+#     'zero_sta': 0x7029,
+# }
+
+param_table_index_to_name: Dict[int,str] = {
+    0X7005:'run_mode',
+    0X700B:'limit_torque',
+    0X7016:'loc_ref',
+    0X7019:'mechPos',
+    0X701B:'mechVel',
+    0X701E:'loc_kp',
+    0X701F:'spd_kp',
+    0X7024:'vel_max',
+    0X7025:'acc_set',
+    0X7026:'EPScan_time',
+    0X7029:'zero_sta',
+}
+
+
+class ExtID(NamedTuple):
+    dest_can_id: int
+    data2: int
+    comm_type: int
+
+class MotorStateFrame(NamedTuple):
+    ts: float  # time stamp.
+    pos: float
+    vel: float
+    torque: float
+    temp: float    #temp_celsius
+    # todo: motor error...
+
+class _ParamSpec(NamedTuple):
     index: int
     n_bytes: int
     # parser: Sequence[ Callable[[bytes|bytearray], float|int] ]
     dtype: Type
+    signed: bool
     min_max: Tuple[float, float] | None = None
 
 
 # TODO: this is only for RS02. check other types.
-_ParamTableReadSpec : Dict[str, _ReadSpec] = {
-    'run_mode': _ReadSpec(index=0x7005,
-                          n_bytes=1,
-                          dtype=int),
+param_table_spec : Dict[str, _ParamSpec] = {
+    'run_mode': _ParamSpec(index=0x7005,
+                           n_bytes=1,
+                           dtype=int,
+                           signed=False),
 
-    'limit_torque': _ReadSpec(index=0x700B,
+    'limit_torque': _ParamSpec(index=0x700B,
                                n_bytes=4,
                                dtype=float,
+                               signed=True,
                                min_max=(0., 17.) ),
 
     # target pos in PP mode./CSP mode.
-    'loc_ref': _ReadSpec(index=0x7016,
+    'loc_ref': _ParamSpec(index=0x7016,
+                          n_bytes=4,
+                          dtype=float,
+                          signed=True,
+                          min_max=(-12.57, 12.57) ),
+
+    'mechPos': _ParamSpec(index=0x7019,
+                          n_bytes=4,
+                          dtype=float,
+                          signed=True,
+                          min_max=(-12.57, 12.57)),
+
+    'mechVel': _ParamSpec(index=0x701B,
+                          n_bytes=4,
+                          dtype=float,
+                          signed=True,
+                          min_max=(-44., 44.)),
+
+    'loc_kp': _ParamSpec(index=0x701E,
                          n_bytes=4,
                          dtype=float,
-                         min_max=(-12.57, 12.57) ),
+                         signed=True,
+                         min_max=(0, 200)),
 
-    'mechPos': _ReadSpec(index=0x7019,
-                         n_bytes=4,
-                         dtype=float,
-                         min_max=(-12.57, 12.57)),
-
-    'mechVel': _ReadSpec(index=0x701B,
-                         n_bytes=4,
-                         dtype=float,
-                         min_max=(-44., 44.)),
-
-    'loc_kp': _ReadSpec(index=0x701E,
-                        n_bytes=4,
-                        dtype=float,
-                        min_max=(0, 200)),
-
-    'spd_kp': _ReadSpec(index=0x701F,
+    'spd_kp': _ParamSpec(index=0x701F,
                         n_bytes=4,
                         dtype=float,
                         min_max=(0,200)),
 
     # vel max abs value in PP mode.
-    'vel_max': _ReadSpec(index=0x7024,
-                         n_bytes=4,
-                         dtype=float,
-                         min_max=(0, 44.)),
+    'vel_max': _ParamSpec(index=0x7024,
+                          n_bytes=4,
+                          dtype=float,
+                          signed=True,
+                          min_max=(0, 44.)),
 
     # acc abs value in PP mode.
-    'acc_set': _ReadSpec(index=0x7025,
-                         n_bytes=4,
-                         dtype=float,
-                         # TODO> max acc of RS?
-                         min_max=(0, 30.)),
+    'acc_set': _ParamSpec(index=0x7025,
+                          n_bytes=4,
+                          dtype=float,
+                          signed=True,
+                          # TODO> max acc of RS?
+                          min_max=(0, 30.)),
 
-    'EPScan_time': _ReadSpec(index=0x7026,
-                             n_bytes=2,
-                             dtype=int,
-                             min_max=(0., 50.)),
+    'EPScan_time': _ParamSpec(index=0x7026,
+                              n_bytes=2,
+                              dtype=int,
+                              signed=False,
+                              min_max=(0., 50.)),
 
-    'zero_sta': _ReadSpec(index=0x7029,
-                          n_bytes=1,
-                          dtype=int),
+    'zero_sta': _ParamSpec(index=0x7029,
+                           n_bytes=1,
+                           dtype=int,
+                           signed=False,),
+
 }
 
 # for RobStride private protocol:
@@ -77,7 +134,7 @@ class CommunicationType:
     MOTION_CONTROL = 1
     MOTOR_FEEDBACK = 2
     MOTOR_ENABLE = 3
-    MOTOR_STOP = 4
+    MOTOR_DISABLE = 4
     SET_MECH_POS_ZERO = 6
     SET_MOTOR_CAN_ID = 7
     # PARAM_TABLE_WRITE: int = 8
@@ -90,7 +147,7 @@ class CommunicationType:
     SET_PROTOCOL = 25
 
 # index: 0x7005
-class RunModes:
+class RunModesCmd:
     MOTION_MODE = 0        # 运控模式
     PP_POSITION_MODE = 1   # PP位置模式
     SPEED_MODE = 2         # 速度模式
@@ -109,7 +166,7 @@ class ParamThreshold:
     KD_MIN, KD_MAX = (0.0, 5.0)
 
 # comm type: 23
-class BaudRate:
+class BaudRateCmd:
     BPS_1M = 1
     BPS_500K = 2
     BPS_250K = 3

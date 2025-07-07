@@ -1,9 +1,11 @@
-
 import atexit
 import time
-from enum import Enum
-from typing import (Any, Dict, List, Optional, Sequence,Type,Mapping,
-                    Set, Tuple, ClassVar,Iterable,NamedTuple,Callable, OrderedDict)
+from typing import (Any, Dict, List, Optional, Sequence,
+                    Set, Tuple, ClassVar,Iterable,NamedTuple,
+                    OrderedDict)
+from dataclasses import dataclass, field
+from collections import OrderedDict
+from queue import Queue  # thread-safe fifo-queue.
 
 import numpy as np
 import numpy.typing as npt
@@ -12,6 +14,14 @@ import can
 
 from .robstride_sdk import *
 from ._module_logger import logger
+
+@dataclass
+class MotorData:
+    can_id: int = 0
+    # thread-safe sync-fifo-queue.
+    state_queue: Queue[MotorStateFrame] = field(default_factory= lambda: Queue(maxsize=30)) # cached with ts.
+    param_table: Dict[int, float|int] = field(default_factory=dict) # not cached. only fresh value.
+
 
 # @dataclass(init=False)
 class RobStrideClient:
@@ -25,6 +35,8 @@ class RobStrideClient:
 
     # instance variable.
     bus: PcanBus | None
+    motor_data: OrderedDict[int, MotorData]
+
 
     def __init__(
         self,*,
@@ -56,6 +68,11 @@ class RobStrideClient:
         self.lazy_connect = lazy_connect
         self.rcv_timeout_ms = rcv_timeout_ms
         self.bus = None
+        self.can_Notifier = None, ...
+        self.can_listener = None, ...
+
+        # index through motor can id.
+        self.motor_data: OrderedDict[int, MotorData] = OrderedDict()
 
         RobStrideClient.OPEN_CLIENTS.add(self)
 
@@ -76,7 +93,11 @@ class RobStrideClient:
                            state=,
                            timing=,
                            bitrate=self.baud_rate,
+                           can_filters=,
                            receive_own_messages=,)
+
+        self.can_Notifier,...
+        self.can_listener,...
 
         if self.bus.status_is_ok():
             logger.info(f"Succeeded to open can interface: {self.interface_name}"
@@ -101,8 +122,14 @@ class RobStrideClient:
         #     return
         # Ensure motors are disabled at the end.
         self.set_torque_enabled(motor_ids=self._motor_ids, enabled=False)
+
+        self.can_notifier.stop()... = None
+        self.can_listner.stop()... =None
+
         self.bus.shutdown()
         self.bus = None
+
+        self.motor_data.clear()
 
         if self in RobStrideClient.OPEN_CLIENTS:
             RobStrideClient.OPEN_CLIENTS.remove(self)
@@ -144,7 +171,7 @@ class RobStrideClient:
             # will check arbitration ID in can.Message.
             snd_msg = can.Message(
                 arbitration_id=arbitration_id,
-                dlc=8,
+                # dlc=8,
                 data=data1,
                 is_extended_id=True
             )

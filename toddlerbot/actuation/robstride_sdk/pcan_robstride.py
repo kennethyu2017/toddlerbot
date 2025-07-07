@@ -11,7 +11,6 @@ import math
 
 class CANMotorController:
 
-
     def send_receive_can_message(self, cmd_mode, data2, data1, timeout=200):
         """
         发送CAN消息并接收响应。
