@@ -4,9 +4,9 @@ from typing import (Any, Dict, List, Optional, Sequence,
                     Set, Tuple, ClassVar,Iterable,NamedTuple,
                     OrderedDict)
 from dataclasses import dataclass, field
-from collections import OrderedDict
-from queue import Queue  # thread-safe fifo-queue.
-
+# deque does not use lock, but its append/popleft is atomic operation.
+from collections import OrderedDict, deque
+# from queue import Queue  # thread-safe fifo-queue.
 import numpy as np
 import numpy.typing as npt
 from can.interfaces.pcan import *
@@ -19,7 +19,7 @@ from ._module_logger import logger
 class MotorData:
     can_id: int = 0
     # thread-safe sync-fifo-queue.
-    state_queue: Queue[MotorStateFrame] = field(default_factory= lambda: Queue(maxsize=30)) # cached with ts.
+    state_queue: deque[MotorStateFrame] = field(default_factory= lambda: deque(maxlen=30)) # cached with ts.
     param_table: Dict[int, float|int] = field(default_factory=dict) # not cached. only fresh value.
 
 

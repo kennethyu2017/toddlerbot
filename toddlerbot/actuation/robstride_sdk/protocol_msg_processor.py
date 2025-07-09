@@ -6,7 +6,7 @@ from can import Message
 from .._module_logger import logger
 from .robstride_def import (CommunicationType, BaudRateCmd, ParamThreshold,
                             param_table_index_to_name, param_table_spec,
-                            MotorStateFrame, ExtID )
+                            MotorStateFrame, ExtID , SingleParamValue)
 
 from .utils import ParamConverter
 
@@ -241,11 +241,6 @@ class RSProtocolBuilder:
 #     #todo: motor error...
 
 
-class SingleParamValue(NamedTuple):
-    can_id: int
-    index: int
-    value: float|int
-
 # parse rcv msg. one by one parse for recv msg.
 class RSProtocolParser:
 
@@ -258,11 +253,18 @@ class RSProtocolParser:
         return ExtID(dest_can_id=dest_can_id, data2=data2, comm_type=comm_type)
 
     @staticmethod
+    def motor_device_id(data2: int, data: bytes | bytearray) -> int:
+        motor_can_id = data2 & 0xff
+        assert len(data) == 8
+        mcu_id = int.from_bytes(data, byteorder='little', signed=False)
+        return mcu_id
+
+    @staticmethod
     def motor_state_feedback(data2:int, data:bytes|bytearray, ts:float )->MotorStateFrame:
         # ext_id = RSProtocolParser.decode_ext_id(msg.arbitration_id)
-        # motor_can_id = ext_id.data2 & 0xff
-
+        motor_can_id = data2 & 0xff
         motor_error = (data2 >> 8) & 0xff
+
         # TODO: handle all the faults.
         # check bit 16~21
         if (motor_error & 0b111111) != 0:
@@ -289,6 +291,7 @@ class RSProtocolParser:
         temp_celsius:float = int.from_bytes(data[6:8], byteorder='big', signed=False) / 10.
 
         return MotorStateFrame(ts=ts,
+                               can_id=motor_can_id,
                                pos=pos,
                                vel=vel,
                                torque=torque,

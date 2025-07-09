@@ -1,5 +1,4 @@
-from typing import Dict,Any,Type, NamedTuple, Tuple
-from numpy import pi
+from typing import Dict,Type, NamedTuple, Tuple
 
 ROBSTRIDE_DEFAULT_BAUD_RATE = 1_000_000
 
@@ -42,11 +41,27 @@ class ExtID(NamedTuple):
 
 class MotorStateFrame(NamedTuple):
     ts: float  # time stamp.
+    can_id: int
     pos: float
     vel: float
     torque: float
     temp: float    #temp_celsius
     # todo: motor error...
+
+    def __str__(self):
+        return (f'motor state frame --> can_id:{self.can_id} pos:{self.pos:.2f} vel:{self.vel:.2f} '
+                f'torque:{self.torque:.2f} temp:{self.temp:.2f}')
+
+class SingleParamValue(NamedTuple):
+    can_id: int
+    index: int
+    value: float|int
+
+    def __str__(self):
+        if isinstance(self.value,float):
+            return f'single param value --> can_id:{self.can_id} index:{self.index} value:{self.value:.2f}'
+        else:
+            return f'single param value --> can_id:{self.can_id} index:{self.index} value:{self.value:.2f}'
 
 class _ParamSpec(NamedTuple):
     index: int
@@ -54,7 +69,7 @@ class _ParamSpec(NamedTuple):
     # parser: Sequence[ Callable[[bytes|bytearray], float|int] ]
     dtype: Type
     signed: bool
-    min_max: Tuple[float, float] | None = None
+    min_max: Tuple[float|int, float|int]
 
 
 # TODO: this is only for RS02. check other types.
@@ -62,7 +77,8 @@ param_table_spec : Dict[str, _ParamSpec] = {
     'run_mode': _ParamSpec(index=0x7005,
                            n_bytes=1,
                            dtype=int,
-                           signed=False),
+                           signed=False,
+                           min_max=(0, 5)),
 
     'limit_torque': _ParamSpec(index=0x700B,
                                n_bytes=4,
@@ -93,19 +109,20 @@ param_table_spec : Dict[str, _ParamSpec] = {
                          n_bytes=4,
                          dtype=float,
                          signed=True,
-                         min_max=(0, 200)),
+                         min_max=(0., 200.)),
 
     'spd_kp': _ParamSpec(index=0x701F,
                         n_bytes=4,
                         dtype=float,
-                        min_max=(0,200)),
+                        signed=True,
+                        min_max=(0., 200.)),
 
     # vel max abs value in PP mode.
     'vel_max': _ParamSpec(index=0x7024,
                           n_bytes=4,
                           dtype=float,
                           signed=True,
-                          min_max=(0, 44.)),
+                          min_max=(0., 44.)),
 
     # acc abs value in PP mode.
     'acc_set': _ParamSpec(index=0x7025,
@@ -113,18 +130,19 @@ param_table_spec : Dict[str, _ParamSpec] = {
                           dtype=float,
                           signed=True,
                           # TODO> max acc of RS?
-                          min_max=(0, 30.)),
+                          min_max=(0., 30.)),
 
     'EPScan_time': _ParamSpec(index=0x7026,
                               n_bytes=2,
                               dtype=int,
                               signed=False,
-                              min_max=(0., 50.)),
+                              min_max=(0, 50)),
 
     'zero_sta': _ParamSpec(index=0x7029,
                            n_bytes=1,
                            dtype=int,
-                           signed=False,),
+                           signed=False,
+                           min_max=(0, 1)),
 
 }
 
