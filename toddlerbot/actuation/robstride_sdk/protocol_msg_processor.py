@@ -6,7 +6,7 @@ from can import Message
 from .._module_logger import logger
 from .robstride_def import (CommunicationType, BaudRateCmd, ParamThreshold,
                             param_table_index_to_name, param_table_spec,
-                            MotorStateFrame, ExtID , SingleParamValue)
+                            MotorStateFrame, ExtID , SingleParamValue, ParamSpec)
 
 from .utils import ParamConverter
 
@@ -156,14 +156,13 @@ class RSProtocolBuilder:
                            host_can_id: int,
                            index: int,
                            param_value: List[float|int],
-                           param_n_bytes:int,
-                           param_dtype:Type,
-                           param_signed:bool )->List[Message]:
+                           param_spec: ParamSpec
+                           )->List[Message]:
         assert len(param_value) == len(motor_can_id)
         assert 0 <= host_can_id <= 0xfe
         assert 0x7005 <= index <= 0x7029
-        assert param_n_bytes in {1,2,4}
-        assert param_dtype in {int,float}
+        assert param_spec.n_bytes in {1,2,4}
+        assert param_spec.dtype in {int,float}
 
         idx_bytes = index.to_bytes(length=2, byteorder='little', signed=False)
 
@@ -175,10 +174,10 @@ class RSProtocolBuilder:
             data1[0], data1[1] = idx_bytes
 
             p_bytes = ParamConverter.value_to_param_bytes(value=_v,
-                                                n_bytes=param_n_bytes,
-                                                dtype=param_dtype,
-                                                signed=param_signed)
-            assert len(p_bytes) == param_n_bytes and len(p_bytes)<=4
+                                                n_bytes=param_spec.n_bytes,
+                                                dtype=param_spec.dtype,
+                                                signed=param_spec.signed)
+            assert len(p_bytes) == param_spec.n_bytes and len(p_bytes)<=4
 
             # data1[4:4+len(p_bytes)] = p_bytes
             data1.extend(p_bytes)

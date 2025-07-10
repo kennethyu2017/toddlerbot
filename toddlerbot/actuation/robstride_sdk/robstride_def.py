@@ -63,86 +63,86 @@ class SingleParamValue(NamedTuple):
         else:
             return f'single param value --> can_id:{self.can_id} index:{self.index} value:{self.value:.2f}'
 
-class _ParamSpec(NamedTuple):
+class ParamSpec(NamedTuple):
     index: int
     n_bytes: int
     # parser: Sequence[ Callable[[bytes|bytearray], float|int] ]
-    dtype: Type
+    dtype: Type[int|float]
     signed: bool
     min_max: Tuple[float|int, float|int]
 
 
 # TODO: this is only for RS02. check other types.
-param_table_spec : Dict[str, _ParamSpec] = {
-    'run_mode': _ParamSpec(index=0x7005,
-                           n_bytes=1,
-                           dtype=int,
-                           signed=False,
-                           min_max=(0, 5)),
+param_table_spec : Dict[str, ParamSpec] = {
+    'run_mode': ParamSpec(index=0x7005,
+                          n_bytes=1,
+                          dtype=int,
+                          signed=False,
+                          min_max=(0, 5)),
 
-    'limit_torque': _ParamSpec(index=0x700B,
-                               n_bytes=4,
-                               dtype=float,
-                               signed=True,
-                               min_max=(0., 17.) ),
+    'limit_torque': ParamSpec(index=0x700B,
+                              n_bytes=4,
+                              dtype=float,
+                              signed=True,
+                              min_max=(0., 17.)),
 
     # target pos in PP mode./CSP mode.
-    'loc_ref': _ParamSpec(index=0x7016,
-                          n_bytes=4,
-                          dtype=float,
-                          signed=True,
-                          min_max=(-12.57, 12.57) ),
-
-    'mechPos': _ParamSpec(index=0x7019,
-                          n_bytes=4,
-                          dtype=float,
-                          signed=True,
-                          min_max=(-12.57, 12.57)),
-
-    'mechVel': _ParamSpec(index=0x701B,
-                          n_bytes=4,
-                          dtype=float,
-                          signed=True,
-                          min_max=(-44., 44.)),
-
-    'loc_kp': _ParamSpec(index=0x701E,
+    'loc_ref': ParamSpec(index=0x7016,
                          n_bytes=4,
                          dtype=float,
                          signed=True,
-                         min_max=(0., 200.)),
+                         min_max=(-12.57, 12.57)),
 
-    'spd_kp': _ParamSpec(index=0x701F,
+    'mechPos': ParamSpec(index=0x7019,
+                         n_bytes=4,
+                         dtype=float,
+                         signed=True,
+                         min_max=(-12.57, 12.57)),
+
+    'mechVel': ParamSpec(index=0x701B,
+                         n_bytes=4,
+                         dtype=float,
+                         signed=True,
+                         min_max=(-44., 44.)),
+
+    'loc_kp': ParamSpec(index=0x701E,
+                        n_bytes=4,
+                        dtype=float,
+                        signed=True,
+                        min_max=(0., 200.)),
+
+    'spd_kp': ParamSpec(index=0x701F,
                         n_bytes=4,
                         dtype=float,
                         signed=True,
                         min_max=(0., 200.)),
 
     # vel max abs value in PP mode.
-    'vel_max': _ParamSpec(index=0x7024,
-                          n_bytes=4,
-                          dtype=float,
-                          signed=True,
-                          min_max=(0., 44.)),
+    'vel_max': ParamSpec(index=0x7024,
+                         n_bytes=4,
+                         dtype=float,
+                         signed=True,
+                         min_max=(0., 44.)),
 
     # acc abs value in PP mode.
-    'acc_set': _ParamSpec(index=0x7025,
-                          n_bytes=4,
-                          dtype=float,
-                          signed=True,
-                          # TODO> max acc of RS?
-                          min_max=(0., 30.)),
+    'acc_set': ParamSpec(index=0x7025,
+                         n_bytes=4,
+                         dtype=float,
+                         signed=True,
+                         # TODO> max acc of RS?
+                         min_max=(0., 30.)),
 
-    'EPScan_time': _ParamSpec(index=0x7026,
-                              n_bytes=2,
-                              dtype=int,
-                              signed=False,
-                              min_max=(0, 50)),
+    'EPScan_time': ParamSpec(index=0x7026,
+                             n_bytes=2,
+                             dtype=int,
+                             signed=False,
+                             min_max=(0, 50)),
 
-    'zero_sta': _ParamSpec(index=0x7029,
-                           n_bytes=1,
-                           dtype=int,
-                           signed=False,
-                           min_max=(0, 1)),
+    'zero_sta': ParamSpec(index=0x7029,
+                          n_bytes=1,
+                          dtype=int,
+                          signed=False,
+                          min_max=(0, 1)),
 
 }
 
