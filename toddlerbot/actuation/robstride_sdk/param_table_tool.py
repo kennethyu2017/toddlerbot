@@ -1,18 +1,18 @@
+import struct
 from typing import Set,Tuple, Type, Callable
 import numpy as np
 import asyncio
 from aioconsole import ainput, aprint
 from aiologger import Logger
-
 from can import Message
-from can.interfaces.socketcan import *
+from can.interfaces.socketcan import SocketcanBus
 
 from toddlerbot.actuation.robstride_sdk import *
 
 alogger = Logger.with_default_handlers()
 
 CAN_CHANNEL_NAME : str = r'can0'    #r'PCAN_USBBUS1'
-MOTOR_CAN_ID_SET: Set[int] = {0}
+MOTOR_CAN_ID_SET: Set[int] = {0xfe}  # {1}
 HOST_CAN_ID: int = 0xfe
 
 # LISTENERS: List[Callable[[Message], None]] = []
@@ -54,74 +54,37 @@ def _on_write_available(bus: SocketcanBus) -> None:
         try:
             msg = SND_BUFFER_Q.get_nowait()
             bus.send(msg, timeout=0)
+            SND_BUFFER_Q.task_done()
 
         except Exception as exc:
             raise OSError(f'send msg from buffer queue failed: {exc=:} {type(exc)=:}')
 
 
 async def _tx_write_param_msg(*, value: int|float,
-                              motor_can_id: int, index: int):
+                              motor_can_id: int,
+                              index: int,
+                              param_spec:ParamSpec):
 
-    tx_msg = RSProtocolBuilder.write_single_param(motor_can_id: npt.NDArray[np.uint32],
-    host_can_id: int,
-                           index: int,
-                           param_value: List[float|int],
-                           param_n_bytes:int,
-                           param_dtype:Type,
-                           param_signed:bool)
+    tx_msg = RSProtocolBuilder.write_single_param(motor_can_id=np.asarray([motor_can_id], dtype=np.uint32),
+                                                  host_can_id=HOST_CAN_ID,
+                                                  index=index,
+                                                  param_value=[value],
+                                                  param_spec=param_spec
+                                                  )[0]
 
-    assert len(txpkt) == length
-
-    await aprint(f'--- Write [ID: {motor_id:>2d}] addr:[ {addr:>2d}] length:[{length:>2d}]  txpkt --->')
-    for _b in txpkt:
-        await aprint(f'0x{_b:02x}')
-
-    await aprint(f'--- end of txpkt.')
-
-    # comm_result, error = writer.writeTxRx(scs_id=motor_id,
-    #                                       address=addr,
-    #                                       length=len(txpkt),
-    #                                       data=txpkt)
-    #
-    # if comm_result != CommResult.SUCCESS:
-    #     # raise IOError(f'writer.writeTxRx comm error : {writer.getTxRxResult(comm_result)}')
-    #     await aprint(f'Warning: writer.writeTxRx comm error : {writer.getTxRxResult(comm_result)}, pls check the motor ID / motor connection.')
-    #
-    # if error != 0:
-    #     raise ValueError(f'writer.writeTxRx got error from motor : {writer.getRxPacketError(error)} ')
+    await alogger.debug(f'write single param can msg: {tx_msg}')
+    await SND_BUFFER_Q.put(tx_msg)
 
 
-async def _tx_read_param_msg(*, motor_can_id: int, index: int):
+async def _tx_read_param_msg(*, motor_can_id: int,
+                             index: int):
 
     tx_msg:Message = RSProtocolBuilder.read_single_param(motor_can_id=np.asarray([motor_can_id],dtype=np.uint32),
                                                  host_can_id=HOST_CAN_ID,
                                                  index=index)[0]
-    await SND_BUFFER_Q.put(tx_msg)
-    await alogger.debug(f'read single param can msg: {tx_msg}')
 
-    # if rxpkt is None:
-    #     await aprint(f'Warning: rxpkt is None, pls check the motor ID / motor connection.')
-    #     return
-    #
-    # if comm_result != CommResult.SUCCESS:
-    #     raise IOError(f'reader.readTxRx comm error:  {reader.getTxRxResult(comm_result)} ')
-    #
-    # else:
-    #     await aprint(f'--- Read [ID: {motor_id:>2d}] addr:[ {addr:>2d}] length:[{length:>2d}] result rxpkt --->')
-    #     for _b in rxpkt:
-    #         await aprint(f'0x{_b:02x}')
-    #     await aprint(f'--- end of rxpkt.')
-    #
-    #     if len(rxpkt) <= 2 :
-    #         # highest bit represent sign.
-    #         signed_dec_value:int = proto_param_bytes_to_signed_v2(param=rxpkt)
-    #
-    #         unsigned_dec_value:int = int.from_bytes(rxpkt, byteorder='little',signed=False)
-    #         await aprint(f'+++ when length <=2 , we can parse rxpkt to signed decimal value: {signed_dec_value}, '
-    #               f'unsigned decimal value:{unsigned_dec_value}')
-    #
-    # if error != 0:
-    #     raise ValueError(f'reader.readTxRx got error from motor: {reader.getRxPacketError(error)} ')
+    await alogger.debug(f'tx read single param can msg: {tx_msg}')
+    await SND_BUFFER_Q.put(tx_msg)
 
 
 async def _input_str_value_helper(valid_input: Set[str], prompt: str) -> str:
@@ -144,15 +107,20 @@ async def _input_str_value_helper(valid_input: Set[str], prompt: str) -> str:
     return r_w
 
 
-async def _input_int_or_float_helper(*, dtype: Type[int, float],
-                                    legal_check: Callable[[float|int], bool],
-                                    prompt: str) -> float|int:
+async def _input_int_or_float_helper(*, dtype: Type[int|float],
+                                     legal_check: Callable[[float|int], bool],
+                                     prompt: str
+                                     ) -> float|int:
     _value = None
 
     while True:
         # await asyncio.sleep(1)
         try:
-            _value = dtype(await ainput(prompt))
+            raw_input:str = await ainput(prompt)
+            if raw_input.casefold().startswith('0x'):
+                _value = dtype(raw_input, base=16)
+            else:
+                _value = dtype(raw_input)
 
         except ValueError as err:
             # _value = value_range.stop
@@ -165,8 +133,8 @@ async def _input_int_or_float_helper(*, dtype: Type[int, float],
             if legal_check(_value):
                 break
             else:
+                await aprint(f'got illegal input: {_value}, check the legal value range. ')
                 _value = None
-                await aprint(f'got illegal input: {_value}, should be in range: {legal_min_max} ')
                 await asyncio.sleep(.5)
                 continue
                 # _value = value_range.stop
@@ -199,11 +167,13 @@ async def _input_int_or_float_helper(*, dtype: Type[int, float],
 
 
 async def _parse_rcv_data()->None:
-    try:
-        while True:
-            # sleep 1ms
-            # await asyncio.sleep(0.001)
-            msg:Message = await RCV_BUFFER_Q.get()
+    while True:
+        # sleep 1ms
+        # await asyncio.sleep(0.001)
+
+        try:
+            msg: Message = await RCV_BUFFER_Q.get()
+
             await alogger.debug(f'rcv msg: {msg}')
 
             ext_id = RSProtocolParser.decode_ext_id(msg.arbitration_id)
@@ -224,13 +194,63 @@ async def _parse_rcv_data()->None:
                 mcu_id = RSProtocolParser.motor_device_id(data2=ext_id.data2, data=msg.data)
                 await alogger.info(f'{mcu_id}')
 
-    except Exception as exc:
-        await alogger.error(f'parse rcv data failed: {exc=:} {type(exc)=:} ')
+            else:
+                await alogger.warning(f'not supported rcv msg comm type: {ext_id.comm_type}')
 
-    finally:
-        await alogger.warning(f'exit rcv data parse...')
+        except (ValueError, struct.error) as exc:
+            await alogger.error(f'unpack/decode msg error: {exc=:} {type(exc)=:} . check the msg data.')
+            # not raise.
+
+        except Exception as exc:
+            await alogger.error(f'parse rcv data exception: {exc=:} {type(exc)=:} ')
+            # NOTE: must propagate to up layer task_group to cancel the remaining tasks in task-group.
+            raise exc
+
+        finally:
+            RCV_BUFFER_Q.task_done()
 
 
+async def _read_helper():
+    await aprint(f'\n--- start READ motor param table ( only support read single motor and single param till now ):')
+    motor_can_id = await _input_int_or_float_helper(dtype=int,
+                                                    legal_check=lambda _x: _x in MOTOR_CAN_ID_SET,
+                                                    prompt=f'\ninput read motor can id in choices {MOTOR_CAN_ID_SET} : ')
+
+    index = await _input_int_or_float_helper(dtype=int,
+                                             legal_check=lambda _x: 0x7005 <= _x <= 0x7029,
+                                             prompt='\ninput read index [0x7005~0x7029] : ')
+
+    await _tx_read_param_msg(motor_can_id=motor_can_id, index=index)
+
+
+async def _write_helper():
+    await aprint(f'\n--- start WRITE motor control table:')
+    motor_can_id = await _input_int_or_float_helper(dtype=int,
+                                                    legal_check=lambda _x: _x in MOTOR_CAN_ID_SET,
+                                                    prompt=f'\ninput write motor id in choices {MOTOR_CAN_ID_SET} : ')
+
+    index = await _input_int_or_float_helper(dtype=int,
+                                             legal_check=lambda _x: 0x7005 <= _x <= 0x7029,
+                                             prompt='\ninput read index [0x7005~0x7029] : ')
+
+    # TODO: value validation should refer to readSpec min_max...
+    try:
+        p_name = param_table_index_to_name[index]
+        p_spec = param_table_spec[p_name]
+    except KeyError as exc:
+        await alogger.error(f'key error: {exc=:} {type(exc)=:}')
+        raise exc
+
+    value = await _input_int_or_float_helper(dtype=p_spec.dtype,
+                                             legal_check=lambda _x: p_spec.min_max[0] <= _x <= p_spec.min_max[1],
+                                             prompt=f'\ninput write value in range {p_spec.min_max} : '
+                                             )
+
+    await _tx_write_param_msg(value=value, motor_can_id=motor_can_id, index=index, param_spec=p_spec)
+
+
+# NOTE: must propagate any exception up, to guarantee the structural task_group cancel all the remaining tasks
+# inside same task_group.
 async def _interactive_console()->None:
 
     # _set_usb_com_latency_timer(port_name=URT_1_DEV_NAME, latency_ms=5)
@@ -247,7 +267,7 @@ async def _interactive_console()->None:
     except NotImplementedError as exc:
         # Bus doesn't support fileno, we fall back to thread based reader
         alogger.error(f'bus not support fileno, we can not use it for async read/write.')
-        raise
+        raise exc
 
     loop = asyncio.get_running_loop()
     if loop is not None and file_dsc >= 0:
@@ -267,82 +287,60 @@ async def _interactive_console()->None:
                                                            f'\nread or write? [r/w] : ')
 
             if read_or_write == 'r':
-                await aprint(f'\n--- start READ motor param table ( only support read single motor and single param till now ):')
-                motor_can_id = await _input_int_or_float_helper(dtype=int,
-                                                                legal_check=lambda _x: _x in MOTOR_CAN_ID_SET,
-                                                                prompt=f'\ninput read motor can id in choices {MOTOR_CAN_ID_SET} : ')
-
-                index = await _input_int_or_float_helper(dtype=int,
-                                                         legal_check=lambda _x:  0x7005 <= _x <= 0x7029,
-                                                         prompt='\ninput read index [0x7005~0x7029] : ')
-
-                await _tx_read_param_msg(motor_can_id=motor_can_id,index=index)
+                await _read_helper()
 
             elif read_or_write == 'w':
-                await aprint(f'\n--- start WRITE motor control table:')
-                motor_can_id = await _input_int_or_float_helper(dtype=int,
-                                                                legal_check=lambda _x: _x in MOTOR_CAN_ID_SET,
-                                                                prompt=f'\ninput write motor id in choices {MOTOR_CAN_ID_SET} : ')
-
-                index = await _input_int_or_float_helper(dtype=int,
-                                                         legal_check=lambda _x: 0x7005 <= _x <= 0x7029,
-                                                         prompt='\ninput read index [0x7005~0x7029] : ')
-
-                # TODO: value validation should refer to readSpec min_max...
-                try:
-                    p_name = param_table_index_to_name[index]
-                    p_spec = param_table_spec[p_name]
-                except KeyError as exc:
-                    await alogger.error(f'key error: {exc=:} {type(exc)=:}')
-                    raise
-
-                value = await _input_int_or_float_helper(dtype=float,
-                                                         legal_check=lambda _x: p_spec.min_max[0] <= _x <= p_spec.min_max[1],
-                                                         prompt=f'\ninput write value in range {p_spec.min_max} : '
-                                                         )
-
-                await _tx_write_param_msg(value=value, motor_can_id=motor_can_id, index=index)
+                await _write_helper()
 
             else:
                 # raise ValueError(f'operation mode error, should only be "r" or "w", but got: {read_or_write}')
                 await aprint(f'operation mode error, should only be "r" or "w", but got: {read_or_write}')
                 continue
 
+    except Exception as exc:
+        # NOTE: must propagate to up layer task_group to cancel the remaining tasks in task_group.
+        await alogger.error(f'interactive console task failed: {exc=:} {type(exc)=:}')
+        raise exc
+
     finally:
-        await aprint(f'exiting...')
-        # Close port
-        bus.shutdown()
+        await aprint(f'exit interactive console...')
 
         # clear loop reader/writer callback.
         loop.remove_reader(file_dsc)
+        await RCV_BUFFER_Q.join()
+        await aprint(f'rcv buffer cleared.')
+
+        # stop tx_xxx_msg ...
+        await SND_BUFFER_Q.join()
         loop.remove_writer(file_dsc)
+        await aprint(f'snd buffer cleared.')
 
         # TODO:
         # flush buffer q:
+        # SND_BUFFER_Q.shutdown()
+        # RCV_BUFFER_Q.shutdown()
+
+        # Close port
+        # bus.flush_tx_buffer()
+        bus.shutdown()
 
         # logger shutdown.
         await alogger.shutdown()
 
-        await asyncio.sleep(1.0)
+        await asyncio.sleep(.5)
+
+
+async def _main():
+    async with asyncio.TaskGroup() as tg:
+        # input cmd and send msg onto bus.
+        task_1 = tg.create_task(_interactive_console())
+
+        # parse msg recv from bus.
+        task_2 = tg.create_task(_parse_rcv_data())
+
+    await aprint(f'all tasks are done : {task_1.result()=:} {task_2.result()=:}')
 
 
 if __name__  == '__main__':
-    try:
-        asyncio.TaskGroup....
-        asyncio.run(_interactive_cmd())
-    finally:
-        print(f'exiting...')
-        # Close port
-        bus.shutdown()
+    asyncio.run(_main())
 
-        # clear loop reader/writer callback.
-        loop.remove_reader(file_dsc)
-        loop.remove_writer(file_dsc)
-
-        # TODO:
-        # flush buffer q:
-
-        # logger shutdown.
-        await alogger.shutdown()
-
-        await asyncio.sleep(1.0)
