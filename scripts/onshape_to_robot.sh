@@ -9,6 +9,25 @@ YELLOW='\033[0;33m'
 NC='\033[0m' # No Color
 
 # Parse arguments
+#NOTE: 1 . the item in DOC_ID_LIST must be 1to1 mapping to the item in ASSEMBLY_LIST.
+#      2.  the item in ASSEMBLY_LIST is the name of `assembly studio` in that document.
+#      3. if want to select some history version , specify `WORKSPACE_ID_LIST` instead selecting the latest workspace as default.
+#      4.  The first instance in the assembly list will be considered as the base link,
+#      5. use `Gear` relation in onshape to represent linkage.
+#      6. the unit in onshape should be MKS(meter-kilogram-second system) to be comply with Mujoco.
+#      7. Be sure this assembly is a top-level assembly, where instances are robot links (they can be parts or sub-assemblies).
+#      8. Mate connectors should have special names (see below for details): must use under_score, do not use dash.
+  #
+  #dof_name: for degrees of freedom
+  #
+  #frame_name: to create a frame (site in MuJoCo)
+  #
+  #fix_name: fix two links together, causing onshape-to-robot to merge them
+  #
+  #closing_name: to close a kinematic loop (see Handling kinematic loops)
+  #
+  #Other mates are not considered by onshape-to-robot.
+
 while [[ $# -gt 0 ]]; do
     case $1 in
         --robot)
@@ -83,6 +102,16 @@ while [[ $# -gt 0 ]]; do
 #           ASSEMBLY_LIST='使用长U支架_SM40BL_sysID_assembly 仅带长U型支架_SM40BL_Actuator_Sub_Assembly'
 #           ASSEMBLY_LIST='使用长U支架_SM40BL_sysID_assembly'
             ASSEMBLY_LIST="使用长U支架_No_BATTERY_NO_CAP_SM40BL_sysID_assembly"
+            ;;
+            # -------- k-bot left leg test
+            kbot_left_leg)
+            DOC_ID_LIST='891d707cca93b7ec8873214f'
+            WORKSPACE_ID_LIST='20b5fad0e0ad719be2b07681'
+            # BODY_NAME should be the assembly dir name under descriptions.
+            BODY_NAME="URDF-RS-01-ROBOT-LEG-LEFT-ASM"
+            #  TODO: make use of element_id.
+            #ELEMENT_ID_LIST=...
+            ASSEMBLY_LIST="URDF-RS-01-ROBOT-LEG-LEFT-ASM"
             ;;
             *)
             echo -e "${YELLOW}Unknown robot name: $ROBOT_NAME.${NC}"

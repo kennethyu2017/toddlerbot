@@ -1,0 +1,202 @@
+<robot name="kbot_left_leg">
+  <mujoco>
+    <compiler strippath="false" balanceinertia="true" discardvisual="false" />
+  </mujoco>
+  <link name="rs04">
+    <inertial>
+      <origin xyz="-0.000964354 -0.1 -0.0657474" rpy="0 0 0" />
+      <mass value="1.48766" />
+      <inertia ixx="0.00158284" ixy="2.00391e-11" ixz="-8.95603e-05" iyy="0.00167642" iyz="1.32902e-11" izz="0.00254615" />
+    </inertial>
+    <visual>
+      <origin xyz="-0.000964354 -0.1 -0.0657474" rpy="0 -0 0" />
+      <geometry>
+        <mesh filename="../assemblies/URDF-RS-01-ROBOT-LEG-LEFT-ASM/meshes/rs04_visual.stl" />
+      </geometry>
+      <material name="rs04_parts_material">
+        <color rgba="0.137812 0.117658 0.0937588 1.0" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.000964354 -0.1 -0.0657474" rpy="0 -0 0" />
+      <geometry>
+        <mesh filename="../assemblies/URDF-RS-01-ROBOT-LEG-LEFT-ASM/meshes/rs04_collision.stl" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="02_robot_leg_left_hip">
+    <inertial>
+      <origin xyz="-0.00243695 1.44978e-09 -0.0690902" rpy="0 0 0" />
+      <mass value="1.02484" />
+      <inertia ixx="0.00114995" ixy="1.00235e-11" ixz="1.67674e-06" iyy="0.00091383" iyz="-6.55295e-10" izz="0.000883835" />
+    </inertial>
+    <visual>
+      <origin xyz="-0.00243695 1.44978e-09 -0.0690902" rpy="1.71724e-28 1.28908e-26 1.64341e-13" />
+      <geometry>
+        <mesh filename="../assemblies/URDF-RS-01-ROBOT-LEG-LEFT-ASM/meshes/02_robot_leg_left_hip_visual.stl" />
+      </geometry>
+      <material name="02_robot_leg_left_hip_parts_material">
+        <color rgba="0.203584 0.190799 0.135757 1.0" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.00243695 1.44978e-09 -0.0690902" rpy="1.71724e-28 1.28908e-26 1.64341e-13" />
+      <geometry>
+        <mesh filename="../assemblies/URDF-RS-01-ROBOT-LEG-LEFT-ASM/meshes/02_robot_leg_left_hip_collision.stl" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="02_robot_leg_left_leg_2">
+    <inertial>
+      <origin xyz="-0.110978 0.0029372 0.0285214" rpy="0 0 0" />
+      <mass value="1.45634" />
+      <inertia ixx="0.00188208" ixy="0.000201048" ixz="-1.8201e-05" iyy="0.00377685" iyz="4.04088e-06" izz="0.00370734" />
+    </inertial>
+    <visual>
+      <origin xyz="-0.110978 0.0029372 0.0285214" rpy="1.5708 1.5708 0" />
+      <geometry>
+        <mesh filename="../assemblies/URDF-RS-01-ROBOT-LEG-LEFT-ASM/meshes/02_robot_leg_left_leg_2_visual.stl" />
+      </geometry>
+      <material name="02_robot_leg_left_leg_2_parts_material">
+        <color rgba="0.311843 0.284439 0.247138 1.0" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.110978 0.0029372 0.0285214" rpy="1.5708 1.5708 0" />
+      <geometry>
+        <mesh filename="../assemblies/URDF-RS-01-ROBOT-LEG-LEFT-ASM/meshes/02_robot_leg_left_leg_2_collision.stl" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="02_robot_leg_left_leg_3">
+    <inertial>
+      <origin xyz="4.23966e-07 0.000877721 -0.137087" rpy="0 0 0" />
+      <mass value="1.74419" />
+      <inertia ixx="0.00305712" ixy="1.32578e-08" ixz="-8.62877e-08" iyy="0.00409764" iyz="-2.97058e-05" izz="0.00197551" />
+    </inertial>
+    <visual>
+      <origin xyz="4.23966e-07 0.000877721 -0.137087" rpy="1.5708 -1.64405e-13 -6.88745e-18" />
+      <geometry>
+        <mesh filename="../assemblies/URDF-RS-01-ROBOT-LEG-LEFT-ASM/meshes/02_robot_leg_left_leg_3_visual.stl" />
+      </geometry>
+      <material name="02_robot_leg_left_leg_3_parts_material">
+        <color rgba="0.21829 0.242332 0.256155 1.0" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="4.23966e-07 0.000877721 -0.137087" rpy="1.5708 -1.64405e-13 -6.88745e-18" />
+      <geometry>
+        <mesh filename="../assemblies/URDF-RS-01-ROBOT-LEG-LEFT-ASM/meshes/02_robot_leg_left_leg_3_collision.stl" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="02_robot_leg_left_shank_3">
+    <inertial>
+      <origin xyz="0.000998779 0.131276 0.0249695" rpy="0 0 0" />
+      <mass value="1.22021" />
+      <inertia ixx="0.00871496" ixy="-6.16638e-05" ixz="1.87123e-05" iyy="0.00111711" iyz="0.000269833" izz="0.00870049" />
+    </inertial>
+    <visual>
+      <origin xyz="0.000998779 0.131276 0.0249695" rpy="-3.14159 6.88745e-18 -1.64405e-13" />
+      <geometry>
+        <mesh filename="../assemblies/URDF-RS-01-ROBOT-LEG-LEFT-ASM/meshes/02_robot_leg_left_shank_3_visual.stl" />
+      </geometry>
+      <material name="02_robot_leg_left_shank_3_parts_material">
+        <color rgba="0.572162 0.581167 0.592903 1.0" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0.000998779 0.131276 0.0249695" rpy="-3.14159 6.88745e-18 -1.64405e-13" />
+      <geometry>
+        <mesh filename="../assemblies/URDF-RS-01-ROBOT-LEG-LEFT-ASM/meshes/02_robot_leg_left_shank_3_collision.stl" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="bolt_knee">
+    <inertial>
+      <origin xyz="0.00235545 -0.00831957 -0.0107207" rpy="0 0 0" />
+      <mass value="0.0811553" />
+      <inertia ixx="2.3751e-05" ixy="9.82745e-07" ixz="1.25675e-06" iyy="1.32477e-05" iyz="-4.41468e-06" izz="2.77669e-05" />
+    </inertial>
+    <visual>
+      <origin xyz="0.00235545 -0.00831957 -0.0107207" rpy="-3.14159 1.08737e-15 1.5708" />
+      <geometry>
+        <mesh filename="../assemblies/URDF-RS-01-ROBOT-LEG-LEFT-ASM/meshes/bolt_knee_visual.stl" />
+      </geometry>
+      <material name="bolt_knee_parts_material">
+        <color rgba="0.977294 0.716488 0.0450627 1.0" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0.00235545 -0.00831957 -0.0107207" rpy="-3.14159 1.08737e-15 1.5708" />
+      <geometry>
+        <mesh filename="../assemblies/URDF-RS-01-ROBOT-LEG-LEFT-ASM/meshes/bolt_knee_collision.stl" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="ankle-pitch-link-shaft" type="revolute">
+    <origin xyz="2.82348e-15 0.11 0.0239" rpy="1.08048e-15 -5.55551e-16 -1.5708" />
+    <parent link="02_robot_leg_left_shank_3" />
+    <child link="bolt_knee" />
+    <axis xyz="0 0 1" />
+    <limit effort="10" velocity="10" lower="-0.174533" upper="0.174533" />
+    <mimic joint="ankle_pitch" multiplier="-1.0" />
+  </joint>
+  <link name="02_robot_left_foot_rubber">
+    <inertial>
+      <origin xyz="0.0141705 0.0178635 -0.0113994" rpy="0 0 0" />
+      <mass value="0.399792" />
+      <inertia ixx="0.00136644" ixy="7.11659e-05" ixz="-9.19373e-07" iyy="0.000199837" iyz="-2.02742e-05" izz="0.00125318" />
+    </inertial>
+    <visual>
+      <origin xyz="0.0141705 0.0178635 -0.0113994" rpy="7.8443e-14 -6.88745e-18 1.5708" />
+      <geometry>
+        <mesh filename="../assemblies/URDF-RS-01-ROBOT-LEG-LEFT-ASM/meshes/02_robot_left_foot_rubber_visual.stl" />
+      </geometry>
+      <material name="02_robot_left_foot_rubber_parts_material">
+        <color rgba="0.326617 0.440236 0.691338 1.0" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0.0141705 0.0178635 -0.0113994" rpy="7.8443e-14 -6.88745e-18 1.5708" />
+      <geometry>
+        <mesh filename="../assemblies/URDF-RS-01-ROBOT-LEG-LEFT-ASM/meshes/02_robot_left_foot_rubber_collision.stl" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="ankle_pitch" type="revolute">
+    <origin xyz="-2.30133e-15 0.3 0.001" rpy="-3.14159 6.12323e-17 1.5708" />
+    <parent link="02_robot_leg_left_shank_3" />
+    <child link="02_robot_left_foot_rubber" />
+    <axis xyz="0 0 1" />
+    <limit effort="10" velocity="10" lower="-0.174533" upper="0.174533" />
+  </joint>
+  <joint name="knee-pitch" type="revolute">
+    <origin xyz="2.1684e-19 -0.026 -0.1425" rpy="-1.5708 2.47037e-29 0" />
+    <parent link="02_robot_leg_left_leg_3" />
+    <child link="02_robot_leg_left_shank_3" />
+    <axis xyz="0 0 1" />
+    <limit effort="10" velocity="10" lower="-0.785398" upper="0.785398" />
+  </joint>
+  <joint name="femur_yaw" type="revolute">
+    <origin xyz="-0.1575 -2.77556e-17 0.0275" rpy="1.26218e-29 1.5708 0" />
+    <parent link="02_robot_leg_left_leg_2" />
+    <child link="02_robot_leg_left_leg_3" />
+    <axis xyz="0 0 1" />
+    <limit effort="10" velocity="10" lower="-0.785398" upper="0.785398" />
+  </joint>
+  <joint name="hip_roll" type="revolute">
+    <origin xyz="0.0275 0 -0.0695" rpy="-1.5708 7.83817e-14 1.5708" />
+    <parent link="02_robot_leg_left_hip" />
+    <child link="02_robot_leg_left_leg_2" />
+    <axis xyz="0 0 1" />
+    <limit effort="10" velocity="10" lower="-0.785398" upper="0.0872665" />
+  </joint>
+  <joint name="hip_pitch" type="revolute">
+    <origin xyz="0.001 -0.1 -0.0882" rpy="-1.71724e-28 -1.28908e-26 -1.64341e-13" />
+    <parent link="rs04" />
+    <child link="02_robot_leg_left_hip" />
+    <axis xyz="0 0 1" />
+    <limit effort="10" velocity="10" lower="-0.785398" upper="0.785398" />
+  </joint>
+</robot>

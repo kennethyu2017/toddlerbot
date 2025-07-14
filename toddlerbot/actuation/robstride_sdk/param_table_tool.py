@@ -1,5 +1,5 @@
 import struct
-from typing import Set,Tuple, Type, Callable
+from typing import Set, Type, Callable
 import numpy as np
 import asyncio
 from aioconsole import ainput, aprint
@@ -12,7 +12,7 @@ from toddlerbot.actuation.robstride_sdk import *
 alogger = Logger.with_default_handlers()
 
 CAN_CHANNEL_NAME : str = r'can0'    #r'PCAN_USBBUS1'
-MOTOR_CAN_ID_SET: Set[int] = {0xfe}  # {1}
+MOTOR_CAN_ID_SET: Set[int] = {0x7f}
 HOST_CAN_ID: int = 0xfe
 
 # LISTENERS: List[Callable[[Message], None]] = []

@@ -1,0 +1,10 @@
+{
+    "document_id": "1f9c3d1a6acf56c33f865380",
+    "workspace_id": "2495191397c8f4200a80ede9",
+    "output_format": "urdf",
+    "assembly_name": "kbot-stripped-assembly-left-leg-urdf",
+    "robot_name": "kbot_left_leg",
+    "merge_stls": "all",
+    "simplify_stls": "all",
+    "max_stl_size": 1
+}
