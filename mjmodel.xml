@@ -1,0 +1,61 @@
+<mujoco model="kbot_left_leg">
+  <compiler angle="radian"/>
+
+  <asset>
+    <mesh name="rs04_visual" content_type="model/stl" file="../assemblies/URDF-RS-01-ROBOT-LEG-LEFT-ASM/meshes/rs04_visual.stl"/>
+    <mesh name="rs04_collision" content_type="model/stl" file="../assemblies/URDF-RS-01-ROBOT-LEG-LEFT-ASM/meshes/rs04_collision.stl"/>
+    <mesh name="02_robot_leg_left_hip_visual" content_type="model/stl" file="../assemblies/URDF-RS-01-ROBOT-LEG-LEFT-ASM/meshes/02_robot_leg_left_hip_visual.stl"/>
+    <mesh name="02_robot_leg_left_hip_collision" content_type="model/stl" file="../assemblies/URDF-RS-01-ROBOT-LEG-LEFT-ASM/meshes/02_robot_leg_left_hip_collision.stl"/>
+    <mesh name="02_robot_leg_left_leg_2_visual" content_type="model/stl" file="../assemblies/URDF-RS-01-ROBOT-LEG-LEFT-ASM/meshes/02_robot_leg_left_leg_2_visual.stl"/>
+    <mesh name="02_robot_leg_left_leg_2_collision" content_type="model/stl" file="../assemblies/URDF-RS-01-ROBOT-LEG-LEFT-ASM/meshes/02_robot_leg_left_leg_2_collision.stl"/>
+    <mesh name="02_robot_leg_left_leg_3_visual" content_type="model/stl" file="../assemblies/URDF-RS-01-ROBOT-LEG-LEFT-ASM/meshes/02_robot_leg_left_leg_3_visual.stl"/>
+    <mesh name="02_robot_leg_left_leg_3_collision" content_type="model/stl" file="../assemblies/URDF-RS-01-ROBOT-LEG-LEFT-ASM/meshes/02_robot_leg_left_leg_3_collision.stl"/>
+    <mesh name="02_robot_leg_left_shank_3_visual" content_type="model/stl" file="../assemblies/URDF-RS-01-ROBOT-LEG-LEFT-ASM/meshes/02_robot_leg_left_shank_3_visual.stl"/>
+    <mesh name="02_robot_leg_left_shank_3_collision" content_type="model/stl" file="../assemblies/URDF-RS-01-ROBOT-LEG-LEFT-ASM/meshes/02_robot_leg_left_shank_3_collision.stl"/>
+    <mesh name="bolt_knee_visual" content_type="model/stl" file="../assemblies/URDF-RS-01-ROBOT-LEG-LEFT-ASM/meshes/bolt_knee_visual.stl"/>
+    <mesh name="bolt_knee_collision" content_type="model/stl" file="../assemblies/URDF-RS-01-ROBOT-LEG-LEFT-ASM/meshes/bolt_knee_collision.stl"/>
+    <mesh name="02_robot_left_foot_rubber_visual" content_type="model/stl" file="../assemblies/URDF-RS-01-ROBOT-LEG-LEFT-ASM/meshes/02_robot_left_foot_rubber_visual.stl"/>
+    <mesh name="02_robot_left_foot_rubber_collision" content_type="model/stl" file="../assemblies/URDF-RS-01-ROBOT-LEG-LEFT-ASM/meshes/02_robot_left_foot_rubber_collision.stl"/>
+  </asset>
+
+  <worldbody>
+    <geom pos="-0.000964354 -0.1 -0.0657474" quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.137812 0.117658 0.0937588 1" mesh="rs04_visual"/>
+    <geom pos="-0.000964354 -0.1 -0.0657474" quat="1 0 0 0" type="mesh" rgba="0.137812 0.117658 0.0937588 1" mesh="rs04_collision"/>
+    <body name="02_robot_leg_left_hip" pos="0.001 -0.1 -0.0882" quat="1 0 0 0">
+      <inertial pos="-0.00243695 1.44978e-09 -0.0690902" quat="0.999995 -1.09203e-05 -0.00315023 -3.44018e-08" mass="1.02484" diaginertia="0.00114996 0.00091383 0.000883824"/>
+      <joint name="hip_pitch" pos="0 0 0" axis="0 0 1" range="-0.785398 0.785398" actuatorfrcrange="-10 10"/>
+      <geom pos="-0.00243695 1.44978e-09 -0.0690902" quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.203584 0.190799 0.135757 1" mesh="02_robot_leg_left_hip_visual"/>
+      <geom pos="-0.00243695 1.44978e-09 -0.0690902" quat="1 0 0 0" type="mesh" rgba="0.203584 0.190799 0.135757 1" mesh="02_robot_leg_left_hip_collision"/>
+      <body name="02_robot_leg_left_leg_2" pos="0.0275 0 -0.0695" quat="0.499998 -0.5 -0.500002 0.5">
+        <inertial pos="-0.110978 0.0029372 0.0285214" quat="0.522471 0.528282 0.464654 0.481705" mass="1.45634" diaginertia="0.003798 0.00370748 0.0018608"/>
+        <joint name="hip_roll" pos="0 0 0" axis="0 0 1" range="-0.785398 0.0872665" actuatorfrcrange="-10 10"/>
+        <geom pos="-0.110978 0.0029372 0.0285214" quat="0.499998 0.5 0.5 -0.500002" type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.311843 0.284439 0.247138 1" mesh="02_robot_leg_left_leg_2_visual"/>
+        <geom pos="-0.110978 0.0029372 0.0285214" quat="0.499998 0.5 0.5 -0.500002" type="mesh" rgba="0.311843 0.284439 0.247138 1" mesh="02_robot_leg_left_leg_2_collision"/>
+        <body name="02_robot_leg_left_leg_3" pos="-0.1575 0 0.0275" quat="0.707105 0 0.707108 0">
+          <inertial pos="4.23966e-07 0.000877721 -0.137087" quat="0.707095 -0.00491965 0.00497584 0.707084" mass="1.74419" diaginertia="0.00409806 0.00305712 0.00197509"/>
+          <joint name="femur_yaw" pos="0 0 0" axis="0 0 1" range="-0.785398 0.785398" actuatorfrcrange="-10 10"/>
+          <geom pos="4.23966e-07 0.000877721 -0.137087" quat="0.707105 0.707108 0 0" type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.21829 0.242332 0.256155 1" mesh="02_robot_leg_left_leg_3_visual"/>
+          <geom pos="4.23966e-07 0.000877721 -0.137087" quat="0.707105 0.707108 0 0" type="mesh" rgba="0.21829 0.242332 0.256155 1" mesh="02_robot_leg_left_leg_3_collision"/>
+          <body name="02_robot_leg_left_shank_3" pos="0 -0.026 -0.1425" quat="0.707105 -0.707108 0 0">
+            <inertial pos="0.000998779 0.131276 0.0249695" quat="0.676355 0.650772 -0.242342 0.245579" mass="1.22021" diaginertia="0.0087295 0.00869605 0.00110701"/>
+            <joint name="knee-pitch" pos="0 0 0" axis="0 0 1" range="-0.785398 0.785398" actuatorfrcrange="-10 10"/>
+            <geom pos="0.000998779 0.131276 0.0249695" quat="1.32679e-06 -1 0 0" type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.572162 0.581167 0.592903 1" mesh="02_robot_leg_left_shank_3_visual"/>
+            <geom pos="0.000998779 0.131276 0.0249695" quat="1.32679e-06 -1 0 0" type="mesh" rgba="0.572162 0.581167 0.592903 1" mesh="02_robot_leg_left_shank_3_collision"/>
+            <body name="bolt_knee" pos="0 0.11 0.0239" quat="0.707105 0 0 -0.707108">
+              <inertial pos="0.00235545 -0.00831957 -0.0107207" quat="0.433047 0.63233 -0.486964 0.418921" mass="0.0811553" diaginertia="2.91716e-05 2.3723e-05 1.18711e-05"/>
+              <joint name="ankle-pitch-link-shaft" pos="0 0 0" axis="0 0 1" range="-0.174533 0.174533" actuatorfrcrange="-10 10"/>
+              <geom pos="0.00235545 -0.00831957 -0.0107207" quat="9.38184e-07 -0.707105 -0.707108 9.38187e-07" type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.977294 0.716488 0.0450627 1" mesh="bolt_knee_visual"/>
+              <geom pos="0.00235545 -0.00831957 -0.0107207" quat="9.38184e-07 -0.707105 -0.707108 9.38187e-07" type="mesh" rgba="0.977294 0.716488 0.0450627 1" mesh="bolt_knee_collision"/>
+            </body>
+            <body name="02_robot_left_foot_rubber" pos="0 0.3 0.001" quat="9.38184e-07 -0.707105 -0.707108 9.38187e-07">
+              <inertial pos="0.0141705 0.0178635 -0.0113994" quat="0.700175 0.713261 0.0281818 0.0148299" mass="0.399792" diaginertia="0.0013708 0.00125353 0.000195127"/>
+              <joint name="ankle_pitch" pos="0 0 0" axis="0 0 1" range="-0.174533 0.174533" actuatorfrcrange="-10 10"/>
+              <geom pos="0.0141705 0.0178635 -0.0113994" quat="0.707105 0 0 0.707108" type="mesh" contype="0" conaffinity="0" group="1" density="0" rgba="0.326617 0.440236 0.691338 1" mesh="02_robot_left_foot_rubber_visual"/>
+              <geom pos="0.0141705 0.0178635 -0.0113994" quat="0.707105 0 0 0.707108" type="mesh" rgba="0.326617 0.440236 0.691338 1" mesh="02_robot_left_foot_rubber_collision"/>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+</mujoco>

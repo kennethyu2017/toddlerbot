@@ -1,0 +1,10 @@
+{
+    "document_id": "891d707cca93b7ec8873214f",
+    "workspace_id": "20b5fad0e0ad719be2b07681",
+    "output_format": "urdf",
+    "assembly_name": "URDF-RS-01-ROBOT-LEG-LEFT-ASM",
+    "robot_name": "kbot_left_leg",
+    "merge_stls": "all",
+    "simplify_stls": "all",
+    "max_stl_size": 1
+}

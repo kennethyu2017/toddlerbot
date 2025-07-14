@@ -59,9 +59,9 @@ class SingleParamValue(NamedTuple):
 
     def __str__(self):
         if isinstance(self.value,float):
-            return f'single param value --> can_id:{self.can_id} index:{self.index} value:{self.value:.2f}'
+            return f'single param value --> can_id: {self.can_id} index: 0x{self.index:x} value: {self.value:.2f}'
         else:
-            return f'single param value --> can_id:{self.can_id} index:{self.index} value:{self.value:.2f}'
+            return f'single param value --> can_id: {self.can_id} index: 0x{self.index:x} value: {self.value:.2f}'
 
 class ParamSpec(NamedTuple):
     index: int
