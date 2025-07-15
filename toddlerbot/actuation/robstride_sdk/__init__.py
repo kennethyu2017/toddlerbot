@@ -10,6 +10,6 @@ __all__ = ['ParamConverter',
            'RSProtocolParser',
            'CommunicationType',
            'param_table_index_to_name',
-           'param_table_spec',
+           'RS_param_table_spec',
            'ParamSpec',
            'ROBSTRIDE_DEFAULT_BAUD_RATE']

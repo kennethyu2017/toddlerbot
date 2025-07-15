@@ -25,6 +25,7 @@ param_table_index_to_name: Dict[int,str] = {
     0X7016:'loc_ref',
     0X7019:'mechPos',
     0X701B:'mechVel',
+    0X701C:'VBUS',       # voltage.
     0X701E:'loc_kp',
     0X701F:'spd_kp',
     0X7024:'vel_max',
@@ -73,7 +74,7 @@ class ParamSpec(NamedTuple):
 
 
 # TODO: this is only for RS02. check other types.
-param_table_spec : Dict[str, ParamSpec] = {
+RS_param_table_spec : Dict[str, ParamSpec] = {
     'run_mode': ParamSpec(index=0x7005,
                           n_bytes=1,
                           dtype=int,
@@ -104,6 +105,13 @@ param_table_spec : Dict[str, ParamSpec] = {
                          dtype=float,
                          signed=True,
                          min_max=(-44., 44.)),
+
+    # voltage. read only.
+    'VBUS': ParamSpec(index=0x701C,
+                         n_bytes=4,
+                         dtype=float,
+                         signed=True,
+                         min_max=(0., 50.)),
 
     'loc_kp': ParamSpec(index=0x701E,
                         n_bytes=4,

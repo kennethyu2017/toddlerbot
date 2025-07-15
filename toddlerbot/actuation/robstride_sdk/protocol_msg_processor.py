@@ -5,7 +5,7 @@ from can import Message
 
 from .._module_logger import logger
 from .robstride_def import (CommunicationType, BaudRateCmd, ParamThreshold,
-                            param_table_index_to_name, param_table_spec,
+                            param_table_index_to_name, RS_param_table_spec,
                             MotorStateFrame, ExtID , SingleParamValue, ParamSpec)
 
 from .utils import ParamConverter
@@ -310,7 +310,7 @@ class RSProtocolParser:
                 raise ValueError(f'param index value error: {index=:}')
 
             p_name: str = param_table_index_to_name[index]
-            p_spec = param_table_spec[p_name]
+            p_spec = RS_param_table_spec[p_name]
             assert p_spec.index == index
             value:float|int = ParamConverter.param_bytes_to_value(param=data[4:4+p_spec.n_bytes],
                                                 n_bytes=p_spec.n_bytes,
