@@ -1,5 +1,6 @@
 import struct
 from typing import Set, Type, Callable
+import time
 import numpy as np
 import asyncio
 from aioconsole import ainput, aprint
@@ -12,7 +13,7 @@ from toddlerbot.actuation.robstride_sdk import *
 alogger = Logger.with_default_handlers()
 
 CAN_CHANNEL_NAME : str = r'can0'    #r'PCAN_USBBUS1'
-MOTOR_CAN_ID_SET: Set[int] = {0x7f}
+MOTOR_CAN_ID_SET: Set[int] = {0x7f}  # default ID of RS.
 HOST_CAN_ID: int = 0xfe
 
 # LISTENERS: List[Callable[[Message], None]] = []
@@ -21,8 +22,9 @@ HOST_CAN_ID: int = 0xfe
 # TODO: protected by lock.
 RCV_BUFFER_Q: asyncio.Queue[Message] | None = asyncio.Queue(maxsize=50)
 SND_BUFFER_Q: asyncio.Queue[Message] | None = asyncio.Queue(maxsize=30)
-# RCV_BUFFER_Q: Deque[Message] | None = deque(maxlen=50)
-# SND_BUFFER_Q: Deque[Message] | None = deque(maxlen=30)
+
+# for snd-rcv delay test.
+_send_msg_time_stamp: float|None = None
 
 # @dataclass(init=False)
 # class MotorData:
@@ -73,6 +75,8 @@ async def _tx_write_param_msg(*, value: int|float,
                                                   )[0]
 
     await alogger.debug(f'write single param can msg: {tx_msg}')
+    global _send_msg_time_stamp
+    _send_msg_time_stamp = time.perf_counter()
     await SND_BUFFER_Q.put(tx_msg)
 
 
@@ -84,6 +88,9 @@ async def _tx_read_param_msg(*, motor_can_id: int,
                                                  index=index)[0]
 
     await alogger.debug(f'tx read single param can msg: {tx_msg}')
+
+    global _send_msg_time_stamp
+    _send_msg_time_stamp = time.perf_counter()
     await SND_BUFFER_Q.put(tx_msg)
 
 
@@ -174,6 +181,13 @@ async def _parse_rcv_data()->None:
         try:
             msg: Message = await RCV_BUFFER_Q.get()
 
+            global _send_msg_time_stamp
+            if _send_msg_time_stamp is not None:
+                snd_rcv_round_trip: float = time.perf_counter() - _send_msg_time_stamp
+                # only count once.
+                _send_msg_time_stamp = None
+                await alogger.debug(f' send-rcv round trip: {snd_rcv_round_trip*1000.:.3f} ms')
+
             await alogger.debug(f'rcv msg: {msg}')
 
             ext_id = RSProtocolParser.decode_ext_id(msg.arbitration_id)
@@ -236,7 +250,7 @@ async def _write_helper():
     # TODO: value validation should refer to readSpec min_max...
     try:
         p_name = param_table_index_to_name[index]
-        p_spec = param_table_spec[p_name]
+        p_spec = RS_param_table_spec[p_name]
     except KeyError as exc:
         await alogger.error(f'key error: {exc=:} {type(exc)=:}')
         raise exc

@@ -6,24 +6,41 @@ from typing import (Any, Dict, List, Optional, Sequence,
 from dataclasses import dataclass, field
 # deque does not use lock, but its append/popleft is atomic operation.
 from collections import OrderedDict, deque
+import asyncio
+from aiologger import Logger
+from aioconsole import aprint
 # from queue import Queue  # thread-safe fifo-queue.
 import numpy as np
 import numpy.typing as npt
-from can.interfaces.pcan import *
+import struct
 import can
+from can.interfaces.socketcan import SocketcanBus
 
 from .robstride_sdk import *
-from ._module_logger import logger
+# from ._module_logger import logger
+alogger = Logger.with_default_handlers()
 
-@dataclass
-class MotorData:
-    can_id: int = 0
-    # thread-safe sync-fifo-queue.
-    state_queue: deque[MotorStateFrame] = field(default_factory= lambda: deque(maxlen=30)) # cached with ts.
-    param_table: Dict[int, float|int] = field(default_factory=dict) # not cached. only fresh value.
-
+# @dataclass
+# class MotorData:
+#     can_id: int = 0
+#     # thread-safe sync-fifo-queue.
+#     state_queue: deque[MotorStateFrame] = field(default_factory= lambda: deque(maxlen=30)) # cached with ts.
+#     param_table: Dict[int, float|int] = field(default_factory=dict) # not cached. only fresh value.
 
 # @dataclass(init=False)
+# class MotorData:
+#     # index by motor can id.
+#     # TODO: protect by lock?
+#     state_queue: OrderedDict[int, asyncio.Queue[MotorStateFrame] ]
+#     param_queue: OrderedDict[int, asyncio.Queue[SingleParamValue] ]
+#
+#     def __init__(self):
+#         self.state_queue = OrderedDict( (_id, asyncio.Queue(maxsize=30)) for _id in MOTOR_CAN_ID_SET )
+#         self.param_queue = OrderedDict( (_id, asyncio.Queue(maxsize=30)) for _id in MOTOR_CAN_ID_SET )
+#
+
+
+# one client for one can bus.
 class RobStrideClient:
     """Client for communicating with a group of Feite motors.
 
@@ -34,181 +51,252 @@ class RobStrideClient:
     OPEN_CLIENTS: ClassVar[Set[Any] ] = set()
 
     # instance variable.
-    bus: PcanBus | None
-    motor_data: OrderedDict[int, MotorData]
+    bus: SocketcanBus | None
+    # motor_data: OrderedDict[int, MotorData]
+    # index by motor can id.
+    # TODO: protect by lock?
+    motor_state_q: OrderedDict[int, deque[MotorStateFrame] ]
 
+    # not use queue.
+    motor_param_table: OrderedDict[int, Dict[int, SingleParamValue|None] ]
+
+    _send_buffer_q: asyncio.Queue[can.Message]
+    _rcv_buffer_q: asyncio.Queue[can.Message]
 
     def __init__(
         self,*,
-        motor_ids: Sequence[int],  # ids of a group of actuators.
-        interface_name: str,             #= "can0",
+        motor_can_id: Sequence[int],  # ids of a group of actuators.
+        host_can_id: int,     # 0xfe
+        channel_name: str,             #= "can0",
         baud_rate: int,             # = 115200,  # default for SMS/STS series.
         lazy_connect: bool,          #= False,
         rcv_timeout_ms: int,              #= 5,    #usb serial latency timer, default 5 ms.
     ):
         """Initializes a new client.
-
         Args:
-        """
-
-        """
-           初始化CAN电机控制器。
-
-           参数:
-           bus: CAN总线对象。
-           motor_id: 电机的CAN ID。
-           main_can_id: 主CAN ID。
+            motor_can_id:
+            host_can_id:
+            channel_name:
+            baud_rate:
+            lazy_connect:
+            rcv_timeout_ms:
            """
 
         # NOTE: _motor_ids is not guaranteed to be consecutive, i.e, could be [44, 1, 230,...]. so we
         # could not use id as array index directly.
-        self._motor_ids = motor_ids  # not changed after instantiating a FeiteClient instance.
-        self.interface_name = interface_name
+        self._motor_can_id = motor_can_id  # not changed after instantiating a FeiteClient instance.
+        self.channel_name = channel_name
+        assert 0x7f < host_can_id <= 0xfe
+        self.host_can_id = host_can_id
         self.baud_rate = baud_rate
         self.lazy_connect = lazy_connect
         self.rcv_timeout_ms = rcv_timeout_ms
         self.bus = None
-        self.can_Notifier = None, ...
-        self.can_listener = None, ...
 
         # index through motor can id.
-        self.motor_data: OrderedDict[int, MotorData] = OrderedDict()
+        # self.motor_data: OrderedDict[int, MotorData] = OrderedDict()
+        # TODO: adjust queue size according to control freq.
+        self.motor_state_q = OrderedDict( (_id, deque(maxlen=10)) for _id in motor_can_id)
+        self.motor_param_table = OrderedDict((_id, dict()) for _id in motor_can_id)
+
+        # TODO: protected by lock.
+        self._rcv_buffer_q: asyncio.Queue[can.Message] = asyncio.Queue(maxsize=10 * len(motor_can_id))
+        self._send_buffer_q: asyncio.Queue[can.Message] = asyncio.Queue(maxsize=10 * len(motor_can_id))
 
         RobStrideClient.OPEN_CLIENTS.add(self)
 
-    @property
-    def is_connected(self) -> bool:
-        return self.bus is not None
+    # NOTE: callback invoked in running_loop: do not implement as co-routine directly:
+    def _on_read_available(self) -> None:
+        if msg := self.bus.recv(timeout=0):
+            # if buffer q is full, raise error directly.
+            try:
+                # append/popleft op is atomic, no need to add lock.
+                self._rcv_buffer_q.put_nowait(msg)
+            except Exception as exc:
+                print(f'put rcv msg to buffer failed: {exc=:},  {type(exc)=:}. maybe increase buffer size.')
+                raise
 
-    def connect(self):
-        """Connects to the motors.
+    # NOTE: callback invoked in running_loop: do not implement as co-routine directly:
+    def _on_write_available(self) -> None:
+        if not self._send_buffer_q.empty():
+            try:
+                msg = self._send_buffer_q.get_nowait()
+                self.bus.send(msg, timeout=0)
+                self._send_buffer_q.task_done()
 
-        NOTE: This should be called after all RobstrideClients on the same
-            process are created.
-        """
-        assert not self.is_connected, "Client is already connected."
+            except Exception as exc:
+                raise OSError(f'send msg from buffer queue failed: {exc=:} {type(exc)=:}')
 
-        self.bus = PcanBus(channel=,
-                           device_id=,
-                           state=,
-                           timing=,
-                           bitrate=self.baud_rate,
-                           can_filters=,
-                           receive_own_messages=,)
+    async def _parse_rcv_msg(self) -> None:
+        while True:
+            try:
+                msg: can.Message = await self._rcv_buffer_q.get()
 
-        self.can_Notifier,...
-        self.can_listener,...
+                await alogger.debug(f'rcv msg: {msg}')
 
-        if self.bus.status_is_ok():
-            logger.info(f"Succeeded to open can interface: {self.interface_name}"
-                        f",with baud_rate:{self.baud_rate}")
-        else:
-            raise OSError(
-                (
-                    "Failed to open can interface at {}, bus status:{} (Check that the device is powered "
-                    "on and connected to your computer)."
-                ).format(self.interface_name,self.bus.status_string())
-            )
+                ext_id = RSProtocolParser.decode_ext_id(msg.arbitration_id)
 
-        # Start with all motors enabled.  NO, I want to set settings before enabled
-        # self.set_torque_enabled(self._motor_ids, True)
+                # filtered by socket can.
+                # if ext_id.dest_can_id != self.host_can_id:
+                #     raise ValueError(f'rcv msg dest can id is not host, dest id: {ext_id.dest_can_id}')
 
-    def disconnect(self):
+                await alogger.debug(f'parse msg result--->')
+                if ext_id.comm_type == CommunicationType.SINGLE_PARAM_READ:
+                    param_value = RSProtocolParser.single_param(data2=ext_id.data2, data=msg.data)
+                    await alogger.debug(f'{param_value}')
+
+                    p_table: Dict[int, SingleParamValue] = self.motor_param_table[param_value.can_id]
+
+                    if param_value.index in p_table and p_table[param_value.index] is not None:
+                        raise ValueError(f'motor_param_table has existing value, which should be '
+                                         f'set to None after read by run_policy.')
+
+                    p_table[param_value.index] = param_value
+
+                elif ext_id.comm_type == CommunicationType.MOTOR_FEEDBACK:
+                    motor_state_frame = RSProtocolParser.motor_state_feedback(data2=ext_id.data2, data=msg.data,
+                                                                              ts=msg.timestamp)
+                    await alogger.debug(f'{motor_state_frame}')
+
+                    # depending on the run_policy process to fetch obs, so no need to use
+                    # `await` to yield our cpu core, and even yield, this will not accelerate
+                    # the run_policy process on another cpu core.
+                    # NOTE: if the deque is full, the left most element will be dropped.
+                    if (len(self.motor_state_q[motor_state_frame.can_id]) >=
+                            self.motor_state_q[motor_state_frame.can_id].maxlen):
+                        raise ValueError(f'motor_state_q_dict is full. check the run_policy fetch freq.')
+
+                    self.motor_state_q[motor_state_frame.can_id].append(motor_state_frame)
+
+                elif ext_id.comm_type == CommunicationType.GET_DEVICE_ID:
+                    mcu_id = RSProtocolParser.motor_device_id(data2=ext_id.data2, data=msg.data)
+                    await alogger.debug(f'{mcu_id}')
+
+                else:
+                    await alogger.warning(f'not supported rcv msg comm type: {ext_id.comm_type}')
+
+            except (ValueError, struct.error) as exc:
+                await alogger.error(f'unpack/decode msg error: {exc=:} {type(exc)=:} . check the msg data: {msg}')
+                # not raise.
+
+            except Exception as exc:
+                await alogger.error(f'parse rcv msg task exception: {exc=:} {type(exc)=:} ')
+                # NOTE: must propagate to up layer task_group to cancel the remaining tasks in task-group.
+                raise exc
+
+            finally:
+                self._rcv_buffer_q.task_done()
+
+    async def _produce_send_msg(self):
+        try:
+            while True:
+                tx_msg = \
+                RSProtocolBuilder.write_single_param(motor_can_id=np.asarray(self._motor_can_id, dtype=np.uint32),
+                                                     host_can_id=self.host_can_id,
+                                                     index=index,
+                                                     param_value=[value],
+                                                     param_spec=param_spec
+                                                     )[0]
+                await alogger.debug(f'write single param can msg: {tx_msg}')
+                await self._send_buffer_q.put(tx_msg)
+
+        except Exception as exc:
+                # NOTE: must propagate to up layer task_group to cancel the remaining tasks in task_group.
+                await alogger.error(f'produce send msg task failed: {exc=:} {type(exc)=:}')
+                raise exc
+
+        finally:
+            pass
+
+
+    async def _connect(self):
+        assert self.bus is None, "Client is already started."
+
+        # NOTE: `sudo ip link set can0 up type can bitrate 1000000` first.
+        try:
+            filters = [
+                # 29-bit mask.
+                {'can_id': self.host_can_id, 'can_mask': 0xff, 'extended': True},
+            ]
+            self.bus = SocketcanBus(channel=self.channel_name,
+                                    can_filters=filters)
+        except Exception as exc:
+            await alogger.error(f'create socket bus failed: channel: {self.channel_name} {exc=:} {type(exc)=:}')
+            raise exc
+
+    def _disconnect(self):
         """Disconnects from the RobStride motors."""
-        if not self.is_connected:
-            return
-        # if self.port_handler.is_using:
-        #     logger.error("Port handler in use; cannot disconnect.")
-        #     return
-        # Ensure motors are disabled at the end.
-        self.set_torque_enabled(motor_ids=self._motor_ids, enabled=False)
 
-        self.can_notifier.stop()... = None
-        self.can_listner.stop()... =None
+        # Ensure motors are disabled at the end.
+        # using block io send.
+        self.set_torque_enabled(motor_ids=self._motor_can_id, enabled=False)
 
         self.bus.shutdown()
         self.bus = None
 
-        self.motor_data.clear()
+        # self.motor_state_queue_dict.clear()
+        # self.motor_param_queue_dict.clear()
 
         if self in RobStrideClient.OPEN_CLIENTS:
             RobStrideClient.OPEN_CLIENTS.remove(self)
 
-    def check_connected(self):
-        """Ensures the motor is connected."""
-        if self.lazy_connect and not self.is_connected:
-            self.connect()
-        if not self.is_connected:
-            raise OSError("Must call connect() first.")
+    async def main_job(self):
+        """Connects to the motors, and start send / rcv msgs loop.
 
-    def _send_recv_can_message(self, *,
-                                 motor_can_id: int,
-                                 comm_type: int,
-                                 data2: int,
-                                 data1: bytes | bytearray,
-                                 timeout_sec=0.01) \
-        ->Tuple[bytearray, int]:
+        NOTE: This should be called after all RobstrideClients on the same
+            process are created.
         """
-        发送CAN消息并接收响应。
 
-        参数:
-        cmd_mode: 命令模式。
-        data2: 数据区2。
-        data1: 要发送的数据字节。
-        timeout: 发送消息的超时时间(默认为10ms)。
+        await self._connect()
 
-        返回:
-        一个元组, 包含接收到的消息数据和接收到的消息仲裁ID(如果有)。
-        """
-        assert 0 <= motor_can_id <= 0xff  # 1-byte
-        assert 0 < comm_type <= 0b11111   # 5-bit
-        assert 0 < data2 <= 0xffff        # 2-bytes
-        assert len(data1) == 8            # always 8-bytes
+        # Start with all motors enabled.  NO, I want to set settings before enabled
+        # self.set_torque_enabled(self._motor_ids, True)
 
-        # Calculate the arbitration ID
-        arbitration_id = (comm_type << 24) | (data2 << 8) | motor_can_id
+        file_dsc: int = -1
         try:
-            # will check arbitration ID in can.Message.
-            snd_msg = can.Message(
-                arbitration_id=arbitration_id,
-                # dlc=8,
-                data=data1,
-                is_extended_id=True
-            )
+            file_dsc = self.bus.fileno()
+        except NotImplementedError as exc:
+            # Bus doesn't support fileno, we fall back to thread based reader
+            await  alogger.error(f'bus not support fileno, we can not use it for async read/write.')
+            raise exc
+
+        loop = asyncio.get_running_loop()
+        if loop is not None and file_dsc >= 0:
+            # Use bus file descriptor to watch for messages
+            loop.add_reader(file_dsc, self._on_read_available )
+            loop.add_writer(file_dsc, self._on_write_available )
+
+        try:
+            async with asyncio.TaskGroup() as tg:
+                task_rcv = tg.create_task(self._parse_rcv_msg())
+                task_snd = tg.create_task(self._produce_send_msg())
+
         except Exception as exc:
-            logger.error(f'build can msg error: {exc=:} {type(exc)=:}')
-            raise exc
+            await alogger.error(f'run task group failed: {exc=:} {type(exc)=:} ' )
 
-        logger.debug(
-            f"Sent message with ID {hex(arbitration_id)}, data: {data1}")
+        finally:
+            await aprint(f'exit main job...')
 
-        # Send the CAN message
-        try:
-            self.bus.send(snd_msg)
-        except PcanError as exc:
-            logger.error(f"Failed to send the can message, {exc=:} {type(exc)=:}")
-            raise exc
+            # clear loop reader/writer callback.
+            loop.remove_reader(file_dsc)
+            await self._rcv_buffer_q.join()
+            await aprint(f'rcv buffer cleared.')
 
-        # TODO: use The Notifier object is used as a message distributor for a bus.
-        #  The Notifier uses an event loop or creates a thread to read messages
-        #  from the bus and distributes them to listeners.
-        # or use the asyncio.
-        # 10ms timeout for receiving
-        try:
-            rcv_msg = self.bus.recv(timeout=timeout_sec)
-        except can.CanError as exc:
-            logger.error(f"Failed to recv the can message, {exc=:} {type(exc)=:}")
-            raise exc
+            # stop tx_xxx_msg ...
+            await self._send_buffer_q.join()
+            loop.remove_writer(file_dsc)
+            await aprint(f'snd buffer cleared.')
 
-        if rcv_msg is not None:
-            assert rcv_msg.is_extended_id
-            return rcv_msg.data, rcv_msg.arbitration_id
-        else:
-            raise IOError(f'recv can msg timeout.')
+            # TODO:
+            # flush buffer q:
+            # SND_BUFFER_Q.shutdown()
+            # RCV_BUFFER_Q.shutdown()
+
+            # task_rcv.result()...
+            self._disconnect()
 
     def set_torque_limit(
-        self, *,
-        motor_ids: Sequence[int],
+        self,
         max_torque: npt.NDArray[np.float32],
         retries: int = -1,
         retry_interval: float = 0.25,
@@ -222,12 +310,8 @@ class RobStrideClient:
                 forever.
             retry_interval: The number of seconds to wait between retries.
         """
+        assert len(self._motor_can_id) == len(max_torque)
         assert np.all(max_torque > 0)
-        # uint_max_torque = ParamConverter.float_normalized_to_uint(x=max_torque,
-        #                                         x_min=0.,
-        #                                         # TODO: this is for RS02 only.
-        #                                         x_max=ParamThreshold.T_MAX,
-        #                                         n_bytes=4)
 
         limit_dict:OrderedDict[int, npt.NDArray[np.float32]] = OrderedDict( zip(motor_ids,
                                                                                max_torque) )
@@ -237,7 +321,6 @@ class RobStrideClient:
         remaining_id = [*limit_dict.keys()] #list(motor_ids)
         while len(remaining_id) > 0 :
             # guarantee order.
-
             limit_bytes: List[bytes] = [ ParamConverter.float_to_param_bytes(limit_dict[_id])
                                         for _id in remaining_id ] # [ *remaining_ids.values() ]
 
@@ -282,45 +365,6 @@ class RobStrideClient:
             time.sleep(retry_interval)
             retries -= 1
 
-    def _sync_read_helper(self,read_spec:_ReadSpec )\
-            ->Tuple[float, Sequence[npt.NDArray[Any]] ]:
-        param_list: List[bytearray]
-        value_arr_list: List[npt.NDArray[Any]] = []
-
-        assert len(read_spec.size) ==  len(read_spec.parser) == len(read_spec.result_dtype)
-
-        for _dtype in read_spec.result_dtype:
-            if _dtype in [np.uint8, np.int8, np.uint16, np.int16, np.uint32, np.int32]:
-                fill_value = 0
-            elif _dtype in [np.float16, np.float32, np.float64]:
-                fill_value = np.nan
-            else:
-                raise TypeError(f'read_spec result dtype error: {_dtype}')
-            value_arr_list.append(np.full(shape=len(self._motor_ids), fill_value=fill_value, dtype=_dtype))
-
-        comm_time, param_list = self._sync_read_impl(address=read_spec.start_addr,
-                                                     size=sum(read_spec.size))
-        assert len(param_list) == len(self._motor_ids)
-        # TODO: corresponding data of error id in param_list keeps as `None`. check the valid value ?
-        for _x, _bytes in enumerate(param_list):
-            if _bytes is None:
-                # TODO: propagate nan to up layer caller. _value is `fill_value`, 0 or np.nan.
-                raise ValueError(f'the read data of ID:{self._motor_ids[_x]} is None.')
-            else:
-                # if sum(read_spec.size) == 6:
-                #     logger.info(f'--- sync read bytes:')
-                #     for _b in _bytes:
-                #         print(f'0x{_b:02x}')
-                #     logger.info(f'end of bytes --- ')
-
-                assert len(_bytes) == sum(read_spec.size)
-                for _s, _psr, _arr in zip(read_spec.size, read_spec.parser, value_arr_list):
-                    # bytearray(_bytes.pop(0) for _ in range(_s))
-                    _arr[_x] = _psr(_bytes[0:_s])
-                    del _bytes[0:_s]
-
-        # NOTE: if the ID does not return pkt, the corresponding value is `0`.
-        return comm_time, value_arr_list
 
     def _read_table_single_value_helper(self,*, name: TableValueName, into_cache: bool, retries: int = 0) \
             -> Tuple[float,npt.NDArray[Any]]:
@@ -333,307 +377,89 @@ class RobStrideClient:
         # NOTE: if the ID does not return pkt, the corresponding value is `np.nan`.
         return comm_time, value_arr_list[0]
 
-    def _read_table_multiple_values_helper(self,*, name: TableValueName, retries: int = 0)\
-            -> Tuple[float,Sequence[npt.NDArray[Any]] ]:
-        comm_time, value_arr_list = self._sync_read_helper(_TableValueReadSpec[name])
-        assert len(value_arr_list) > 1 and len(value_arr_list) == len(_TableValueReadSpec[name].result_dtype)
-        # if into_cache:
-        #     assert self._cached_read_data_dict[name].dtype == _TableValueReadSpec[name].result_dtype
-        #     self._cached_read_data_dict[name] = value.copy()
-
-        # NOTE: if the ID does not return pkt, the corresponding value is `np.nan`.
-        return comm_time, value_arr_list
-
-
-    def read_model_number(self, retries: int = 0) -> npt.NDArray[np.uint16]:
+    def read_model_number_lazy(self, wait_sec:float) -> npt.NDArray[np.uint16]:
         _, ret = self._read_table_single_value_helper(name=TableValueName.model, into_cache=False)
         return ret
 
-    def read_pos(self, retries: int = 0) -> Tuple[float,npt.NDArray[np.float32]]:
-        return self._read_table_single_value_helper(name=TableValueName.pos, into_cache=True)
+    # non block.
+    def read_pos_nowait(self, retries: int = 0) -> Tuple[float,npt.NDArray[np.float32]]:
+        # return self._read_table_single_value_helper(name=TableValueName.pos, into_cache=True)
 
+        if self.motor_state_q[_id] is empty, raise error? or block?
 
-    def read_vel(self, retries: int = 0) -> Tuple[float, npt.NDArray[np.float32]]:
+        return [ self.motor_state_q[_id].popleft().pos
+                 for _id in self._motor_can_id ]
+
+    def read_vel_nowait(self, retries: int = 0) -> Tuple[float, npt.NDArray[np.float32]]:
         return self._read_table_single_value_helper(name=TableValueName.vel, into_cache=True)
 
-     def read_vin(self, retries: int = 0) -> Tuple[float, npt.NDArray[np.float16]]:
-        return self._read_table_single_value_helper(name=TableValueName.vin, into_cache=True)
+    # executed in run_policy process. not real time data, we can set wait time.
+    def read_voltage_lazy(self, retries: int = 0, wait_sec:float) -> Tuple[float, npt.NDArray[np.float16]]:
+        motor_v = []
+        index = RS_param_table_spec['VBUS'].index
 
-     def read_pos_vel_load(
-        self, retries: int = 0
-    ) -> PosVelLoadRead:
-        comm_time, value_arr_list = self._read_table_multiple_values_helper(name=TableValueName.pos_vel_load)
+        # build read msg.
 
-        # TODO: the necessary of saving into cached data dict?
-        self._cached_read_data_dict[TableValueName.pos]=value_arr_list[0]
-        self._cached_read_data_dict[TableValueName.vel]=value_arr_list[1]
-        self._cached_read_data_dict[TableValueName.load]=value_arr_list[2]  # load in percentage of stall torque.
+        # put read msg into send deque.
 
-        return PosVelLoadRead(
-            comm_time,
-            pos=self._cached_read_data_dict[TableValueName.pos].copy(),
-            vel=self._cached_read_data_dict[TableValueName.vel].copy(),
-            load=self._cached_read_data_dict[TableValueName.load].copy(),
-        )
+        # block wait???
 
-    def read_protect_mode(self, retries: int = 0) -> Tuple[float, npt.NDArray[np.uint8]]:
-            return self._read_table_single_value_helper(name=TableValueName.protect_mode,
-                                                        into_cache=False)
+        # read from table.
 
-    def _sync_write_impl(
-        self,*,
-        param: Sequence[bytes|bytearray] | bytes| bytearray,
-        address: int,
-        # size: int,
-        write_ids: Optional[Sequence[int]] = None,
-    ):
-        """Writes values to a group of motors. no answer pkt.
+        for _id in self._motor_can_id:
+            p_table = self.motor_param_table[_id]
+            voltage = p_table[index]
+            assert voltage is not None
+            motor_v.append(voltage)
+            p_table[index] = None
 
-        Args:
-            write_ids: The motor IDs to write to.
-            param: The values to write. single bytes/bytearray value means same value for all ID, a list(bytes|bytearray) contains
-                   individual value for every ID.
-            address: The control table address to write to.
-            #size: The size(in bytes) of the control table value being written to. can cover multiple registers.
-        """
-        size: int
-        errored_ids: List[int] = []
-
-        if isinstance(param,(list, tuple)):
-            size = len(param[0])  # should be same for all elements in params.
-        elif isinstance(param, (bytes, bytearray)):
-            size = len(param)
-        else:
-            raise TypeError(f'param type error: {type(param)} ')
-
-        self.check_connected()
-        key = (address, size)
-
-        if key not in self._sync_writers:
-            self._sync_writers[key] = GroupSyncWriter(
-                packet_handler = self.packet_handler,
-                start_address=address,
-                data_length=size)
-
-        sync_writer = self._sync_writers[key]
-
-        if write_ids is None:
-            write_ids = self._motor_ids
-
-        if isinstance(param, (list,tuple)):
-            assert len(write_ids) == len(param)
-
-        # Clear before addParam.
-        sync_writer.clearParam()
-
-        if isinstance(param,(list, tuple)):
-            for _id, _bytes in zip(write_ids, param):
-                assert len(_bytes)==size # should be same for all elements in params.
-                success = sync_writer.addParam(_id, _bytes)
-                if not success:
-                    errored_ids.append(_id)
-        else:
-            for _id in write_ids:
-                # add same value for all ID.
-                success = sync_writer.addParam(_id, param)
-                if not success:
-                    errored_ids.append(_id)
-
-        if errored_ids:
-            logger.error( f"Sync write failed for: {str(errored_ids)}"    )
-
-        comm_result = sync_writer.txPacket()
-        self.handle_packet_result(comm_result, context="sync_write")
-
-        # write_data_dict,param are set/cleared at every sync_write.
-        # sync_writer.clearParam()
+        return motor_v
 
 
-    def _write_and_recv_answer_impl(
-        self,*,
-        param: Sequence[bytes|bytearray] | bytes | bytearray, # each element is for corresponding id.
-        address: int,    # same for all ids.
-        write_ids: Optional[Sequence[int]] = None,
-    ) -> Sequence[int]:
-        """Writes a value to the motors.
-           vs. sync_write:  we need the individual feedback of corresponding ID here, but sync_write has no feedback pkt.
-
-        Args:
-            write_ids: The motor IDs to write to.
-            param: The value to write to the control table.
-            address: The control table address to write to. same for all id.
-
-        Returns:
-            A list of IDs that were unsuccessful.
-        """
-        size: int
-        errored_ids: List[int] = []
-
-        if isinstance(param, (list, tuple)):
-            size = len(param[0])  # should be same for all elements in params.
-        elif isinstance(param, (bytes, bytearray)):
-            size = len(param)
-        else:
-            raise TypeError(f'param type error: {type(param)} ')
-
-        self.check_connected()
-
-        if write_ids is None:
-            write_ids = self._motor_ids
-
-        write_data: List[bytes | bytearray]
-        if isinstance(param, (list,tuple)):
-            assert len(write_ids) == len(param)
-            write_data = param
-        else:
-            write_data = [param] * len(write_ids)
-
-        for _id, _bytes in zip(write_ids, write_data):
-            assert len(_bytes) == size  # should be same for all elements in params.
-            comm_result,error = self.packet_handler.writeTxRx(
-                scs_id = _id,
-                address = address,
-                length = len(_bytes) ,
-                data = _bytes)
-            success = self.handle_packet_result(
-                comm_result,
-                error,
-                _id,
-                context="_write_and_recv_answer_impl",
-            )
-            if not success:
-                errored_ids.append(_id)
-
-
-        return errored_ids
-
-
-    def _set_1_byte_param_helper(self, *, address:int, value:int|Sequence[int]):
-        param: bytes | List[bytes]
-
-        if isinstance(value, (list, tuple)):
-            for _v in value:
-                assert 0 <= _v <= 0xff
-
-            param = [_v.to_bytes(length=1) for _v in value]
-        elif isinstance(value, int):
-            assert 0 <= value <= 0xff
-            param = value.to_bytes(length=1)
-        else:
-            raise TypeError(f'value type error: {type(value)} ')
-
-        self._sync_write_impl(param=param,
-                              address=address)
-
-
-    def _set_multiple_bytes_param_helper(self,*, address:int, value: Tuple[int,...] | Sequence[Tuple[int,...]]):
-        """
-        value: each `int` represent one `byte` in memory tbl of actuator.
-        """
-        param: bytes| List[bytes]
-
-        # if isinstance(value, list) and isinstance(value[0], tuple):
-        if isinstance(value[0], tuple):
-            for _tpl in value:
-                assert isinstance(_tpl, Iterable)
-                for _v in _tpl:
-                    assert 0 <= _v <= 0xff
-
-            param = [bytes(_tpl) for _tpl in value]
-
-        elif isinstance(value, tuple):
-            for _v in value:
-                assert 0 <= _v <= 0xff
-
-            param = bytes(value)
-
-        else:
-            raise TypeError(f'value type must be tuple(int) or list( tuple(int) ). got:{type(value)}')
-
-        self._sync_write_impl(param=param,
-                              address=address)
-
-    def set_goal_pos(self, *, motor_ids: Sequence[int], pos: npt.NDArray[np.float32]):
+    def set_goal_pos(self, pos: npt.NDArray[np.float32]):
         """Writes the given desired positions.
 
         Args:
-            motor_ids: The motor IDs to write to.
-            pos: The joint angles in radians to write. in rad of single turn.signed value, to represent rotor direction.
+            pos: The joint angles in radians to write. in rad of single turn.signed value,
+             to represent rotor direction.
+             element order in `pos` must be same as self.motor_can_id.
         """
-        assert len(motor_ids) == len(pos)
+        assert len(self._motor_can_id) == len(pos)
         # TODO: only allow -2Pi ~ 2Pi.
         if not np.all(np.abs(pos) < 2 * np.pi):
             raise ValueError(f'not allowed goal pos: {pos}, which should be in [-2pi, 2pi] ')
-
-        # ->steps, ->int, signed->unsigned, to_bytes.
-        # Convert to Feite position steps:
-        steps = (pos / POS_RESOLUTION).astype(dtype=np.int16)
-        size = steps.dtype.itemsize
-        assert size==2
 
         self._sync_write_impl(param=[signed_to_proto_param_bytes_v2(value=int(_v), size=size)
                                           for _v in steps],  # addr 42, 43,
                               address=SMS_STS_SRAM_Table_RW.GOAL_POSITION_L,
                               write_ids=motor_ids)
 
-    def set_goal_accel(self, *, motor_ids: Sequence[int], accel: npt.NDArray[np.float32]):
+    def set_goal_accel(self, accel: npt.NDArray[np.float32]):
             """Writes the given accel.
 
             Args:
-                motor_ids: The motor IDs to write to.
                 accel:
             """
-            assert len(motor_ids) == len(accel)
-
-            # if  np.any(accel < 0) or np.any(accel > 3 * np.pi):
-            if False:
-                raise ValueError(f'not allowed goal accel: {accel}, which should be in [0, 3pi] ')
-
-            # ->steps, ->int, signed->unsigned, to_bytes.
-            # Convert to Feite position steps:
-            steps = (accel / ACCEL_RESOLUTION).astype(dtype=np.uint8)
-            size = steps.dtype.itemsize
-            assert size == 1
+            assert len(self._motor_can_id) == len(accel)
 
             self._sync_write_impl(param=[int(_v).to_bytes(length=size, byteorder='little', signed=False)
                                          for _v in steps],  # addr 41,
                                   address=SMS_STS_SRAM_Table_RW.GOAL_ACCEL,
                                   write_ids=motor_ids)
 
-    def set_goal_vel(self, *, motor_ids: Sequence[int], vel: npt.NDArray[np.float32]):
+    def set_goal_vel(self, vel: npt.NDArray[np.float32]):
         """Writes the given vel.
 
         Args:
-            motor_ids: The motor IDs to write to.
             vel:
         """
-        assert len(motor_ids) == len(vel)
-
-        # if np.any (abs(vel) > 3 * np.pi/2 ):
-        if False:
-            raise ValueError(f'not allowed goal vel: {vel}, which should be in [-3pi/2, 3pi/2] ')
-
-        # ->steps, ->int, signed->unsigned, to_bytes.
-        # Convert to Feite position steps:
-        steps = (vel / VEL_RESOLUTION).astype(dtype=np.int16)
-        size = steps.dtype.itemsize
-        assert size == 2
+        assert len(self._motor_can_id) == len(vel)
 
         self._sync_write_impl(param=[signed_to_proto_param_bytes_v2(value=int(_v), size=size)
                                      for _v in steps],  # addr 46,
                               address=SMS_STS_SRAM_Table_RW.GOAL_VEL_L,
                               write_ids=motor_ids)
 
-        # self.sync_write_2_bytes(_motor_ids=_motor_ids,
-        #                         params=[_signed_to_proto_param_bytes_v2(value=_v, size=2) for _v in steps],  # addr 42, 43,
-        #                         address=SMS_STS_SRAM_Table_RW.GOAL_POSITION_L)  # addr 42, 43
-
-
-    def set_return_delay_time(self, value: int|Sequence[int]):
-        # This sync writing section has to go after the voltage reading to make sure the motors are powered up
-        # Set the return delay time to value us. EEPROM Table value unit is 2 us, so we //2 here.
-        assert value >= 2
-        self._set_1_byte_param_helper(address=SMS_STS_EEPROM_Table_RW.RETURN_DELAY_TIME, value=value // 2)
 
     def set_control_mode(self, value: int|Sequence[int]):
         # TODO: only allow 0,1,2,3
@@ -643,32 +469,28 @@ class RobStrideClient:
         #TODO: not allow 0 value for kp....
         self._set_1_byte_param_helper(address=SMS_STS_EEPROM_Table_RW.KP, value=value)
 
-    # def set_kp_kd(self, *, kp: int | Seq[int], kd: int|List[int]):
-    #     assert 0 < kp < 0xff
-    #     assert 0 < kd < 0xff
-    #
-    #     # kp:21, kd:22 consecutive address.
-    #     self._sync_write_impl(param=bytes([kp, kd]),
-    #                           address=SMS_STS_EEPROM_Table_RW.KP)
-
     def set_kp_kd_ki(self, *, kp: Sequence[int], kd: Sequence[int], ki: Sequence[int]):
         # kp:21, kd:22 , ki:23 consecutive address.
         self._set_multiple_bytes_param_helper(address=SMS_STS_EEPROM_Table_RW.KP,
                                               value=list(zip(kp, kd, ki)) )
 
-    def __enter__(self):
-        """Enables use as a context manager."""
-        if not self.is_connected:
-            self.connect()
-        return self
+    def set_mech_zero(self):
+        pass
 
-    def __exit__(self, *args):
-        """Enables use as a context manager."""
-        self.disconnect()
 
-    def __del__(self):
-        """Automatically disconnect on destruction."""
-        self.disconnect()
+
+    # def __enter__(self):
+    #     """Enables use as a context manager."""
+    #     self.start()
+    #     return self
+    #
+    # def __exit__(self, *args):
+    #     """Enables use as a context manager."""
+    #     self.stop()
+    #
+    # def __del__(self):
+    #     """Automatically disconnect on destruction."""
+    #     self.stop()
 
 
 def _client_cleanup_handler():
@@ -680,10 +502,7 @@ def _client_cleanup_handler():
     """
     open_clients: List[RobStrideClient] = list(RobStrideClient.OPEN_CLIENTS)  # type: ignore
     for open_client in open_clients:
-        if open_client.port_handler.is_using:
-            logger.warning("Forcing client to close.")
-        open_client.port_handler.is_using = False
-        open_client.disconnect()
+        open_client._disconnect()
 
 # Register global cleanup function.
 atexit.register(_client_cleanup_handler)
