@@ -12,4 +12,5 @@ __all__ = ['ParamConverter',
            'param_table_index_to_name',
            'RS_param_table_spec',
            'ParamSpec',
+           'RunModesCmd',
            'ROBSTRIDE_DEFAULT_BAUD_RATE']
