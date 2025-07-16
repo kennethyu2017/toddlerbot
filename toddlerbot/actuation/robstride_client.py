@@ -69,7 +69,8 @@ class RobStrideClient:
     _loop_rcv_buffer_q: asyncio.Queue[can.Message]
 
     # used by motor operation API, cache msg to be sent out.
-    _app_msg_send_buffer_q: deque[can.Message]
+    # _app_msg_send_buffer_q: deque[can.Message]
+    _app_msg_send_buffer_q: asyncio.Queue[can.Message]
     # index by motor can id.
     # TODO: protect by lock?
     _motor_state_q: OrderedDict[int, deque[MotorStateFrame]]
@@ -106,7 +107,8 @@ class RobStrideClient:
         # self.rcv_timeout_ms = rcv_timeout_ms
         self.bus = None
 
-        self._app_msg_send_buffer_q = deque(maxlen= 5*len(motor_can_id))
+        # self._app_msg_send_buffer_q = deque(maxlen= 5*len(motor_can_id))
+        self._app_msg_send_buffer_q = asyncio.Queue(maxsize= 5*len(motor_can_id))
         # index through motor can id.
         # TODO: adjust queue size according to control freq.
         # we set the deque size to 1, to make the `obs` always be the latest one.
@@ -143,8 +145,9 @@ class RobStrideClient:
 
     async def _parse_rcv_msg(self) -> None:
         while True:
+            msg: can.Message|None = None
             try:
-                msg: can.Message = await self._loop_rcv_buffer_q.get()
+                msg = await self._loop_rcv_buffer_q.get()
 
                 await alogger.debug(f'rcv msg: {msg}')
 
@@ -200,24 +203,42 @@ class RobStrideClient:
                 raise exc
 
             finally:
-                self._loop_rcv_buffer_q.task_done()
+                if msg is not None:
+                    self._loop_rcv_buffer_q.task_done()
 
     async def _dump_send_msg(self):
-        try:
-            while True:
-                await asyncio.sleep(0.0001)
-                while self._app_msg_send_buffer_q:
-                    tx_msg = self._app_msg_send_buffer_q.popleft()
-                    await alogger.debug(f'write single param can msg: {tx_msg}')
-                    await self._loop_send_buffer_q.put(tx_msg)
+        while True:
+            tx_msg: can.Message|None = None
+            try:
+                tx_msg = await self._app_msg_send_buffer_q.get()
+                await alogger.debug(f'write single param can msg: {tx_msg}')
+                await self._loop_send_buffer_q.put(tx_msg)
 
-        except Exception as exc:
-                # NOTE: must propagate to up layer task_group to cancel the remaining tasks in task_group.
-                await alogger.error(f'produce send msg task failed: {exc=:} {type(exc)=:}')
-                raise exc
+            except Exception as exc:
+                    # NOTE: must propagate to up layer task_group to cancel the remaining tasks in task_group.
+                    await alogger.error(f'dump send msg task failed: {exc=:} {type(exc)=:}')
+                    raise exc
 
-        finally:
-            pass
+            finally:
+                if tx_msg is not None:
+                    self._app_msg_send_buffer_q.task_done()
+
+    # async def _dump_send_msg(self):
+    #     try:
+    #         while True:
+    #             await asyncio.sleep(0.0001)
+    #             while self._app_msg_send_buffer_q:
+    #                 tx_msg = self._app_msg_send_buffer_q.popleft()
+    #                 await alogger.debug(f'write single param can msg: {tx_msg}')
+    #                 await self._loop_send_buffer_q.put(tx_msg)
+    #
+    #     except Exception as exc:
+    #             # NOTE: must propagate to up layer task_group to cancel the remaining tasks in task_group.
+    #             await alogger.error(f'produce send msg task failed: {exc=:} {type(exc)=:}')
+    #             raise exc
+    #
+    #     finally:
+    #         pass
 
     async def _connect(self):
         assert self.bus is None, "Client is already started."
@@ -293,31 +314,33 @@ class RobStrideClient:
 
             # clear loop reader/writer callback.
             loop.remove_reader(file_dsc)
-            await self._loop_rcv_buffer_q.join()
-            await aprint(f'rcv buffer cleared.')
+
+            # await self._loop_rcv_buffer_q.join()
+            # await aprint(f'rcv buffer cleared.')
+
+
+            # flush _app_msg_send_buffer_q
+            # await self._app_msg_send_buffer_q.join()
 
             # _dump_send_msg task finished, no new msg dump to _loop_send_buffer_q.
-            await self._loop_send_buffer_q.join()
+            # await self._loop_send_buffer_q.join()
             loop.remove_writer(file_dsc)
-            await aprint(f'snd buffer cleared.')
 
-            # TODO:
-            # flush _app_msg_send_buffer_q ???
-            # clear _motor_state_q, _motor_param_q ???
+            # await aprint(f'snd buffer cleared.')
 
             # task_rcv.result()...
             self.disconnect()
 
     def _tx_msg(self, msg:List[can.Message]):
-        if len(self._app_msg_send_buffer_q) >= self._app_msg_send_buffer_q.maxlen:
+        if self._app_msg_send_buffer_q.qsize() >= self._app_msg_send_buffer_q.maxsize:
             raise ValueError(f'tx msg failed: _app_msg_send_buffer_q is full, '
-                             f'length:{len(self._app_msg_send_buffer_q)}.'
+                             f'length:{self._app_msg_send_buffer_q.qsize()}.'
                              f' check the application running freq and asyncio send bandwidth.')
 
         # self._app_msg_send_buffer_q.extend(msg)
         # using append to guarantee atomic operation.
         for _m in msg:
-            self._app_msg_send_buffer_q.append(_m)
+            self._app_msg_send_buffer_q.put_nowait(_m)
 
 
     # executed in run_policy process. not real time data, we can set wait time.
