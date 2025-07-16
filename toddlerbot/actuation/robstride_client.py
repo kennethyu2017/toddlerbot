@@ -1,9 +1,6 @@
 import atexit
-import time
-from typing import (Any, Dict, List, Optional, Sequence,
-                    Set, Tuple, ClassVar,Iterable,NamedTuple,
-                    OrderedDict)
-from dataclasses import dataclass, field
+from typing import (Any, Dict, List, Sequence, NamedTuple,
+                    Set, ClassVar, OrderedDict)
 # deque does not use lock, but its append/popleft is atomic operation.
 from collections import OrderedDict, deque
 import asyncio
@@ -41,6 +38,21 @@ from toddlerbot.actuation.robstride_sdk import *
 #
 
 
+class RSClientConfig(NamedTuple):
+    channel: str = ''
+    baud_rate: int = 1_000_000
+    control_mode: str
+    pos_kP: Sequence[float] = []
+    kI: Sequence[int] = []
+    kD: Sequence[int] = []
+    # TODO: adjust according to tracking result.
+    # TODO: move into config.json.
+    # default_torque_limit: npt.NDArray[np.uint16] |None = None
+    default_accel: npt.NDArray[np.float32] |None = None   # [1.6 * np.pi]
+    default_vel: npt.NDArray[np.float32] |None = None      # [1.4 * np.pi]
+    init_goal_pos: npt.NDArray[np.float32] |None = None    # None = None
+    # interp_method: str = "cubic"
+
 class RobStrideClient:
     """Client for communicating with a group of Feite motors.
      should use individual client for one can bus.
@@ -76,15 +88,15 @@ class RobStrideClient:
     _motor_state_q: OrderedDict[int, deque[MotorStateFrame]]
     _motor_param_table: OrderedDict[int, Dict[int, SingleParamValue | None]]
 
-
     def __init__(
         self,*,
-        motor_can_id: Sequence[int],  # ids of a group of actuators.
-        host_can_id: int,     # 0xfe
-        channel_name: str,             #= "can0",
-        baud_rate: int,             # = 1_000_000 default for RS
-        # lazy_connect: bool,          #= False,
-        # rcv_timeout_ms: int,              #= 5,    #usb serial latency timer, default 5 ms.
+        motor_can_id: Sequence[int],         # ids of a group of actuators.
+        host_can_id: int,                    # 0xfe
+        channel_name: str,                   #= "can0",
+        baud_rate: int,                      # = 1_000_000 default for RS
+        init_target_pos: npt.NDArray[np.float32]|None,  # set to `init_pos` in config.json, or None for calibrate-zero.
+        # lazy_connect: bool,                #= False,
+        # rcv_timeout_ms: int,               #= 5,    #usb serial latency timer, default 5 ms.
     ):
         """Initializes a new client.
         Args:
@@ -92,6 +104,7 @@ class RobStrideClient:
             host_can_id:
             channel_name:
             baud_rate:
+            init_target_pos:
             # lazy_connect:
             # rcv_timeout_ms:
            """
@@ -103,6 +116,8 @@ class RobStrideClient:
         assert 0x7f < host_can_id <= 0xfe
         self.host_can_id = host_can_id
         self.baud_rate = baud_rate
+        self._init_target_pos = init_target_pos
+
         # self.lazy_connect = lazy_connect
         # self.rcv_timeout_ms = rcv_timeout_ms
         self.bus = None
@@ -120,6 +135,23 @@ class RobStrideClient:
         self._loop_send_buffer_q: asyncio.Queue[can.Message] = asyncio.Queue(maxsize=10 * len(motor_can_id))
 
         RobStrideClient.OPEN_CLIENTS.add(self)
+
+        self.initialize_motors()
+
+        # NOTE: TO adjust the init pos bias: first set goal pos to init_pos in config.json,
+        # then normalize init pos read from motor.
+        # if config.init_pos is None, that is for calibrate_zero.
+        # TODO: during calibrate_zero , setting init_pos to pi ??
+        self.normalized_init_pos: npt.NDArray[np.float32] | None = None
+
+        if self._init_target_pos is None:
+            # for calibrate_zero.
+            self.normalized_init_pos = np.zeros(len(self._motor_can_id), dtype=np.float32)
+        else:
+            assert len(self._init_target_pos) == len(self._motor_can_id)
+            # self.normalized_init_pos = np.asarray(config.init_pos, dtype=np.float32)
+            self.normalize_init_pos()
+
 
     # NOTE: callback invoked in running_loop: do not implement as co-routine directly:
     def _on_read_available(self) -> None:
@@ -263,8 +295,11 @@ class RobStrideClient:
             return
 
         # Ensure motors are disabled at the end.
-        # using block io send.
-        self.set_motor_disable_nowait()
+        # using block-io to send, asyncio task is already shutdown.
+        motor_disable_msg: List[can.Message] = RSProtocolBuilder.motor_disable(motor_can_id=self._motor_can_id,
+                                                                               host_can_id=self.host_can_id)
+        for _m in motor_disable_msg:
+            self.bus.send(_m,0)
 
         self.bus.shutdown()
         self.bus = None

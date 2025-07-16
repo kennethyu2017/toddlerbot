@@ -5,9 +5,7 @@ import time
 import logging
 from typing import Tuple
 
-from toddlerbot.actuation.feite_servo.scservo_sdk import SMS_STS_DEFAULT_BAUD_RATE
-from toddlerbot.actuation.feite_control import (FeiteController, FeiteConfig)
-from toddlerbot.sim.real_world import _DEFAULT_FEITE_VEL,_DEFAULT_FEITE_ACCEL,_DEFAULT_FEITE_TORQUE_LIMIT_PERCENTAGE
+from toddlerbot.actuation import robstride_client
 
 # 配置日志
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
