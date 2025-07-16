@@ -1,4 +1,4 @@
-from typing import (List, Type, NamedTuple)
+from typing import (List, Sequence)
 from numpy import typing as npt
 import numpy as np
 from can import Message
@@ -155,7 +155,7 @@ class RSProtocolBuilder:
     def write_single_param(motor_can_id: npt.NDArray[np.uint32],
                            host_can_id: int,
                            index: int,
-                           param_value: List[float|int],
+                           param_value: Sequence[float|int],
                            param_spec: ParamSpec
                            )->List[Message]:
         assert len(param_value) == len(motor_can_id)
@@ -164,11 +164,22 @@ class RSProtocolBuilder:
         assert param_spec.n_bytes in {1,2,4}
         assert param_spec.dtype in {int,float}
 
+        lower: int|float|None = None
+        upper: int|float|None = None
+        if param_spec.min_max is not None:
+            lower = param_spec.min_max[0]
+            upper = param_spec.min_max[1]
+
         idx_bytes = index.to_bytes(length=2, byteorder='little', signed=False)
 
         data1_lst: List[bytes] = []
 
         for _v in param_value:
+            if lower is not None:
+                assert lower <= _v
+            if upper is not None:
+                assert _v <= upper
+
             # data1 = bytearray(8)
             data1 = bytearray(4)
             data1[0], data1[1] = idx_bytes

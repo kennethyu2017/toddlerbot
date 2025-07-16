@@ -8,7 +8,9 @@ from dataclasses import dataclass, field
 from collections import OrderedDict, deque
 import asyncio
 from aiologger import Logger
+from aiologger.levels import LogLevel
 from aioconsole import aprint
+from copy import deepcopy
 # from queue import Queue  # thread-safe fifo-queue.
 import numpy as np
 import numpy.typing as npt
@@ -16,9 +18,8 @@ import struct
 import can
 from can.interfaces.socketcan import SocketcanBus
 
-from .robstride_sdk import *
+from toddlerbot.actuation.robstride_sdk import *
 # from ._module_logger import logger
-alogger = Logger.with_default_handlers()
 
 # @dataclass
 # class MotorData:
@@ -40,11 +41,10 @@ alogger = Logger.with_default_handlers()
 #
 
 
-# one client for one can bus.
 class RobStrideClient:
     """Client for communicating with a group of Feite motors.
-
-    NOTE: This only supports Protocol 2.
+     should use individual client for one can bus.
+    NOTE: only supports can ExtID.
     """
 
     # The currently open clients. class variable.
@@ -52,25 +52,38 @@ class RobStrideClient:
 
     # instance variable.
     bus: SocketcanBus | None
-    # motor_data: OrderedDict[int, MotorData]
+
+    """
+    send data to motor:
+    API -> build can msg -> put into _msg_to_send_buffer_q -> put into _send_buffer_q when
+    select_io_writable is ready  -> send by bus immediately.
+    
+    rcv data from motor:
+    put into _rcv_buffer_q when select_io_readable is ready -> parse can msg -> put motor data
+    into _motor_state_q and _motor_param_table  -> get data through API, and clear cached data.
+    
+    """
+
+    # used by loop.reader/writers.
+    _loop_send_buffer_q: asyncio.Queue[can.Message]
+    _loop_rcv_buffer_q: asyncio.Queue[can.Message]
+
+    # used by motor operation API, cache msg to be sent out.
+    _app_msg_send_buffer_q: deque[can.Message]
     # index by motor can id.
     # TODO: protect by lock?
-    motor_state_q: OrderedDict[int, deque[MotorStateFrame] ]
+    _motor_state_q: OrderedDict[int, deque[MotorStateFrame]]
+    _motor_param_table: OrderedDict[int, Dict[int, SingleParamValue | None]]
 
-    # not use queue.
-    motor_param_table: OrderedDict[int, Dict[int, SingleParamValue|None] ]
-
-    _send_buffer_q: asyncio.Queue[can.Message]
-    _rcv_buffer_q: asyncio.Queue[can.Message]
 
     def __init__(
         self,*,
         motor_can_id: Sequence[int],  # ids of a group of actuators.
         host_can_id: int,     # 0xfe
         channel_name: str,             #= "can0",
-        baud_rate: int,             # = 115200,  # default for SMS/STS series.
-        lazy_connect: bool,          #= False,
-        rcv_timeout_ms: int,              #= 5,    #usb serial latency timer, default 5 ms.
+        baud_rate: int,             # = 1_000_000 default for RS
+        # lazy_connect: bool,          #= False,
+        # rcv_timeout_ms: int,              #= 5,    #usb serial latency timer, default 5 ms.
     ):
         """Initializes a new client.
         Args:
@@ -78,30 +91,31 @@ class RobStrideClient:
             host_can_id:
             channel_name:
             baud_rate:
-            lazy_connect:
-            rcv_timeout_ms:
+            # lazy_connect:
+            # rcv_timeout_ms:
            """
 
         # NOTE: _motor_ids is not guaranteed to be consecutive, i.e, could be [44, 1, 230,...]. so we
         # could not use id as array index directly.
-        self._motor_can_id = motor_can_id  # not changed after instantiating a FeiteClient instance.
+        self._motor_can_id:npt.NDArray[np.uint32] = np.asarray(motor_can_id,dtype=np.uint32)  # not changed after instantiating a FeiteClient instance.
         self.channel_name = channel_name
         assert 0x7f < host_can_id <= 0xfe
         self.host_can_id = host_can_id
         self.baud_rate = baud_rate
-        self.lazy_connect = lazy_connect
-        self.rcv_timeout_ms = rcv_timeout_ms
+        # self.lazy_connect = lazy_connect
+        # self.rcv_timeout_ms = rcv_timeout_ms
         self.bus = None
 
+        self._app_msg_send_buffer_q = deque(maxlen= 5*len(motor_can_id))
         # index through motor can id.
-        # self.motor_data: OrderedDict[int, MotorData] = OrderedDict()
         # TODO: adjust queue size according to control freq.
-        self.motor_state_q = OrderedDict( (_id, deque(maxlen=10)) for _id in motor_can_id)
-        self.motor_param_table = OrderedDict((_id, dict()) for _id in motor_can_id)
+        # we set the deque size to 1, to make the `obs` always be the latest one.
+        self._motor_state_q = OrderedDict((_id, deque(maxlen=1)) for _id in motor_can_id)
+        self._motor_param_table = OrderedDict((_id, dict()) for _id in motor_can_id)
 
         # TODO: protected by lock.
-        self._rcv_buffer_q: asyncio.Queue[can.Message] = asyncio.Queue(maxsize=10 * len(motor_can_id))
-        self._send_buffer_q: asyncio.Queue[can.Message] = asyncio.Queue(maxsize=10 * len(motor_can_id))
+        self._loop_rcv_buffer_q: asyncio.Queue[can.Message] = asyncio.Queue(maxsize=10 * len(motor_can_id))
+        self._loop_send_buffer_q: asyncio.Queue[can.Message] = asyncio.Queue(maxsize=10 * len(motor_can_id))
 
         RobStrideClient.OPEN_CLIENTS.add(self)
 
@@ -111,18 +125,18 @@ class RobStrideClient:
             # if buffer q is full, raise error directly.
             try:
                 # append/popleft op is atomic, no need to add lock.
-                self._rcv_buffer_q.put_nowait(msg)
+                self._loop_rcv_buffer_q.put_nowait(msg)
             except Exception as exc:
                 print(f'put rcv msg to buffer failed: {exc=:},  {type(exc)=:}. maybe increase buffer size.')
                 raise
 
     # NOTE: callback invoked in running_loop: do not implement as co-routine directly:
     def _on_write_available(self) -> None:
-        if not self._send_buffer_q.empty():
+        if not self._loop_send_buffer_q.empty():
             try:
-                msg = self._send_buffer_q.get_nowait()
+                msg = self._loop_send_buffer_q.get_nowait()
                 self.bus.send(msg, timeout=0)
-                self._send_buffer_q.task_done()
+                self._loop_send_buffer_q.task_done()
 
             except Exception as exc:
                 raise OSError(f'send msg from buffer queue failed: {exc=:} {type(exc)=:}')
@@ -130,7 +144,7 @@ class RobStrideClient:
     async def _parse_rcv_msg(self) -> None:
         while True:
             try:
-                msg: can.Message = await self._rcv_buffer_q.get()
+                msg: can.Message = await self._loop_rcv_buffer_q.get()
 
                 await alogger.debug(f'rcv msg: {msg}')
 
@@ -145,7 +159,7 @@ class RobStrideClient:
                     param_value = RSProtocolParser.single_param(data2=ext_id.data2, data=msg.data)
                     await alogger.debug(f'{param_value}')
 
-                    p_table: Dict[int, SingleParamValue] = self.motor_param_table[param_value.can_id]
+                    p_table: Dict[int, SingleParamValue] = self._motor_param_table[param_value.can_id]
 
                     if param_value.index in p_table and p_table[param_value.index] is not None:
                         raise ValueError(f'motor_param_table has existing value, which should be '
@@ -154,6 +168,7 @@ class RobStrideClient:
                     p_table[param_value.index] = param_value
 
                 elif ext_id.comm_type == CommunicationType.MOTOR_FEEDBACK:
+                    # TODO: add error handler.
                     motor_state_frame = RSProtocolParser.motor_state_feedback(data2=ext_id.data2, data=msg.data,
                                                                               ts=msg.timestamp)
                     await alogger.debug(f'{motor_state_frame}')
@@ -162,11 +177,11 @@ class RobStrideClient:
                     # `await` to yield our cpu core, and even yield, this will not accelerate
                     # the run_policy process on another cpu core.
                     # NOTE: if the deque is full, the left most element will be dropped.
-                    if (len(self.motor_state_q[motor_state_frame.can_id]) >=
-                            self.motor_state_q[motor_state_frame.can_id].maxlen):
+                    if (len(self._motor_state_q[motor_state_frame.can_id]) >=
+                            self._motor_state_q[motor_state_frame.can_id].maxlen):
                         raise ValueError(f'motor_state_q_dict is full. check the run_policy fetch freq.')
 
-                    self.motor_state_q[motor_state_frame.can_id].append(motor_state_frame)
+                    self._motor_state_q[motor_state_frame.can_id].append(motor_state_frame)
 
                 elif ext_id.comm_type == CommunicationType.GET_DEVICE_ID:
                     mcu_id = RSProtocolParser.motor_device_id(data2=ext_id.data2, data=msg.data)
@@ -185,20 +200,16 @@ class RobStrideClient:
                 raise exc
 
             finally:
-                self._rcv_buffer_q.task_done()
+                self._loop_rcv_buffer_q.task_done()
 
-    async def _produce_send_msg(self):
+    async def _dump_send_msg(self):
         try:
             while True:
-                tx_msg = \
-                RSProtocolBuilder.write_single_param(motor_can_id=np.asarray(self._motor_can_id, dtype=np.uint32),
-                                                     host_can_id=self.host_can_id,
-                                                     index=index,
-                                                     param_value=[value],
-                                                     param_spec=param_spec
-                                                     )[0]
-                await alogger.debug(f'write single param can msg: {tx_msg}')
-                await self._send_buffer_q.put(tx_msg)
+                await asyncio.sleep(0.0001)
+                while self._app_msg_send_buffer_q:
+                    tx_msg = self._app_msg_send_buffer_q.popleft()
+                    await alogger.debug(f'write single param can msg: {tx_msg}')
+                    await self._loop_send_buffer_q.put(tx_msg)
 
         except Exception as exc:
                 # NOTE: must propagate to up layer task_group to cancel the remaining tasks in task_group.
@@ -207,7 +218,6 @@ class RobStrideClient:
 
         finally:
             pass
-
 
     async def _connect(self):
         assert self.bus is None, "Client is already started."
@@ -224,12 +234,16 @@ class RobStrideClient:
             await alogger.error(f'create socket bus failed: channel: {self.channel_name} {exc=:} {type(exc)=:}')
             raise exc
 
-    def _disconnect(self):
+    def disconnect(self):
         """Disconnects from the RobStride motors."""
+
+        if self.bus is None:
+            # already disconnected.
+            return
 
         # Ensure motors are disabled at the end.
         # using block io send.
-        self.set_torque_enabled(motor_ids=self._motor_can_id, enabled=False)
+        self.set_motor_disable_nowait()
 
         self.bus.shutdown()
         self.bus = None
@@ -269,7 +283,7 @@ class RobStrideClient:
         try:
             async with asyncio.TaskGroup() as tg:
                 task_rcv = tg.create_task(self._parse_rcv_msg())
-                task_snd = tg.create_task(self._produce_send_msg())
+                task_snd = tg.create_task(self._dump_send_msg())
 
         except Exception as exc:
             await alogger.error(f'run task group failed: {exc=:} {type(exc)=:} ' )
@@ -279,144 +293,127 @@ class RobStrideClient:
 
             # clear loop reader/writer callback.
             loop.remove_reader(file_dsc)
-            await self._rcv_buffer_q.join()
+            await self._loop_rcv_buffer_q.join()
             await aprint(f'rcv buffer cleared.')
 
-            # stop tx_xxx_msg ...
-            await self._send_buffer_q.join()
+            # _dump_send_msg task finished, no new msg dump to _loop_send_buffer_q.
+            await self._loop_send_buffer_q.join()
             loop.remove_writer(file_dsc)
             await aprint(f'snd buffer cleared.')
 
             # TODO:
-            # flush buffer q:
-            # SND_BUFFER_Q.shutdown()
-            # RCV_BUFFER_Q.shutdown()
+            # flush _app_msg_send_buffer_q ???
+            # clear _motor_state_q, _motor_param_q ???
 
             # task_rcv.result()...
-            self._disconnect()
+            self.disconnect()
 
-    def set_torque_limit(
-        self,
-        max_torque: npt.NDArray[np.float32],
-        retries: int = -1,
-        retry_interval: float = 0.25,
-    ):
-        """Sets whether torque is enabled for the motors.
+    def _tx_msg(self, msg:List[can.Message]):
+        if len(self._app_msg_send_buffer_q) >= self._app_msg_send_buffer_q.maxlen:
+            raise ValueError(f'tx msg failed: _app_msg_send_buffer_q is full, '
+                             f'length:{len(self._app_msg_send_buffer_q)}.'
+                             f' check the application running freq and asyncio send bandwidth.')
 
-        Args:
-            motor_ids:
-            max_torque: array.
-            retries: The number of times to retry. If this is <0, will retry
-                forever.
-            retry_interval: The number of seconds to wait between retries.
-        """
-        assert len(self._motor_can_id) == len(max_torque)
-        assert np.all(max_torque > 0)
+        # self._app_msg_send_buffer_q.extend(msg)
+        # using append to guarantee atomic operation.
+        for _m in msg:
+            self._app_msg_send_buffer_q.append(_m)
 
-        limit_dict:OrderedDict[int, npt.NDArray[np.float32]] = OrderedDict( zip(motor_ids,
-                                                                               max_torque) )
-
-        logger.info(f'set torque limit: {limit_dict}')
-
-        remaining_id = [*limit_dict.keys()] #list(motor_ids)
-        while len(remaining_id) > 0 :
-            # guarantee order.
-            limit_bytes: List[bytes] = [ ParamConverter.float_to_param_bytes(limit_dict[_id])
-                                        for _id in remaining_id ] # [ *remaining_ids.values() ]
-
-            remaining_id = self._write_and_recv_answer_impl(param=limit_bytes,
-                                  address=SMS_STS_SRAM_Table_RW.TORQUE_LIMIT_L,
-                                  write_ids=remaining_id)
-
-            if len(remaining_id) > 0:
-                logger.error(f"Could not set torque limit for IDs: {remaining_id}. maybe retry.")
-            if retries == 0:
-                break
-            time.sleep(retry_interval)
-            retries -= 1
-
-
-    def set_torque_enabled(
-        self, *,
-        motor_ids: Sequence[int],
-        enabled: bool,
-        retries: int = -1,
-        retry_interval: float = 0.25,
-    ):
-        """Sets whether torque is enabled for the motors.
-
-        Args:
-            motor_ids: The motor IDs to configure.
-            enabled: Whether to engage or disengage the motors.
-            retries: The number of times to retry. If this is <0, will retry
-                forever.
-            retry_interval: The number of seconds to wait between retries.
-        """
-        remaining_ids = motor_ids #list(motor_ids)
-        while remaining_ids:
-            remaining_ids = self._write_and_recv_answer_impl(param=int(enabled).to_bytes(length=1),
-                                                             address=SMS_STS_SRAM_Table_RW.TORQUE_ENABLE,
-                                                             write_ids=remaining_ids )
-
-            if remaining_ids:
-                logger.error(f"Could not set torque {'enabled' if enabled else 'disabled'} for IDs: {str(remaining_ids)}")
-            if retries == 0:
-                break
-            time.sleep(retry_interval)
-            retries -= 1
-
-
-    def _read_table_single_value_helper(self,*, name: TableValueName, into_cache: bool, retries: int = 0) \
-            -> Tuple[float,npt.NDArray[Any]]:
-        comm_time, value_arr_list = self._sync_read_helper(_TableValueReadSpec[name])
-        assert len(value_arr_list)==1 and len(value_arr_list)==len(_TableValueReadSpec[name].result_dtype)
-        if into_cache:
-            assert self._cached_read_data_dict[name].dtype == _TableValueReadSpec[name].result_dtype[0]
-            self._cached_read_data_dict[name] = value_arr_list[0].copy()
-
-        # NOTE: if the ID does not return pkt, the corresponding value is `np.nan`.
-        return comm_time, value_arr_list[0]
-
-    def read_model_number_lazy(self, wait_sec:float) -> npt.NDArray[np.uint16]:
-        _, ret = self._read_table_single_value_helper(name=TableValueName.model, into_cache=False)
-        return ret
-
-    # non block.
-    def read_pos_nowait(self, retries: int = 0) -> Tuple[float,npt.NDArray[np.float32]]:
-        # return self._read_table_single_value_helper(name=TableValueName.pos, into_cache=True)
-
-        if self.motor_state_q[_id] is empty, raise error? or block?
-
-        return [ self.motor_state_q[_id].popleft().pos
-                 for _id in self._motor_can_id ]
-
-    def read_vel_nowait(self, retries: int = 0) -> Tuple[float, npt.NDArray[np.float32]]:
-        return self._read_table_single_value_helper(name=TableValueName.vel, into_cache=True)
 
     # executed in run_policy process. not real time data, we can set wait time.
-    def read_voltage_lazy(self, retries: int = 0, wait_sec:float) -> Tuple[float, npt.NDArray[np.float16]]:
-        motor_v = []
-        index = RS_param_table_spec['VBUS'].index
+    def _read_param_tx_helper(self, name:str)->None:
+
+        if name not in RS_param_table_spec:
+            raise KeyError(f'read param tx failed, param name:{name} not in RS_param_table_spec. ')
+
+        index = RS_param_table_spec[name].index
 
         # build read msg.
+        snd_msg:List[can.Message] = RSProtocolBuilder.read_single_param(motor_can_id=self._motor_can_id,
+                                            host_can_id=self.host_can_id,
+                                            index=index)
+        self._tx_msg(snd_msg)
 
-        # put read msg into send deque.
 
-        # block wait???
+    def _write_param_tx_helper(self, name:str, value:Sequence[float|int])->None:
 
-        # read from table.
+        if name not in RS_param_table_spec:
+            raise KeyError(f'write param tx failed, param name:{name} not in RS_param_table_spec. ')
+
+        p_spec:ParamSpec = RS_param_table_spec[name]
+
+        # build read msg.
+        snd_msg: List[can.Message] = RSProtocolBuilder.write_single_param(motor_can_id=self._motor_can_id,
+                                                                          host_can_id=self.host_can_id,
+                                                                          index=p_spec.index,
+                                                                          param_value=value,
+                                                                          param_spec=p_spec,
+                                                                          )
+        self._tx_msg(snd_msg)
+
+
+    def _get_param_helper(self, name:str)->List[SingleParamValue]:
+        """
+         raise exc if the corresponding param not received.
+        """
+        # TODO: guarantee the order.
+
+        if name not in RS_param_table_spec:
+            raise KeyError(f'get param failed, param name:{name} not in RS_param_table_spec. ')
+
+        index = RS_param_table_spec[name].index
+        ret:List[SingleParamValue] = []
 
         for _id in self._motor_can_id:
-            p_table = self.motor_param_table[_id]
-            voltage = p_table[index]
-            assert voltage is not None
-            motor_v.append(voltage)
+            p_table = self._motor_param_table[_id]
+            value = p_table[index]
+            if value is None:
+                raise ValueError(f'read param table failed, the value is None which means'
+                                 f'the corresponding motor does not feedback read param: '
+                                 f'index: 0x{index:x}, motor id: {_id} ')
+            ret.append(deepcopy(value))
+            # clear the cached data.
             p_table[index] = None
 
-        return motor_v
+        return ret
 
+        # non block.
 
-    def set_goal_pos(self, pos: npt.NDArray[np.float32]):
+    def get_motor_state_nowait(self) -> List[MotorStateFrame]:
+        """
+        return list containing state frame of all the motors.
+        """
+
+        # TODO: guarantee the order.
+
+        motor_state: List[MotorStateFrame] = []
+        for _id in self._motor_can_id:
+            state_q = self._motor_state_q[_id]
+            if len(state_q) == 0:
+                raise ValueError(f'motor state deque is empty, motor can id:{_id}. '
+                                 f'check the corresponding motor +48V supply and can bus connection.')
+
+            # Remove and return the rightmost element which is latest?
+            # TODO: pop() is atomic?
+            # motor_state.append(state_q.pop())
+            motor_state.append(deepcopy(state_q.popleft()))
+            # state_q.clear()
+        return motor_state
+
+    def get_voltage_nowait(self)->List[float]:
+        param:List[SingleParamValue] = self._get_param_helper('VBUS')
+        return [_p.value for _p in param]
+
+    def read_voltage_tx(self)->None:
+        self._read_param_tx_helper('VBUS')
+
+    def set_target_accel_nowait(self, accel: npt.NDArray[np.float32])->None:
+        raise NotImplemented
+
+    def set_target_vel_nowait(self, vel: npt.NDArray[np.float32])->None:
+        raise NotImplemented
+
+    def set_target_pos_nowait(self, pos: npt.NDArray[np.float32])->None:
         """Writes the given desired positions.
 
         Args:
@@ -429,55 +426,48 @@ class RobStrideClient:
         if not np.all(np.abs(pos) < 2 * np.pi):
             raise ValueError(f'not allowed goal pos: {pos}, which should be in [-2pi, 2pi] ')
 
-        self._sync_write_impl(param=[signed_to_proto_param_bytes_v2(value=int(_v), size=size)
-                                          for _v in steps],  # addr 42, 43,
-                              address=SMS_STS_SRAM_Table_RW.GOAL_POSITION_L,
-                              write_ids=motor_ids)
-
-    def set_goal_accel(self, accel: npt.NDArray[np.float32]):
-            """Writes the given accel.
-
-            Args:
-                accel:
-            """
-            assert len(self._motor_can_id) == len(accel)
-
-            self._sync_write_impl(param=[int(_v).to_bytes(length=size, byteorder='little', signed=False)
-                                         for _v in steps],  # addr 41,
-                                  address=SMS_STS_SRAM_Table_RW.GOAL_ACCEL,
-                                  write_ids=motor_ids)
-
-    def set_goal_vel(self, vel: npt.NDArray[np.float32]):
-        """Writes the given vel.
-
-        Args:
-            vel:
-        """
-        assert len(self._motor_can_id) == len(vel)
-
-        self._sync_write_impl(param=[signed_to_proto_param_bytes_v2(value=int(_v), size=size)
-                                     for _v in steps],  # addr 46,
-                              address=SMS_STS_SRAM_Table_RW.GOAL_VEL_L,
-                              write_ids=motor_ids)
+        self._write_param_tx_helper('loc_ref', pos)
 
 
-    def set_control_mode(self, value: int|Sequence[int]):
-        # TODO: only allow 0,1,2,3
-        self._set_1_byte_param_helper(address=SMS_STS_EEPROM_Table_RW.CONTROL_MODE,value=value)
+    def set_control_mode_nowait(self, mode: int)->None:
+        assert mode in {RunModesCmd.MOTION_MODE,RunModesCmd.PP_POSITION_MODE,
+                        RunModesCmd.SPEED_MODE, RunModesCmd.CURRENT_MODE,
+                        RunModesCmd.CSP_POSITION_MODE}
 
-    def set_kp(self, value: int | Sequence[int]):
-        #TODO: not allow 0 value for kp....
-        self._set_1_byte_param_helper(address=SMS_STS_EEPROM_Table_RW.KP, value=value)
-
-    def set_kp_kd_ki(self, *, kp: Sequence[int], kd: Sequence[int], ki: Sequence[int]):
-        # kp:21, kd:22 , ki:23 consecutive address.
-        self._set_multiple_bytes_param_helper(address=SMS_STS_EEPROM_Table_RW.KP,
-                                              value=list(zip(kp, kd, ki)) )
-
-    def set_mech_zero(self):
-        pass
+        self._write_param_tx_helper('run_mode', [mode]*len(self._motor_can_id) )
 
 
+    def set_pos_kp_nowait(self, kp: Sequence[float])->None:
+        self._write_param_tx_helper('loc_kp', kp)
+
+    def set_mech_zero_nowait(self)->None:
+        snd_msg:List[can.Message] = RSProtocolBuilder.set_mech_pos_zero(motor_can_id=self._motor_can_id,
+                                                                        host_can_id=self.host_can_id)
+        self._tx_msg(snd_msg)
+
+    def set_motor_enable_nowait(self)->None:
+        snd_msg:List[can.Message] = RSProtocolBuilder.motor_enable(motor_can_id=self._motor_can_id,
+                                                                   host_can_id=self.host_can_id)
+        self._tx_msg(snd_msg)
+
+    def set_motor_disable_nowait(self)->None:
+        snd_msg:List[can.Message] = RSProtocolBuilder.motor_disable(motor_can_id=self._motor_can_id,
+                                                                   host_can_id=self.host_can_id)
+        self._tx_msg(snd_msg)
+
+    def read_model_number_tx(self, wait_sec: float)->None:
+        snd_msg: List[can.Message] = RSProtocolBuilder.get_device_id(motor_can_id=self._motor_can_id,
+                                                                    host_can_id=self.host_can_id)
+        self._tx_msg(snd_msg)
+
+
+    # RS manual suggest not modify torque_limit and other protection mode parameter.
+    # def set_torque_limit(
+    #         self,
+    #         max_torque: npt.NDArray[np.float32],
+    #         retries: int = -1,
+    #         retry_interval: float = 0.25,)->None:
+    #     pass
 
     # def __enter__(self):
     #     """Enables use as a context manager."""
@@ -502,7 +492,19 @@ def _client_cleanup_handler():
     """
     open_clients: List[RobStrideClient] = list(RobStrideClient.OPEN_CLIENTS)  # type: ignore
     for open_client in open_clients:
-        open_client._disconnect()
+        # TODO: how to finish the main_job asyncio task group?
+        # TODO: how to finish the main_job asyncio task group?
+        open_client.disconnect()
 
 # Register global cleanup function.
 atexit.register(_client_cleanup_handler)
+
+
+if __name__ == '__main__':
+    alogger = Logger.with_default_handlers(level=LogLevel.DEBUG)
+    client = RobStrideClient(motor_can_id=[0x7f],
+                             host_can_id=0xfe,
+                             channel_name='can0',
+                             baud_rate=1_000_000)
+    asyncio.run(client.main_job())
+    asyncio.run(alogger.shutdown())
