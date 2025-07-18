@@ -32,19 +32,20 @@ class MotorStateFrame(NamedTuple):
     # todo: motor error...
 
     def __str__(self):
-        return (f'motor state frame --> can_id:{self.can_id} pos:{self.pos:.2f} vel:{self.vel:.2f} '
+        return (f'motor state frame --> timestamp:{self.ts:.6f} can_id:{self.can_id} pos:{self.pos:.2f} vel:{self.vel:.2f} '
                 f'torque:{self.torque:.2f} temp:{self.temp:.2f}')
 
 class SingleParamValue(NamedTuple):
+    ts: float # timestamp
     can_id: int
     index: int
     value: float|int
 
     def __str__(self):
         if isinstance(self.value,float):
-            return f'single param value --> can_id: {self.can_id} index: 0x{self.index:x} value: {self.value:.2f}'
+            return f'single param value --> timestamp:{self.ts:.6f} can_id: {self.can_id} index: 0x{self.index:x} value: {self.value:.2f}'
         else:
-            return f'single param value --> can_id: {self.can_id} index: 0x{self.index:x} value: {self.value:.2f}'
+            return f'single param value --> timestamp:{self.ts:.6f} can_id: {self.can_id} index: 0x{self.index:x} value: {self.value:.2f}'
 
 class ParamSpec(NamedTuple):
     index: int
@@ -163,11 +164,11 @@ class BaudRateCmd:
 
 # param table index: 0x7005
 class RunModeCmd:
-    MOTION_MODE = 0  # 运控模式
-    PP_POSITION_MODE = 1  # PP位置模式
-    SPEED_MODE = 2  # 速度模式
-    CURRENT_MODE = 3  # 电流模式
-    CSP_POSITION_MODE = 5  # CSP位置模式
+    MOTION = 0  # 运控模式
+    PP_POSITION = 1  # PP位置模式
+    SPEED = 2  # 速度模式
+    CURRENT = 3  # 电流模式
+    CSP_POSITION = 5  # CSP位置模式
 
 # TODO: this is for RS02 only.
 class ParamThreshold:

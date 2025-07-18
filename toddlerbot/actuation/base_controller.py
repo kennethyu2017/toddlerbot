@@ -11,6 +11,7 @@ class JointState:
     pos: float
     vel: float = 0.0
     tor: float = 0.0
+    temp: float = 0.0
 
 
 class BaseController(ABC):
@@ -28,9 +29,9 @@ class BaseController(ABC):
     def initialize_motors(self):
         pass
 
-    @abstractmethod
+    # @abstractmethod
     # used for asyncio.
-    async def send_rcv_task(self):...
+    # async def send_rcv_task(self):...
 
     @abstractmethod
     def set_pos(self, pos: List[float]):

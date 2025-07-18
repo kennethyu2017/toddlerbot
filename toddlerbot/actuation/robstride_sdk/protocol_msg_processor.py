@@ -14,17 +14,15 @@ from .utils import ParamConverter
 class RSProtocolBuilder:
 
     @staticmethod
-    def _can_msg_helper(*, motor_can_id: npt.NDArray[np.uint32],
+    def _can_msg_helper(*, motor_can_id: Sequence[int],
                         comm_type: int,
                         data2: npt.NDArray[np.uint32] | int,
                         data1: List[bytes|bytearray|None] )->List[Message]:
-
-        assert np.all(0 <= motor_can_id) and np.all(motor_can_id <= 0xff)  # 1-byte
         assert np.all(0 <= comm_type) and np.all(comm_type <= 0b11111)  # 5-bit
         assert np.all(0 <= data2) and np.all(data2 <= 0xffff)
         assert len(motor_can_id) == len(data1)
 
-        arbitration_id = (comm_type << 24) | (data2 << 8) | motor_can_id
+        arbitration_id = (comm_type << 24) | (data2 << 8) | np.asarray(motor_can_id, dtype=np.uint32)
         msg_list: List[Message] = []
         for _id, _d in zip(arbitration_id, data1):
             #TODO: try variable DLC. 8-bytes data zone.
@@ -59,7 +57,7 @@ class RSProtocolBuilder:
 
 
     @staticmethod
-    def get_device_id(motor_can_id: npt.NDArray[np.uint32], host_can_id: int) -> List[Message]:
+    def get_device_id(motor_can_id: Sequence[int], host_can_id: int) -> List[Message]:
         assert 0 <= host_can_id <= 0xfe
 
         return RSProtocolBuilder._can_msg_helper(motor_can_id=motor_can_id,
@@ -73,7 +71,7 @@ class RSProtocolBuilder:
         pass
 
     @staticmethod
-    def motor_enable(motor_can_id: npt.NDArray[np.uint32], host_can_id:int)->List[Message]:
+    def motor_enable(motor_can_id: Sequence[int], host_can_id:int)->List[Message]:
         assert 0 <= host_can_id <= 0xfe
 
         return RSProtocolBuilder._can_msg_helper(motor_can_id=motor_can_id,
@@ -84,7 +82,7 @@ class RSProtocolBuilder:
                                                  )
 
     @staticmethod
-    def motor_disable(motor_can_id: npt.NDArray[np.uint32], host_can_id:int, clear_error:bool = False)\
+    def motor_disable(motor_can_id: Sequence[int], host_can_id:int, clear_error:bool = False)\
             ->List[Message]:
         assert 0 <= host_can_id <= 0xfe
 
@@ -103,7 +101,7 @@ class RSProtocolBuilder:
 
 
     @staticmethod
-    def set_mech_pos_zero(motor_can_id: npt.NDArray[np.uint32], host_can_id:int)\
+    def set_mech_pos_zero(motor_can_id: Sequence[int], host_can_id:int)\
             ->List[Message]:
         assert 0 <= host_can_id <= 0xfe
         # data1 = bytearray(8)  # inited as all null bytes.
@@ -116,13 +114,13 @@ class RSProtocolBuilder:
                                                  )
 
     @staticmethod
-    def set_motor_can_id(motor_can_id: npt.NDArray[np.uint32],
+    def set_motor_can_id(motor_can_id: Sequence[int],
                          host_can_id:int,
-                         new_can_id: npt.NDArray[np.uint32])->List[Message]:
-        assert 0 <= host_can_id <= 0xfe
-        assert np.all(0<=new_can_id) and np.all(new_can_id<=0xfe)
+                         new_can_id: Sequence[int])->List[Message]:
+        assert 0x7f < host_can_id <= 0xfe
+        assert np.all(0< np.asarray(new_can_id) ) and np.all( np.asarray(new_can_id)<=0x7f)
 
-        data2 = (new_can_id << 8) | host_can_id
+        data2 = ( np.asarray(new_can_id,dtype=np.uint32) << 8) | host_can_id
         data1 = [None] * len(motor_can_id)
 
         return RSProtocolBuilder._can_msg_helper(motor_can_id=motor_can_id,
@@ -133,7 +131,7 @@ class RSProtocolBuilder:
                                                  )
 
     @staticmethod
-    def read_single_param(motor_can_id: npt.NDArray[np.uint32],
+    def read_single_param(motor_can_id: Sequence[int],
                           host_can_id:int,
                           index:int)->List[Message]:
         assert 0 <= host_can_id <= 0xfe
@@ -152,7 +150,7 @@ class RSProtocolBuilder:
                                                  )
 
     @staticmethod
-    def write_single_param(motor_can_id: npt.NDArray[np.uint32],
+    def write_single_param(motor_can_id: Sequence[int],
                            host_can_id: int,
                            index: int,
                            param_value: Sequence[float|int],
@@ -202,7 +200,7 @@ class RSProtocolBuilder:
 
 
     @staticmethod
-    def save_motor_param(motor_can_id: npt.NDArray[np.uint32], host_can_id: int)\
+    def save_motor_param(motor_can_id: Sequence[int], host_can_id: int)\
             ->List[Message]:
         assert 0 <= host_can_id <= 0xfe
 
@@ -214,7 +212,7 @@ class RSProtocolBuilder:
                                                  data1=data1
                                                  )
     @staticmethod
-    def set_baud_rate(motor_can_id: npt.NDArray[np.uint32], host_can_id: int,
+    def set_baud_rate(motor_can_id: Sequence[int], host_can_id: int,
                       baud_rate_cmd: int) ->List[Message]:
         assert 0 <= host_can_id <= 0xfe
         assert baud_rate_cmd in {BaudRateCmd.BPS_1M, BaudRateCmd.BPS_500K,
@@ -229,7 +227,7 @@ class RSProtocolBuilder:
                                                  )
 
     @staticmethod
-    def set_motor_periodic_report(motor_can_id: npt.NDArray[np.uint32], host_can_id: int,
+    def set_motor_periodic_report(motor_can_id: Sequence[int], host_can_id: int,
                                   enable:bool) ->List[Message]:
         assert 0 <= host_can_id <= 0xfe
 
@@ -263,8 +261,10 @@ class RSProtocolParser:
         return ExtID(dest_can_id=dest_can_id, data2=data2, comm_type=comm_type)
 
     @staticmethod
-    def motor_device_id(data2: int, data: bytes | bytearray) -> int:
-        motor_can_id = data2 & 0xff
+    def motor_device_id(data: bytes | bytearray,
+                        #data2: int,
+                        ) -> int:
+        # motor_can_id = data2 & 0xff
         assert len(data) == 8
         mcu_id = int.from_bytes(data, byteorder='little', signed=False)
         return mcu_id
@@ -310,7 +310,7 @@ class RSProtocolParser:
                                )
 
     @staticmethod
-    def single_param(data2:int, data:bytes|bytearray)->SingleParamValue:
+    def single_param(data2:int, data:bytes|bytearray, ts:float)->SingleParamValue:
         motor_can_id = data2 & 0xff
         read_success: bool = ((data2 >> 8) & 0xff) == 0
 
@@ -327,7 +327,7 @@ class RSProtocolParser:
                                                 n_bytes=p_spec.n_bytes,
                                                 dtype=p_spec.dtype,
                                                 signed=p_spec.signed)
-            return SingleParamValue(can_id=motor_can_id, index=index, value=value)
+            return SingleParamValue(ts=ts, can_id=motor_can_id, index=index, value=value)
 
         else:
             raise IOError(f'read motor single param failed: {motor_can_id=:}')
