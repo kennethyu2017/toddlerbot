@@ -1,23 +1,6 @@
 from typing import Dict,Type, NamedTuple, Tuple
 
-ROBSTRIDE_DEFAULT_BAUD_RATE = 1_000_000
-
-# ParamTableNamedIndex: Dict[str, int] = {
-#     'run_mode': 0x7005,
-#     'limit_torque': 0x700B,
-#     # target pos in PP mode./CSP mode.
-#     'loc_ref': 0x7016,
-#     'mechPos': 0x7019,
-#     'mechVel': 0x701B,
-#     'loc_kp': 0x701E,
-#     'spd_kp': 0x701F,
-#     # vel max abs value in PP mode.
-#     'vel_max': 0x7024,
-#     # acc abs value in PP mode.
-#     'acc_set': 0x7025,
-#     'EPScan_time': 0x7026,
-#     'zero_sta': 0x7029,
-# }
+# ROBSTRIDE_DEFAULT_BAUD_RATE = 1_000_000
 
 param_table_index_to_name: Dict[int,str] = {
     0X7005:'run_mode',
@@ -33,7 +16,6 @@ param_table_index_to_name: Dict[int,str] = {
     0X7026:'EPScan_time',
     0X7029:'zero_sta',
 }
-
 
 class ExtID(NamedTuple):
     dest_can_id: int
@@ -172,12 +154,19 @@ class CommunicationType:
     MOTOR_PERIODIC_REPORT = 24
     SET_PROTOCOL = 25
 
-# index: 0x7005
-class RunModesCmd:
-    MOTION_MODE = 0        # 运控模式
-    PP_POSITION_MODE = 1   # PP位置模式
-    SPEED_MODE = 2         # 速度模式
-    CURRENT_MODE = 3       # 电流模式
+# comm type: 23
+class BaudRateCmd:
+    BPS_1M = 1
+    BPS_500K = 2
+    BPS_250K = 3
+    BPS_125K = 4
+
+# param table index: 0x7005
+class RunModeCmd:
+    MOTION_MODE = 0  # 运控模式
+    PP_POSITION_MODE = 1  # PP位置模式
+    SPEED_MODE = 2  # 速度模式
+    CURRENT_MODE = 3  # 电流模式
     CSP_POSITION_MODE = 5  # CSP位置模式
 
 # TODO: this is for RS02 only.
@@ -191,9 +180,21 @@ class ParamThreshold:
     KP_MIN, KP_MAX = (0.0, 500.0)
     KD_MIN, KD_MAX = (0.0, 5.0)
 
-# comm type: 23
-class BaudRateCmd:
-    BPS_1M = 1
-    BPS_500K = 2
-    BPS_250K = 3
-    BPS_125K = 4
+
+# ParamTableNamedIndex: Dict[str, int] = {
+#     'run_mode': 0x7005,
+#     'limit_torque': 0x700B,
+#     # target pos in PP mode./CSP mode.
+#     'loc_ref': 0x7016,
+#     'mechPos': 0x7019,
+#     'mechVel': 0x701B,
+#     'loc_kp': 0x701E,
+#     'spd_kp': 0x701F,
+#     # vel max abs value in PP mode.
+#     'vel_max': 0x7024,
+#     # acc abs value in PP mode.
+#     'acc_set': 0x7025,
+#     'EPScan_time': 0x7026,
+#     'zero_sta': 0x7029,
+# }
+
