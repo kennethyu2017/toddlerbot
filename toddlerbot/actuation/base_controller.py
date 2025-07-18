@@ -29,6 +29,10 @@ class BaseController(ABC):
         pass
 
     @abstractmethod
+    # used for asyncio.
+    async def send_rcv_task(self):...
+
+    @abstractmethod
     def set_pos(self, pos: List[float]):
         pass
 

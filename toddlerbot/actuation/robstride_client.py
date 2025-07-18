@@ -1,4 +1,7 @@
 import atexit
+import sys
+import time
+import subprocess
 from typing import (Any, Dict, List, Sequence, NamedTuple,
                     Set, ClassVar, OrderedDict)
 # deque does not use lock, but its append/popleft is atomic operation.
@@ -14,9 +17,12 @@ import numpy.typing as npt
 import struct
 import can
 from can.interfaces.socketcan import SocketcanBus
+from enum import Enum,auto
 
 from toddlerbot.actuation.robstride_sdk import *
-# from ._module_logger import logger
+from toddlerbot.actuation._module_logger import logger
+
+alogger = Logger.with_default_handlers(level=LogLevel.DEBUG)
 
 # @dataclass
 # class MotorData:
@@ -37,21 +43,104 @@ from toddlerbot.actuation.robstride_sdk import *
 #         self.param_queue = OrderedDict( (_id, asyncio.Queue(maxsize=30)) for _id in MOTOR_CAN_ID_SET )
 #
 
+class RSBaudRate(Enum):
+    BPS_1M = auto()
+    BPS_500K = auto()
+    BPS_250K = auto()
+    BPS_125K = auto()
 
-class RSClientConfig(NamedTuple):
-    channel: str = ''
-    baud_rate: int = 1_000_000
-    control_mode: str
-    pos_kP: Sequence[float] = []
-    kI: Sequence[int] = []
-    kD: Sequence[int] = []
-    # TODO: adjust according to tracking result.
-    # TODO: move into config.json.
-    # default_torque_limit: npt.NDArray[np.uint16] |None = None
-    default_accel: npt.NDArray[np.float32] |None = None   # [1.6 * np.pi]
-    default_vel: npt.NDArray[np.float32] |None = None      # [1.4 * np.pi]
-    init_goal_pos: npt.NDArray[np.float32] |None = None    # None = None
-    # interp_method: str = "cubic"
+    def convert_to_rs_cmd(self)->int:
+        if self == RSBaudRate.BPS_1M:
+            return BaudRateCmd.BPS_1M
+        elif self == RSBaudRate.BPS_500K:
+            return BaudRateCmd.BPS_500K
+        elif self == RSBaudRate.BPS_250K:
+            return BaudRateCmd.BPS_250K
+        else:
+            return BaudRateCmd.BPS_125K
+
+    def convert_to_value(self)->int:
+        if self == RSBaudRate.BPS_1M:
+            return 1_000_000
+        elif self == RSBaudRate.BPS_500K:
+            return 500_000
+        elif self == RSBaudRate.BPS_250K:
+            return 250_000
+        else:
+            return 125_000
+
+# param table index: 0x7005
+class RSRunMode(Enum):
+    MOTION_MODE = auto()  # 运控模式
+    PP_POSITION_MODE = auto()  # PP位置模式
+    SPEED_MODE = auto()  # 速度模式
+    CURRENT_MODE = auto()  # 电流模式
+    CSP_POSITION_MODE = auto()  # CSP位置模式
+
+# bring up the can interface:
+def _bring_up_can_interface(if_name:str, bitrate: int):
+    os_type = sys.platform.casefold()
+    try:
+        if os_type != "linux":
+            raise NotImplementedError
+
+        if_status:str = subprocess.run(f'ip link show {if_name}',shell=True,
+                                       capture_output=True, text=True, check=True).stdout.strip().casefold()
+        if 'state up' in if_status:
+            logger.warning(f'{if_name} is already UP.')
+
+        else:
+            sh_cmd = f"sudo ip link set {if_name} up type can bitrate {bitrate}"
+            logger.info(f"bring up can interface cmd: {sh_cmd}")
+
+            result = subprocess.run(
+                sh_cmd, shell=True, text=True,
+                check=True, stdout=subprocess.PIPE,
+            )
+            if ret_code:=result.returncode != 0:
+                logger.error(f"sh cmd execute error, cmd:{sh_cmd},"
+                             f"return code: {ret_code}, "
+                             f"result stdout: {result.stdout.strip()}, "
+                             f"result stderr:{result.stderr.strip()}, ")
+                raise OSError(f'bring up can interface sh cmd executed error: {sh_cmd}')
+
+    except Exception as exc:
+        logger.error(f'bring up can interface failed: {exc=:} {type(exc)=:} ')
+        raise exc
+
+    finally:
+        # blocking io
+        time.sleep(0.1)
+
+# shutdown the can interface:
+def _shutdown_can_interface(if_name:str):
+    os_type = sys.platform.casefold()
+    try:
+        if os_type != "linux":
+            raise NotImplementedError
+        else:
+            sh_cmd = f"sudo ip link set {if_name} down "
+
+        logger.warning(f"shutdown can interface ---> shell cmd: {sh_cmd}")
+
+        result = subprocess.run(
+            sh_cmd, shell=True, text=True, check=True, stdout=subprocess.PIPE,
+        )
+        if ret_code := result.returncode != 0:
+            logger.error(f"sh cmd execute error, cmd:{sh_cmd},"
+                                f"return code: {ret_code}, "
+                                f"result stdout: {result.stdout.strip()}, "
+                                f"result stderr:{result.stderr.strip()}, ")
+            raise OSError(f'shutdown can interface sh cmd executed error: {sh_cmd}')
+
+    except Exception as exc:
+        logger.error(f'shutdown can interface failed: {exc=:} {type(exc)=:} ')
+        raise exc
+
+    finally:
+        time.sleep(0.1)
+
+
 
 class RobStrideClient:
     """Client for communicating with a group of Feite motors.
@@ -92,9 +181,9 @@ class RobStrideClient:
         self,*,
         motor_can_id: Sequence[int],         # ids of a group of actuators.
         host_can_id: int,                    # 0xfe
-        channel_name: str,                   #= "can0",
-        baud_rate: int,                      # = 1_000_000 default for RS
-        init_target_pos: npt.NDArray[np.float32]|None,  # set to `init_pos` in config.json, or None for calibrate-zero.
+        channel: str,                   #= "can0",
+        baud_rate: RSBaudRate,            # = 1_000_000 default for RS
+        # init_target_pos: npt.NDArray[np.float32]|None,  # set to `init_pos` in config.json, or None for calibrate-zero.
         # lazy_connect: bool,                #= False,
         # rcv_timeout_ms: int,               #= 5,    #usb serial latency timer, default 5 ms.
     ):
@@ -102,9 +191,9 @@ class RobStrideClient:
         Args:
             motor_can_id:
             host_can_id:
-            channel_name:
+            channel:
             baud_rate:
-            init_target_pos:
+            # init_target_pos:
             # lazy_connect:
             # rcv_timeout_ms:
            """
@@ -112,11 +201,16 @@ class RobStrideClient:
         # NOTE: _motor_ids is not guaranteed to be consecutive, i.e, could be [44, 1, 230,...]. so we
         # could not use id as array index directly.
         self._motor_can_id:npt.NDArray[np.uint32] = np.asarray(motor_can_id,dtype=np.uint32)  # not changed after instantiating a FeiteClient instance.
-        self.channel_name = channel_name
+
+        assert  np.all(0 < self._motor_can_id) and np.all( self._motor_can_id <= 0x7f )
+
         assert 0x7f < host_can_id <= 0xfe
         self.host_can_id = host_can_id
+
+        self.channel = channel
+
         self.baud_rate = baud_rate
-        self._init_target_pos = init_target_pos
+        # self._init_target_pos = init_target_pos
 
         # self.lazy_connect = lazy_connect
         # self.rcv_timeout_ms = rcv_timeout_ms
@@ -134,23 +228,8 @@ class RobStrideClient:
         self._loop_rcv_buffer_q: asyncio.Queue[can.Message] = asyncio.Queue(maxsize=10 * len(motor_can_id))
         self._loop_send_buffer_q: asyncio.Queue[can.Message] = asyncio.Queue(maxsize=10 * len(motor_can_id))
 
+        self._connect()
         RobStrideClient.OPEN_CLIENTS.add(self)
-
-        self.initialize_motors()
-
-        # NOTE: TO adjust the init pos bias: first set goal pos to init_pos in config.json,
-        # then normalize init pos read from motor.
-        # if config.init_pos is None, that is for calibrate_zero.
-        # TODO: during calibrate_zero , setting init_pos to pi ??
-        self.normalized_init_pos: npt.NDArray[np.float32] | None = None
-
-        if self._init_target_pos is None:
-            # for calibrate_zero.
-            self.normalized_init_pos = np.zeros(len(self._motor_can_id), dtype=np.float32)
-        else:
-            assert len(self._init_target_pos) == len(self._motor_can_id)
-            # self.normalized_init_pos = np.asarray(config.init_pos, dtype=np.float32)
-            self.normalize_init_pos()
 
 
     # NOTE: callback invoked in running_loop: do not implement as co-routine directly:
@@ -272,23 +351,29 @@ class RobStrideClient:
     #     finally:
     #         pass
 
-    async def _connect(self):
+    def _connect(self):
         assert self.bus is None, "Client is already started."
 
         # NOTE: `sudo ip link set can0 up type can bitrate 1000000` first.
+        # TODO: modify Ubuntu system file to bring up can0 automatically.
+        bitrate:int = self.baud_rate.convert_to_value()
+        _bring_up_can_interface(self.channel, bitrate=bitrate)
+
         try:
             filters = [
                 # 29-bit mask.
                 {'can_id': self.host_can_id, 'can_mask': 0xff, 'extended': True},
             ]
-            self.bus = SocketcanBus(channel=self.channel_name,
+            self.bus = SocketcanBus(channel=self.channel,
                                     can_filters=filters)
         except Exception as exc:
-            await alogger.error(f'create socket bus failed: channel: {self.channel_name} {exc=:} {type(exc)=:}')
+            alogger.error(f'create socket bus failed: channel: {self.channel} {exc=:} {type(exc)=:}')
             raise exc
 
     def disconnect(self):
         """Disconnects from the RobStride motors."""
+
+        logger.warning(f'disconnect from RS motors--->')
 
         if self.bus is None:
             # already disconnected.
@@ -299,25 +384,30 @@ class RobStrideClient:
         motor_disable_msg: List[can.Message] = RSProtocolBuilder.motor_disable(motor_can_id=self._motor_can_id,
                                                                                host_can_id=self.host_can_id)
         for _m in motor_disable_msg:
-            self.bus.send(_m,0)
+            # TODO: handle timeout exception.
+            self.bus.send(_m,0.1)
 
+        time.sleep(0.5)
         self.bus.shutdown()
         self.bus = None
 
         # self.motor_state_queue_dict.clear()
         # self.motor_param_queue_dict.clear()
 
-        if self in RobStrideClient.OPEN_CLIENTS:
-            RobStrideClient.OPEN_CLIENTS.remove(self)
+        # if self in RobStrideClient.OPEN_CLIENTS:
+        #     RobStrideClient.OPEN_CLIENTS.remove(self)
 
-    async def main_job(self):
+        _shutdown_can_interface(self.channel)
+        time.sleep(0.5)
+
+    async def send_rcv_task(self):
         """Connects to the motors, and start send / rcv msgs loop.
 
         NOTE: This should be called after all RobstrideClients on the same
             process are created.
         """
 
-        await self._connect()
+        # await self._connect()
 
         # Start with all motors enabled.  NO, I want to set settings before enabled
         # self.set_torque_enabled(self._motor_ids, True)
@@ -345,7 +435,7 @@ class RobStrideClient:
             await alogger.error(f'run task group failed: {exc=:} {type(exc)=:} ' )
 
         finally:
-            await aprint(f'exit main job...')
+            await alogger.warning(f'---> exit RobStrideClient send_rcv_task...')
 
             # clear loop reader/writer callback.
             loop.remove_reader(file_dsc)
@@ -364,7 +454,7 @@ class RobStrideClient:
             # await aprint(f'snd buffer cleared.')
 
             # task_rcv.result()...
-            self.disconnect()
+            # await self.disconnect()
 
     def _tx_msg(self, msg:List[can.Message]):
         if self._app_msg_send_buffer_q.qsize() >= self._app_msg_send_buffer_q.maxsize:
@@ -488,9 +578,9 @@ class RobStrideClient:
 
 
     def set_control_mode_nowait(self, mode: int)->None:
-        assert mode in {RunModesCmd.MOTION_MODE,RunModesCmd.PP_POSITION_MODE,
-                        RunModesCmd.SPEED_MODE, RunModesCmd.CURRENT_MODE,
-                        RunModesCmd.CSP_POSITION_MODE}
+        assert mode in {RunModeCmd.MOTION_MODE,RunModeCmd.PP_POSITION_MODE,
+                        RunModeCmd.SPEED_MODE, RunModeCmd.CURRENT_MODE,
+                        RunModeCmd.CSP_POSITION_MODE}
 
         self._write_param_tx_helper('run_mode', [mode]*len(self._motor_can_id) )
 
@@ -536,21 +626,28 @@ class RobStrideClient:
     #     """Enables use as a context manager."""
     #     self.stop()
     #
-    # def __del__(self):
-    #     """Automatically disconnect on destruction."""
-    #     self.stop()
+
+    def __del__(self):
+        """Automatically disconnect on destruction."""
+        # allow call on a client which is already disconnected explicitly.
+        logger.warning(f' called on RobStrideClient.__del__(), disconnect RS motors:')
+        self.disconnect()
+        if self in RobStrideClient.OPEN_CLIENTS:
+            RobStrideClient.OPEN_CLIENTS.remove(self)
 
 
 def _client_cleanup_handler():
-    """Handles cleanup of open Feite clients by forcibly closing active connections.
+    """Handles cleanup of open RS clients by forcibly closing active connections.
 
     Iterates over all open Feite clients and checks if their port handlers are in use.
     If a port handler is active, logs a warning message and forces the client to close
     by setting the port handler's `is_using` attribute to False and disconnecting the client.
     """
+
+    logger.warning(f' called on _client_cleanup_handler, disconnect RS motors:')
+
     open_clients: List[RobStrideClient] = list(RobStrideClient.OPEN_CLIENTS)  # type: ignore
     for open_client in open_clients:
-        # TODO: how to finish the main_job asyncio task group?
         # TODO: how to finish the main_job asyncio task group?
         open_client.disconnect()
 
@@ -559,10 +656,11 @@ atexit.register(_client_cleanup_handler)
 
 
 if __name__ == '__main__':
-    alogger = Logger.with_default_handlers(level=LogLevel.DEBUG)
+    # alogger = Logger.with_default_handlers(level=LogLevel.DEBUG)
     client = RobStrideClient(motor_can_id=[0x7f],
                              host_can_id=0xfe,
-                             channel_name='can0',
-                             baud_rate=1_000_000)
-    asyncio.run(client.main_job())
+                             channel='can0',
+                             baud_rate=RSBaudRate.BPS_1M,
+                             )
+    asyncio.run(client.send_rcv_task())
     asyncio.run(alogger.shutdown())
