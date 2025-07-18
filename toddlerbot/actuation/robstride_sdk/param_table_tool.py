@@ -197,7 +197,7 @@ async def _parse_rcv_data()->None:
 
             await alogger.info(f'parse msg result--->')
             if ext_id.comm_type == CommunicationType.SINGLE_PARAM_READ:
-                param_value = RSProtocolParser.single_param(data2=ext_id.data2, data=msg.data)
+                param_value = RSProtocolParser.single_param(data2=ext_id.data2, data=msg.data, ts=msg.timestamp)
                 await alogger.info(f'{param_value}')
 
             elif ext_id.comm_type == CommunicationType.MOTOR_FEEDBACK:

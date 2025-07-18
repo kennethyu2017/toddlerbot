@@ -3,20 +3,25 @@ experimented for robstride RS02 actuator.  by kenneth yu.
 """
 
 import time
-from typing import Dict, NamedTuple, Sequence, Tuple
+from typing import (Dict, NamedTuple, Sequence,
+                    Tuple, Callable, List)
 import numpy as np
 import numpy.typing as npt
-import asyncio
+import can
+from copy import deepcopy
 # from aioconsole import aprint
+import multiprocessing as mp
+from queue import Full
 
-from toddlerbot.actuation.robstride_client import RobStrideClient, RSBaudRate,RSRunMode
+from toddlerbot.actuation.robstride_client import RSBaudRate,RSRunMode
 from toddlerbot.actuation._module_logger import logger
 from toddlerbot.actuation.base_controller import BaseController,JointState
+from toddlerbot.actuation.robstride_sdk import *
 
 class RobStrideConfig(NamedTuple):
     channel: str
     baud_rate: RSBaudRate
-    control_mode: RSRunMode
+    run_mode: RSRunMode
     motor_can_id: Sequence[int]
     host_can_id: int
     pos_kp: Sequence[float] | None = None
@@ -35,7 +40,19 @@ class RobStrideConfig(NamedTuple):
 class RobStrideController(BaseController):
     """Class for controlling RobStride RS02 motors."""
 
-    def __init__(self, config: RobStrideConfig ):
+    # TODO: using PIPE?
+    # send to io_proc
+    _ctrl_msg_q: mp.Queue[can.Message]
+
+    # recv from io_proc
+    _motor_state_frame_q: mp.Queue[MotorStateFrame]
+    _motor_param_value_q: mp.Queue[SingleParamValue]
+
+    def __init__(self,*,
+                 config: RobStrideConfig,
+                 ctrl_msg_q:mp.Queue[can.Message],
+                 motor_state_frame_q: mp.Queue[MotorStateFrame],
+                 motor_param_value_q: mp.Queue[SingleParamValue]):
         """Initializes the motor controller with the given configuration and motor IDs.
 
         Args:
@@ -48,7 +65,7 @@ class RobStrideController(BaseController):
             # lock (Lock): A threading lock to ensure thread-safe operations.
             # init_pos (np.ndarray): An array of initial positions for the motors, initialized to zeros if not provided in the config.
         """
-        client: RobStrideClient
+        # client: RobStrideIOProc
         _motor_ids: Tuple[int]
 
         logger.info(f'init robstride controller with target motor ids: {config.motor_can_id}'
@@ -57,17 +74,28 @@ class RobStrideController(BaseController):
         self.config = config
         # NOTE: the index in self._motor_ids is used for read data array index, like pos,vel,etc.
         # we use immutable tuple instead of set/list.
-        self._motor_id = tuple(set(config.motor_can_id))
-        if len(self._motor_id) != len(config.motor_can_id):
+        # and the element order is important.
+        self._motor_can_id = tuple(set(config.motor_can_id))
+        if len(self._motor_can_id) != len(config.motor_can_id):
             raise ValueError(f'input config motor_can_id include duplicated values: {config.motor_can_id=:}')
+
+        assert np.all(0 < np.asarray(self._motor_can_id)) and np.all(np.asarray(self._motor_can_id) <= 0x7f)
+        self._set_of_motor_can_id = set(self._motor_can_id)
+
+        assert 0x7f < config.host_can_id <= 0xfe
+        self._host_can_id = config.host_can_id
+
+        self._ctrl_msg_q = ctrl_msg_q
+        self._motor_state_frame_q = motor_state_frame_q
+        self._motor_param_value_q = motor_param_value_q
 
         # self.lock = Lock()
 
-        self.client = RobStrideClient(motor_can_id=self._motor_id,
-                                      host_can_id=config.host_can_id,
-                                      channel=config.channel,
-                                      baud_rate=config.baud_rate,
-                                      )
+        # self.client = RobStrideIOProc(motor_can_id=self._motor_id,
+        #                               host_can_id=config.host_can_id,
+        #                               channel=config.channel,
+        #                               baud_rate=config.baud_rate,
+        #                               )
 
         # self.initialize_motors()
 
@@ -85,8 +113,25 @@ class RobStrideController(BaseController):
         #     self.normalize_init_pos()
 
     # used for asyncio.
-    async def send_rcv_task(self):
-        await self.client.send_rcv_task()
+    # async def send_rcv_task(self):
+    #     await self.client.send_rcv_task()
+
+    @staticmethod
+    def _set_param_with_double_check(*, set_fn:Callable[[Sequence[float|int] |int|float],None],
+                                     set_value: Sequence[float|int] |float|int|None,
+                                     read_tx_fn:Callable[[],None],
+                                     get_fn:Callable[[], Sequence[int|float]],
+                                     wait_sec:float):
+        set_fn(set_value)
+        # double check:
+        read_tx_fn()
+        time.sleep(wait_sec)
+        fetched_value = get_fn()
+        logger.info(f"fetched value from motors: {fetched_value}")
+        if np.any(np.asarray(fetched_value) != set_value):
+            raise IOError(
+                f"not all motors are set through: {set_fn.__name__} to value: {set_value}."
+            )
 
     # called after send_rcv_task running in loop.
     def initialize_motors(self):
@@ -102,74 +147,76 @@ class RobStrideController(BaseController):
             ValueError: If the input voltage is below 10V, indicating a potential power supply issue.
         """
         logger.info("Initializing motors...")
-        time.sleep(0.2)
 
-        return
+        # naive solution: method to wait 2. seconds for I/O task starting.
+        time.sleep(2.)
+        read_tx_and_get_value_interval_sec: float = 0.5
 
-        _, v_in = self.client.read_vin()
-        assert len(v_in)==len(self._motor_id)
-        logger.info(f"Voltage of motors: (V): {v_in}")
-        if np.any(v_in < 10):
+        logger.info(f'--- checking motor voltage --->')
+        self.read_voltage_tx()
+        time.sleep(read_tx_and_get_value_interval_sec)
+        v_in = self.get_voltage_nowait()
+        assert len(v_in)==len(self._motor_can_id)
+        logger.info(f"read Voltage of motors: (V): {v_in}")
+        if np.any(np.asarray(v_in,dtype=np.float32) < 46.):
             raise ValueError(
                 "Voltage too low. Please check the power supply or charge the batteries."
             )
 
-        time.sleep(0.2)
+        # ---- TODO: add overload protect, min/max pos.. to RS motors. ----
+        # set canTimeout.
+        # self.set_return_delay_time(self.config.return_delay_us)
 
-        # ---- TODO: add overload protect, min/max pos.. to Feite motors. ----
+        logger.info(f'--- checking motor run mode --->')
+        # naive solution: unify one mode for all the motors.
+        run_mode_cmd: int = self.config.run_mode.convert_to_rs_cmd()
+        assert run_mode_cmd in {RunModeCmd.MOTION,
+                                RunModeCmd.PP_POSITION,
+                                RunModeCmd.SPEED,
+                                RunModeCmd.CURRENT,
+                                RunModeCmd.CSP_POSITION,}
 
-        self.client.set_return_delay_time(self.config.return_delay_us)
+        self._set_param_with_double_check(set_fn=self.set_run_mode_nowait,
+                                          set_value=run_mode_cmd,
+                                          read_tx_fn=self.read_run_mode_tx,
+                                          get_fn=self.get_run_mode_nowait,
+                                          wait_sec = read_tx_and_get_value_interval_sec)
 
-        self.client.set_control_mode(value= self.config.control_mode )
+        assert (np.all(np.asarray(self.config.pos_kp, dtype=np.float32) <= ParamThreshold.KP_MAX)
+                and np.all(0 < np.asarray(self.config.pos_kp, dtype=np.float32)))
+        self._set_param_with_double_check(set_fn=self.set_pos_kp_nowait,
+                                          set_value=self.config.pos_kp,
+                                          read_tx_fn=self.read_pos_kp_tx,
+                                          get_fn=self.get_pos_kp_nowait,
+                                          wait_sec=read_tx_and_get_value_interval_sec)
 
-        # write kP,kD,kI together
-        assert np.all(np.array(self.config.kP) <= 0xff) and np.all(0 < np.array(self.config.kP))
-        assert np.all(np.array(self.config.kD) <= 0xff) and np.all(0 <= np.array(self.config.kD))
-        assert np.all(np.array(self.config.kI) <= 0xff) and np.all(0 <= np.array(self.config.kI))
-
-        self.client.set_kp_kd_ki(kp=self.config.kP, kd=self.config.kD, ki=self.config.kI)
-
-        # check protection:
-        _, protect_mode = self.client.read_protect_mode()
-        np.set_printoptions(formatter={'int': '0x{:02x}'.format})
-        logger.info(f'===> motor protection mode: {protect_mode}')
-
-        if np.any(protect_mode != 0x2c):
-            raise ValueError(f'motor protection mode read value:{protect_mode},'
-                             f' but every feite motor should be set to 0x2c to enable: overload / over current/ over therm.'
-                             f'pls set it and other relative memory table values. ')
+        # TODO: check protection mode:
 
         # TODO:
         # check torque limit: EEPROM-16 and SRAM-48
         # check overload torque threshold/protection-duration/protection-torque:  EEPROM-34/35/36
 
-        # TODO: no feedforward of Feite actuator.
-        # self.client.sync_write(self._motor_ids, self.config.kFF2, 88, 2)
-        # self.client.sync_write(self._motor_ids, self.config.kFF1, 90, 2)
-        # self.client.sync_write(self._motor_ids, self.config.current_limit, 102, 2)
-
         # set acc, vel, adjust present pos as init_pos from config.
-        self.client.set_goal_accel(motor_ids=self._motor_id, accel=self.config.default_accel)
-        self.client.set_goal_vel(motor_ids=self._motor_id, vel=self.config.default_vel)
+        self.set_goal_accel(motor_ids=self._motor_can_id, accel=self.config.default_accel)
+        self.set_goal_vel(motor_ids=self._motor_can_id, vel=self.config.default_vel)
 
-        # set torque limit. for safety or perf.
         # TODO: temply set to 90% for sysID.
-        self.client.set_torque_limit(motor_ids=self._motor_id, limit_percentage=self.config.default_torque_limit)
+        # self.set_torque_limit(motor_ids=self._motor_id, limit_percentage=self.config.default_torque_limit)
 
         # NOTE: first set goal pos to init_pos in config.json, then normalize init pos read from motor.
-        self.client.set_goal_pos(motor_ids=self._motor_id, pos=self.config.init_goal_pos)
+        self.set_goal_pos(motor_ids=self._motor_can_id, pos=self.config.init_goal_pos)
 
-        self.client.set_torque_enabled(motor_ids=self._motor_id, enabled=True)
+        self.set_torque_enabled(motor_ids=self._motor_can_id, enabled=True)
 
         # NOTE: TO adjust the init pos bias: first set goal pos to init_pos in config.json,
         # then normalize init pos read from motor.
         # if config.init_pos is None, that is for calibrate_zero.
         # TODO: during calibrate_zero , setting init_pos to pi ??
-        self.normalized_init_pos: npt.NDArray[np.float32] | None = None
+        self._normalized_init_pos: npt.NDArray[np.float32] | None = None
 
         if self.config.init_target_pos is None:
             # for calibrate_zero.
-            self.normalized_init_pos = np.zeros(len(self._motor_can_id), dtype=np.float32)
+            self._normalized_init_pos = np.zeros(len(self._motor_can_id), dtype=np.float32)
         else:
             assert len(self._init_target_pos) == len(self._motor_can_id)
             # self.normalized_init_pos = np.asarray(config.init_pos, dtype=np.float32)
@@ -185,20 +232,20 @@ class RobStrideController(BaseController):
         position to reflect any changes, ensuring that the position remains within
         the range of [-π, π].
         """
-        _, read_pos = self.client.read_pos(retries=-1)
+        _, read_pos = self.read_pos(retries=-1)
         # delta_pos = read_pos - self.normalized_init_pos
 
         delta_pos = read_pos - np.asarray(self.config.init_goal_pos, dtype=np.float32)
 
         delta_pos = (delta_pos + np.pi) % (2 * np.pi) - np.pi
 
-        self.normalized_init_pos = read_pos - delta_pos
+        self._normalized_init_pos = read_pos - delta_pos
 
-        assert np.all( abs(self.normalized_init_pos) <= np.pi )
+        assert np.all(abs(self._normalized_init_pos) <= np.pi)
 
-        logger.warning(f'====== normalized init pos: {self.normalized_init_pos} =============')
-        logger.warning(f'====== normalized init pos: {self.normalized_init_pos} =============')
-        logger.warning(f'====== normalized init pos: {self.normalized_init_pos} =============')
+        logger.warning(f'====== normalized init pos: {self._normalized_init_pos} =============')
+        logger.warning(f'====== normalized init pos: {self._normalized_init_pos} =============')
+        logger.warning(f'====== normalized init pos: {self._normalized_init_pos} =============')
 
 
     def close_motors(self):
@@ -206,7 +253,7 @@ class RobStrideController(BaseController):
 
         This method iterates over all currently open Feite clients and forces them to close if they are in use. It logs a message for each client that is being forcibly closed and then sets the client's port handler to not in use before disconnecting the client.
         """
-        open_clients: Set[FeiteGroupClient] = RobStrideClient.OPEN_CLIENTS  # type: ignore
+        open_clients: Set[FeiteGroupClient] = RobStrideIOProc.OPEN_CLIENTS  # type: ignore
         for _client in open_clients:
             _client.disconnect()
 
@@ -260,7 +307,7 @@ class RobStrideController(BaseController):
             kp (List[int]): A list of proportional gain values to be set for the motors.
         """
         assert np.all(np.array(kp) <= 0xff) and np.all(0 < np.array(kp))
-        self.client.set_kp(kp)
+        self.set_kp(kp)
 
 
     # NOTE: will offset using self.normalized_init_pos
@@ -275,17 +322,12 @@ class RobStrideController(BaseController):
 
         pos_arr: npt.NDArray[np.float32] = np.array(pos)
         # add init_pos as offset.
-        pos_arr_drive = self.normalized_init_pos + pos_arr
+        pos_arr_drive = self._normalized_init_pos + pos_arr
 
-        with self.lock:
-            self.client.set_goal_pos(motor_ids=self._motor_id, pos=pos_arr_drive)
 
-        # try:
-        #     with self.lock:
-        #         self.client.set_desired_pos(motor_ids=self._motor_ids, positions=pos_arr_drive)
-        # except Exception as err:
-        #     logger.error(f' set pos exception: {err} {type(err)}')
-        #     raise
+        self.set_goal_pos(motor_ids=self._motor_can_id, pos=pos_arr_drive)
+
+
 
     # NOTE: will offset using self.normalized_init_pos
     # @profile()
@@ -303,15 +345,15 @@ class RobStrideController(BaseController):
 
         state_dict: Dict[int, JointState] = {}
 
-        read_value = self.client.read_pos_vel_load(retries=retries)
+        read_value = self.read_pos_vel_load(retries=retries)
 
 
-        assert len(self._motor_id) == len(read_value.pos) == len(read_value.vel) == len(read_value.load)
+        assert len(self._motor_can_id) == len(read_value.pos) == len(read_value.vel) == len(read_value.load)
 
         # relative to init pos.
-        relative_pos = read_value.pos - self.normalized_init_pos
+        relative_pos = read_value.pos - self._normalized_init_pos
 
-        for _id, _pos, _vel, _load in zip(self._motor_id,
+        for _id, _pos, _vel, _load in zip(self._motor_can_id,
                                           relative_pos,
                                           read_value.vel,
                                           read_value.load) :
@@ -328,15 +370,294 @@ class RobStrideController(BaseController):
     def connect_to_client(self, usb_com_latency_timer_ms:int, timeout_ms: int):
         raise NotImplementedError
 
+    def _tx_msg(self, msg:List[can.Message]):
+        try:
+            for _m in msg:
+                # will raise immediately if full.
+                self._ctrl_msg_q.put_nowait(_m)
+
+        except Full as exc:
+            logger.error(f'tx msg failed: _ctrl_msg_q is full ---> '
+                             f'length:{self._ctrl_msg_q.qsize()}.'
+                             f' check the application running freq and asyncio send bandwidth.'
+                         f'{exc=:} {type(exc)=:}')
+            raise exc
+
+    # executed in run_policy process. not real time data, we can set wait time.
+    def _read_param_tx_helper(self, name:str)->None:
+
+        if name not in RS_param_table_spec:
+            raise KeyError(f'read param tx failed, param name:{name} not in RS_param_table_spec. ')
+
+        index = RS_param_table_spec[name].index
+
+        # build read msg.
+        snd_msg:List[can.Message] = RSProtocolBuilder.read_single_param(motor_can_id=self._motor_can_id,
+                                            host_can_id=self._host_can_id,
+                                            index=index)
+        self._tx_msg(snd_msg)
+
+
+    def _write_param_tx_helper(self, name:str, value:Sequence[float|int])->None:
+
+        if name not in RS_param_table_spec:
+            raise KeyError(f'write param tx failed, param name:{name} not in RS_param_table_spec. ')
+
+        p_spec:ParamSpec = RS_param_table_spec[name]
+
+        # build read msg.
+        snd_msg: List[can.Message] = RSProtocolBuilder.write_single_param(motor_can_id=self._motor_can_id,
+                                                                          host_can_id=self._host_can_id,
+                                                                          index=p_spec.index,
+                                                                          param_value=value,
+                                                                          param_spec=p_spec,
+                                                                          )
+        self._tx_msg(snd_msg)
+
+    def _get_motor_state_helper(self) \
+            ->Dict[int,JointState]:  #  List[SingleParamValue]:
+        """
+         raise exc if the corresponding param not received.
+        """
+        # TODO: guarantee the order.
+
+        # TODO: ordered dict?
+        state_dict: Dict[int, JointState] = {}
+        # rcv_motor_id:set[int] = set()
+
+        try:
+            # TODO: naive solution.
+            while not self._motor_state_frame_q.empty():
+                state:MotorStateFrame = self._motor_state_frame_q.get_nowait()
+
+                # TODO: check obsolete frame, waiting coming frame...
+                assert state.can_id in self._set_of_motor_can_id
+                # less than 10ms
+                assert time.time() - state.ts < 1e-2
+
+                # assert state.can_id not in rcv_motor_id
+                # rcv_motor_id.add(state.can_id)
+                assert state.can_id not in state_dict
+
+                # relative to init pos.
+                relative_pos = state.pos - self._normalized_init_pos
+
+                state_dict[state.can_id] = JointState(time=state.ts,
+                                                      pos=relative_pos,
+                                                      vel=state.vel,
+                                                      tor=state.torque,
+                                                      temp=state.temp)
+
+                # if len(rcv_motor_id) == len(self._motor_can_id) \
+                #     and rcv_motor_id == self._set_of_motor_can_id:
+                if len(state_dict) == len(self._set_of_motor_can_id) \
+                    and state_dict.keys() == self._set_of_motor_can_id:
+                    logger.debug(f'get motor state frame from all the motor.')
+                    break
+
+                # yield.
+                time.sleep(0.)
+
+        except Exception as exc:
+            logger.error(f'get param value helper failed: {exc=:} {type(exc)=:}')
+            raise exc
+
+        return state_dict
+
+
+    def _get_param_value_helper(self, name: str) \
+            -> npt.NDArray[np.float32|np.int32]:  #  List[SingleParamValue]:
+        """
+         raise exc if the corresponding param not received.
+        """
+        # TODO: guarantee the order.
+
+        if name not in RS_param_table_spec:
+            raise KeyError(f'get param failed, param name:{name} not in RS_param_table_spec. ')
+
+        index = RS_param_table_spec[name].index
+        # ret: List[SingleParamValue] = list()
+        if RS_param_table_spec[name].dtype is int:
+            dtype = np.uint32
+        elif RS_param_table_spec[name].dtype is float:
+            dtype = np.float32
+        else:
+            raise TypeError
+
+        value_arr = np.empty(shape=len(self._motor_can_id), dtype=dtype)
+        rcv_motor_id:set[int] = set()
+
+        try:
+            # TODO: naive solution.
+            while not self._motor_param_value_q.empty():
+                value:SingleParamValue = self._motor_param_value_q.get_nowait()
+
+                # TODO: maybe cache the param value if not wanted index/repeated_motor_id.
+                assert value.index == index
+                assert value.can_id in self._set_of_motor_can_id
+                # less than 10ms
+                assert time.time() - value.ts < 1e-2
+
+                assert value.can_id not in rcv_motor_id
+                rcv_motor_id.add(value.can_id)
+
+                # TODO: use same order as in _motor_can_id...
+                # TODO: use heapq to optimize index.
+                insert_idx: int = self._motor_can_id.index(value.can_id)
+                value_arr[insert_idx] = value.value
+
+                if len(rcv_motor_id) == len(self._set_of_motor_can_id) \
+                    and rcv_motor_id == self._set_of_motor_can_id:
+                    logger.debug(f'get param value from all the motor. index:{index}')
+                    break
+
+                # yield.
+                time.sleep(0.)
+
+        except Exception as exc:
+            logger.error(f'get param value helper failed: {exc=:} {type(exc)=:}')
+            raise exc
+
+        return value_arr
+
+
+    # def _get_param_helper(self, name:str)->List[SingleParamValue]:
+    #     """
+    #      raise exc if the corresponding param not received.
+    #     """
+    #     # TODO: guarantee the order.
+    #
+    #     if name not in RS_param_table_spec:
+    #         raise KeyError(f'get param failed, param name:{name} not in RS_param_table_spec. ')
+    #
+    #     index = RS_param_table_spec[name].index
+    #     ret:List[SingleParamValue] = []
+    #
+    #     for _id in self._motor_can_id:
+    #
+    #         print(f'+++ {_id=:} {self._motor_param_table=:}')
+    #
+    #         p_table = self._motor_param_table[_id]
+    #         value = p_table[index]
+    #         if value is None:
+    #             raise ValueError(f'read param table failed, the value is None which means'
+    #                              f'the corresponding motor does not feedback read param: '
+    #                              f'index: 0x{index:x}, motor id: {_id} ')
+    #         ret.append(deepcopy(value))
+    #         # clear the cached data.
+    #         p_table[index] = None
+    #
+    #     return ret
+
+        # non block.
+
+    def get_motor_state_nowait(self) -> List[MotorStateFrame]:
+        """
+        return list containing state frame of all the motors.
+        """
+
+        # TODO: guarantee the order.
+
+        motor_state: List[MotorStateFrame] = []
+        for _id in self._motor_can_id:
+            state_q = self._motor_state_q[_id]
+            if len(state_q) == 0:
+                raise ValueError(f'motor state deque is empty, motor can id:{_id}. '
+                                 f'check the corresponding motor +48V supply and can bus connection.')
+
+            # Remove and return the rightmost element which is latest?
+            # TODO: pop() is atomic?
+            # motor_state.append(state_q.pop())
+            motor_state.append(deepcopy(state_q.popleft()))
+            # state_q.clear()
+        return motor_state
+
+    # TODO: return timestamp.
+    def get_voltage_nowait(self)->List[float]:
+        param:List[SingleParamValue] = self._get_param_helper('VBUS')
+        return [_p.value for _p in param]
+
+    def read_voltage_tx(self)->None:
+        self._read_param_tx_helper('VBUS')
+
+    # TODO: return timestamp.
+    def get_run_mode_nowait(self) -> List[int]:
+        param: List[SingleParamValue] = self._get_param_helper('run_mode')
+        return [_p.value for _p in param]
+
+    def read_run_mode_tx(self)->None:
+        self._read_param_tx_helper('run_mode')
+
+    def get_pos_kp_nowait(self) -> List[float]:
+        param: List[SingleParamValue] = self._get_param_helper('loc_kp')
+        return [_p.value for _p in param]
+
+    def read_pos_kp_tx(self)->None:
+        self._read_param_tx_helper('loc_kp')
+
+    def set_target_accel_nowait(self, accel: npt.NDArray[np.float32])->None:
+        raise NotImplemented
+
+    def set_target_vel_nowait(self, vel: npt.NDArray[np.float32])->None:
+        raise NotImplemented
+
+    def set_target_pos_nowait(self, pos: npt.NDArray[np.float32])->None:
+        """Writes the given desired positions.
+
+        Args:
+            pos: The joint angles in radians to write. in rad of single turn.signed value,
+             to represent rotor direction.
+             element order in `pos` must be same as self.motor_can_id.
+        """
+        assert len(self._motor_can_id) == len(pos)
+        # TODO: only allow -2Pi ~ 2Pi.
+        if not np.all(np.abs(pos) < 2 * np.pi):
+            raise ValueError(f'not allowed goal pos: {pos}, which should be in [-2pi, 2pi] ')
+
+        self._write_param_tx_helper('loc_ref', pos)
+
+
+    def set_run_mode_nowait(self, mode: int)->None:
+        assert mode in {RunModeCmd.MOTION, RunModeCmd.PP_POSITION,
+                        RunModeCmd.SPEED, RunModeCmd.CURRENT,
+                        RunModeCmd.CSP_POSITION}
+
+        self._write_param_tx_helper('run_mode', [mode]*len(self._motor_can_id) )
+
+    def set_pos_kp_nowait(self, kp: Sequence[float])->None:
+        self._write_param_tx_helper('loc_kp', kp)
+
+    def set_mech_zero_nowait(self)->None:
+        snd_msg:List[can.Message] = RSProtocolBuilder.set_mech_pos_zero(motor_can_id=self._motor_can_id,
+                                                                        host_can_id=self._host_can_id)
+        self._tx_msg(snd_msg)
+
+    def set_motor_enable_nowait(self)->None:
+        snd_msg:List[can.Message] = RSProtocolBuilder.motor_enable(motor_can_id=self._motor_can_id,
+                                                                   host_can_id=self._host_can_id)
+        self._tx_msg(snd_msg)
+
+    def set_motor_disable_nowait(self)->None:
+        snd_msg:List[can.Message] = RSProtocolBuilder.motor_disable(motor_can_id=self._motor_can_id,
+                                                                   host_can_id=self._host_can_id)
+        self._tx_msg(snd_msg)
+
+    def read_model_number_tx(self, wait_sec: float)->None:
+        snd_msg: List[can.Message] = RSProtocolBuilder.get_device_id(motor_can_id=self._motor_can_id,
+                                                                    host_can_id=self._host_can_id)
+        self._tx_msg(snd_msg)
+
+
 
 if __name__ == '__main__':
     # import concurrent.futures
-    import multiprocessing as mp
+    import asyncio
+    # import threading
     import atexit
 
     def mock_cpu_bound_policy(ctrl: BaseController):
         time.sleep(2.0)
-        print(f'---> start to initialize motors')
+        print(f'---> start initialize motors')
         ctrl.initialize_motors()
         print(f'finish initialize motors <---')
 
@@ -354,7 +675,7 @@ if __name__ == '__main__':
 
     cfg = RobStrideConfig(channel='can0',
                           baud_rate=RSBaudRate.BPS_1M,
-                          control_mode=RSRunMode.PP_POSITION_MODE,
+                          run_mode=RSRunMode.PP_POSITION,
                           host_can_id=0xfe,
                           motor_can_id=[0x7f],
                           pos_kp=None,
@@ -374,6 +695,7 @@ if __name__ == '__main__':
                          name='asyncio_send_rcv_can_msg',
                          daemon=True)
 
+    # io_thrd = threading.Thread(target=run_io_bound_task_in_spawned_process,args=[controller],daemon=True)
 
     # terminate gracefully.
     def clean_io_process():
@@ -388,6 +710,18 @@ if __name__ == '__main__':
         controller.close_motors()
         time.sleep(0.5)
 
+    # def clean_io_process():
+    #     print(f'clean_io_process(): terminate io_process gracefully.')
+    #     while io_thrd.is_alive():
+    #         print(f'io_proc is still alive: {io_thrd.is_alive()}, terminate it')
+    #         io_thrd.terminate()
+    #         time.sleep(0.5)
+    #     # fut.cancel()
+    #     print(f'io_proc is alive: {io_thrd.is_alive()}')
+    #     print(f'close motors:')
+    #     controller.close_motors()
+    #     time.sleep(0.5)
+
     def exit_handler():
         print(f'called from exit_handler --->')
         clean_io_process()
@@ -400,12 +734,29 @@ if __name__ == '__main__':
         # io_proc.join()
         print(f'io_proc is alive: {io_proc.is_alive()}')
         print(f'start mock cpu bound policy.')
+        # TODO: naive solution to wait for the io task running. maybe using connection?
+        while not io_proc.is_alive():
+            time.sleep(0.5)
+
         mock_cpu_bound_policy(controller)
 
-    except Exception as exc:
-        print(f'--- exception in main process: {exc=:} {type(exc)=:}')
+    # try:
+    #     print(f'start io_process.')
+    #     io_thrd.start()
+    #     # io_proc.join()
+    #     print(f'io_proc is alive: {io_thrd.is_alive()}')
+    #     print(f'start mock cpu bound policy.')
+    #     # TODO: naive solution to wait for the io task running. maybe using connection?
+    #     while not io_thrd.is_alive():
+    #         time.sleep(0.5)
+    #
+    #     mock_cpu_bound_policy(controller)
+
+
+    except Exception as error:
+        print(f'--- exception in main process: {error=:} {type(error)=:}')
         time.sleep(0.5)
-        raise exc
+        raise error
 
     finally:
         # normal finish.
