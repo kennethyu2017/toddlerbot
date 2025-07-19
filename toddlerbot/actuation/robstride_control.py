@@ -19,6 +19,11 @@ from toddlerbot.actuation._module_logger import logger
 from toddlerbot.actuation.base_controller import BaseController,JointState
 from toddlerbot.actuation.robstride_sdk import *
 
+
+class ControlMsg(NamedTuple):
+    time_to_send: float     #in perf count.
+    msg_list: List[can.Message]
+
 class RobStrideConfig(NamedTuple):
     channel: str
     baud_rate: RSBaudRate
@@ -41,17 +46,16 @@ class RobStrideConfig(NamedTuple):
 class RobStrideController(BaseController):
     """Class for controlling RobStride RS02 motors."""
 
-    # TODO: using PIPE?
     # send to io_proc
-    _ctrl_msg_q: mp.Queue[can.Message]
+    _ctrl_msg_q: mp.Queue[ControlMsg]
 
     # recv from io_proc
-    _motor_state_frame_q: mp.Queue[MotorStateFrame]
-    _motor_param_value_q: mp.Queue[SingleParamValue]
+    _motor_state_frame_q: mp.Queue[MotorStateFrame]    # for periodic motor state report.
+    _motor_param_value_q: mp.Queue[SingleParamValue]   # for reading param tabel value.
 
     def __init__(self,*,
                  config: RobStrideConfig,
-                 ctrl_msg_q:mp.Queue[can.Message],
+                 ctrl_msg_q:mp.Queue[ControlMsg],
                  motor_state_frame_q: mp.Queue[MotorStateFrame],
                  motor_param_value_q: mp.Queue[SingleParamValue]):
         """Initializes the motor controller with the given configuration and motor IDs.
@@ -372,11 +376,23 @@ class RobStrideController(BaseController):
     def connect_to_client(self, usb_com_latency_timer_ms:int, timeout_ms: int):
         raise NotImplementedError
 
-    def _tx_msg(self, msg:List[can.Message]):
+    def _tx_msg(self, msg:List[can.Message],
+                time_to_send:float = 0.):
+        """
+        dump can messages to IO task.
+        Args:
+            msg: List of can messages.
+            time_to_send:in perf count. tell IOTask postpone to future time for sending this group of can messages.
+                         default: 0., means send immediately.
+        """
         try:
-            for _m in msg:
-                # will raise immediately if full.
-                self._ctrl_msg_q.put_nowait(_m)
+            # for _m in msg:
+            #     # will raise immediately if full.
+            #     self._ctrl_msg_q.put_nowait(_m)
+
+            # raise immediately if full.
+            ctrl_msg = ControlMsg(time_to_send=time_to_send, msg_list=msg)
+            self._ctrl_msg_q.put_nowait(ctrl_msg)
 
         except Full as exc:
             logger.error(f'tx msg failed: _ctrl_msg_q is full ---> '
@@ -498,43 +514,53 @@ class RobStrideController(BaseController):
         value_arr = np.empty(shape=len(self._motor_can_id), dtype=dtype)
         rcv_motor_id:set[int] = set()
 
-        timeout_point:float = time.perf_counter() + timeout_sec
+        deadline:float = time.perf_counter() + timeout_sec
 
         try:
             # TODO: naive solution.
             # while not self._motor_param_value_q.empty():
             while len(rcv_motor_id) < len(self._set_of_motor_can_id):
-                while not self._motor_param_value_q.empty():
+                # while not self._motor_param_value_q.empty():
                 # if not self._motor_param_value_q.empty():
-                    value:SingleParamValue = self._motor_param_value_q.get_nowait()
+                # value:SingleParamValue = self._motor_param_value_q.get_nowait()
 
-                    # TODO: maybe cache the param value if not wanted index/repeated_motor_id.
-                    assert value.index == index
-                    assert value.can_id in self._set_of_motor_can_id
-                    # less than 10ms
-                    assert time.time() - value.ts < 1e-2
-
-                    assert value.can_id not in rcv_motor_id
-                    rcv_motor_id.add(value.can_id)
-
-                    # TODO: use same order as in _motor_can_id...
-                    # TODO: use heapq to optimize index.
-                    # insert_idx: int = self._motor_can_id.index(value.can_id)
-                    # NOTE: self._motor_can_id must be sorted.
-                    insert_idx: int = bisect.bisect_left(self._motor_can_id,x=value.can_id)
-                    value_arr[insert_idx] = value.value
-
-                    # if len(rcv_motor_id) == len(self._set_of_motor_can_id) \
-                    #     and rcv_motor_id == self._set_of_motor_can_id:
-                    #     logger.debug(f'get param value from all the motor. index:{index}')
-                    #     break
-
-                # checkout timeout:
-                if time.perf_counter() > timeout_point:
+                # check timeout:
+                q_get_timeout:float = deadline - time.perf_counter()
+                if q_get_timeout < 0:
                     raise IOError(f'get param value timeout, timeout sec:{timeout_sec}')
 
+                # mp.Queue will raise Empty if timeout.
+                value: SingleParamValue = self._motor_param_value_q.get(block=True,
+                                                                        timeout=q_get_timeout)
+
+                assert value is not None
+                # TODO: maybe cache the param value if not wanted index/repeated_motor_id.
+                assert value.index == index
+                assert value.can_id in self._set_of_motor_can_id
+                # less than 10ms
+                assert time.time() - value.ts < 1e-2
+
+                assert value.can_id not in rcv_motor_id
+                rcv_motor_id.add(value.can_id)
+
+                # TODO: use same order as in _motor_can_id...
+                # TODO: use heapq to optimize index.
+                # insert_idx: int = self._motor_can_id.index(value.can_id)
+                # NOTE: self._motor_can_id must be sorted.
+                insert_idx: int = bisect.bisect_left(self._motor_can_id,x=value.can_id)
+                value_arr[insert_idx] = value.value
+
+                # if len(rcv_motor_id) == len(self._set_of_motor_can_id) \
+                #     and rcv_motor_id == self._set_of_motor_can_id:
+                #     logger.debug(f'get param value from all the motor. index:{index}')
+                #     break
+
+                # # checkout timeout:
+                # if time.perf_counter() > deadline:
+                #     raise IOError(f'get param value timeout, timeout sec:{timeout_sec}')
+
                 # yield to wait queueing.
-                time.sleep(0.)
+                # time.sleep(0.)
 
             assert rcv_motor_id == self._set_of_motor_can_id
             return value_arr
@@ -544,8 +570,7 @@ class RobStrideController(BaseController):
             raise exc
 
 
-
-    # def _get_param_helper(self, name:str)->List[SingleParamValue]:
+    # def _get_param_value_helper(self, name:str)->List[SingleParamValue]:
     #     """
     #      raise exc if the corresponding param not received.
     #     """
@@ -575,30 +600,31 @@ class RobStrideController(BaseController):
 
         # non block.
 
-    def get_motor_state_nowait(self) -> List[MotorStateFrame]:
-        """
-        return list containing state frame of all the motors.
-        """
+    # def get_motor_state_nowait(self) -> List[MotorStateFrame]:
+    #     """
+    #     return list containing state frame of all the motors.
+    #     """
+    #
+    #     # TODO: guarantee the order.
+    #
+    #     motor_state: List[MotorStateFrame] = []
+    #     for _id in self._motor_can_id:
+    #         state_q = self._motor_state_q[_id]
+    #         if len(state_q) == 0:
+    #             raise ValueError(f'motor state deque is empty, motor can id:{_id}. '
+    #                              f'check the corresponding motor +48V supply and can bus connection.')
+    #
+    #         # Remove and return the rightmost element which is latest?
+    #         # TODO: pop() is atomic?
+    #         # motor_state.append(state_q.pop())
+    #         motor_state.append(deepcopy(state_q.popleft()))
+    #         # state_q.clear()
+    #     return motor_state
 
-        # TODO: guarantee the order.
-
-        motor_state: List[MotorStateFrame] = []
-        for _id in self._motor_can_id:
-            state_q = self._motor_state_q[_id]
-            if len(state_q) == 0:
-                raise ValueError(f'motor state deque is empty, motor can id:{_id}. '
-                                 f'check the corresponding motor +48V supply and can bus connection.')
-
-            # Remove and return the rightmost element which is latest?
-            # TODO: pop() is atomic?
-            # motor_state.append(state_q.pop())
-            motor_state.append(deepcopy(state_q.popleft()))
-            # state_q.clear()
-        return motor_state
 
     # TODO: return timestamp.
     def get_voltage_nowait(self)->List[float]:
-        param:List[SingleParamValue] = self._get_param_helper('VBUS')
+        param:List[SingleParamValue] = self._get_param_value_helper('VBUS',0)
         return [_p.value for _p in param]
 
     def read_voltage_tx(self)->None:
@@ -606,14 +632,14 @@ class RobStrideController(BaseController):
 
     # TODO: return timestamp.
     def get_run_mode_nowait(self) -> List[int]:
-        param: List[SingleParamValue] = self._get_param_helper('run_mode')
+        param: List[SingleParamValue] = self._get_param_value_helper('run_mode')
         return [_p.value for _p in param]
 
     def read_run_mode_tx(self)->None:
         self._read_param_tx_helper('run_mode')
 
     def get_pos_kp_nowait(self) -> List[float]:
-        param: List[SingleParamValue] = self._get_param_helper('loc_kp')
+        param: List[SingleParamValue] = self._get_param_value_helper('loc_kp')
         return [_p.value for _p in param]
 
     def read_pos_kp_tx(self)->None:
