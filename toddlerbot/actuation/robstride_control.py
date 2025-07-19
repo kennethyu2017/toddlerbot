@@ -12,6 +12,7 @@ from copy import deepcopy
 # from aioconsole import aprint
 import multiprocessing as mp
 from queue import Full
+import bisect
 
 from toddlerbot.actuation.robstride_client import RSBaudRate,RSRunMode
 from toddlerbot.actuation._module_logger import logger
@@ -74,8 +75,9 @@ class RobStrideController(BaseController):
         self.config = config
         # NOTE: the index in self._motor_ids is used for read data array index, like pos,vel,etc.
         # we use immutable tuple instead of set/list.
-        # and the element order is important.
-        self._motor_can_id = tuple(set(config.motor_can_id))
+        # and the element order is important, so we use sorted tuple to keep motor ids.
+        self._motor_can_id = tuple( sorted(set(config.motor_can_id)) )
+
         if len(self._motor_can_id) != len(config.motor_can_id):
             raise ValueError(f'input config motor_can_id include duplicated values: {config.motor_can_id=:}')
 
@@ -414,7 +416,9 @@ class RobStrideController(BaseController):
                                                                           )
         self._tx_msg(snd_msg)
 
-    def _get_motor_state_helper(self) \
+
+    # blocking get.
+    def _get_motor_state_helper(self, timeout_sec:float) \
             ->Dict[int,JointState]:  #  List[SingleParamValue]:
         """
          raise exc if the corresponding param not received.
@@ -425,47 +429,54 @@ class RobStrideController(BaseController):
         state_dict: Dict[int, JointState] = {}
         # rcv_motor_id:set[int] = set()
 
+        timeout_point: float = time.perf_counter() + timeout_sec
+
         try:
             # TODO: naive solution.
-            while not self._motor_state_frame_q.empty():
-                state:MotorStateFrame = self._motor_state_frame_q.get_nowait()
+            while len(state_dict) < len(self._set_of_motor_can_id):
+                while not self._motor_state_frame_q.empty():
+                    state:MotorStateFrame = self._motor_state_frame_q.get_nowait()
 
-                # TODO: check obsolete frame, waiting coming frame...
-                assert state.can_id in self._set_of_motor_can_id
-                # less than 10ms
-                assert time.time() - state.ts < 1e-2
+                    # TODO: check obsolete frame, waiting coming frame...
+                    assert state.can_id in self._set_of_motor_can_id
+                    # less than 10ms
+                    assert time.time() - state.ts < 1e-2
 
-                # assert state.can_id not in rcv_motor_id
-                # rcv_motor_id.add(state.can_id)
-                assert state.can_id not in state_dict
+                    # assert state.can_id not in rcv_motor_id
+                    # rcv_motor_id.add(state.can_id)
+                    assert state.can_id not in state_dict
 
-                # relative to init pos.
-                relative_pos = state.pos - self._normalized_init_pos
+                    # relative to init pos.
+                    relative_pos = state.pos - self._normalized_init_pos
 
-                state_dict[state.can_id] = JointState(time=state.ts,
-                                                      pos=relative_pos,
-                                                      vel=state.vel,
-                                                      tor=state.torque,
-                                                      temp=state.temp)
+                    state_dict[state.can_id] = JointState(time=state.ts,
+                                                          pos=relative_pos,
+                                                          vel=state.vel,
+                                                          tor=state.torque,
+                                                          temp=state.temp)
 
-                # if len(rcv_motor_id) == len(self._motor_can_id) \
-                #     and rcv_motor_id == self._set_of_motor_can_id:
-                if len(state_dict) == len(self._set_of_motor_can_id) \
-                    and state_dict.keys() == self._set_of_motor_can_id:
-                    logger.debug(f'get motor state frame from all the motor.')
-                    break
+                    # if len(state_dict) == len(self._set_of_motor_can_id) \
+                    #     and state_dict.keys() == self._set_of_motor_can_id:
+                    #     logger.debug(f'get motor state frame from all the motor.')
+                    #     break
 
-                # yield.
+                # checkout timeout:
+                if time.perf_counter() > timeout_point:
+                    raise IOError(f'get motor state timeout, timeout sec:{timeout_sec}')
+
+                # yield to wait queueing.
                 time.sleep(0.)
 
+            assert state_dict.keys() == self._set_of_motor_can_id
+            return state_dict
+
         except Exception as exc:
-            logger.error(f'get param value helper failed: {exc=:} {type(exc)=:}')
+            logger.error(f'get motor state helper failed: {exc=:} {type(exc)=:}')
             raise exc
 
-        return state_dict
 
-
-    def _get_param_value_helper(self, name: str) \
+    # blocking get.
+    def _get_param_value_helper(self, name: str, timeout_sec:float) \
             -> npt.NDArray[np.float32|np.int32]:  #  List[SingleParamValue]:
         """
          raise exc if the corresponding param not received.
@@ -487,38 +498,51 @@ class RobStrideController(BaseController):
         value_arr = np.empty(shape=len(self._motor_can_id), dtype=dtype)
         rcv_motor_id:set[int] = set()
 
+        timeout_point:float = time.perf_counter() + timeout_sec
+
         try:
             # TODO: naive solution.
-            while not self._motor_param_value_q.empty():
-                value:SingleParamValue = self._motor_param_value_q.get_nowait()
+            # while not self._motor_param_value_q.empty():
+            while len(rcv_motor_id) < len(self._set_of_motor_can_id):
+                while not self._motor_param_value_q.empty():
+                # if not self._motor_param_value_q.empty():
+                    value:SingleParamValue = self._motor_param_value_q.get_nowait()
 
-                # TODO: maybe cache the param value if not wanted index/repeated_motor_id.
-                assert value.index == index
-                assert value.can_id in self._set_of_motor_can_id
-                # less than 10ms
-                assert time.time() - value.ts < 1e-2
+                    # TODO: maybe cache the param value if not wanted index/repeated_motor_id.
+                    assert value.index == index
+                    assert value.can_id in self._set_of_motor_can_id
+                    # less than 10ms
+                    assert time.time() - value.ts < 1e-2
 
-                assert value.can_id not in rcv_motor_id
-                rcv_motor_id.add(value.can_id)
+                    assert value.can_id not in rcv_motor_id
+                    rcv_motor_id.add(value.can_id)
 
-                # TODO: use same order as in _motor_can_id...
-                # TODO: use heapq to optimize index.
-                insert_idx: int = self._motor_can_id.index(value.can_id)
-                value_arr[insert_idx] = value.value
+                    # TODO: use same order as in _motor_can_id...
+                    # TODO: use heapq to optimize index.
+                    # insert_idx: int = self._motor_can_id.index(value.can_id)
+                    # NOTE: self._motor_can_id must be sorted.
+                    insert_idx: int = bisect.bisect_left(self._motor_can_id,x=value.can_id)
+                    value_arr[insert_idx] = value.value
 
-                if len(rcv_motor_id) == len(self._set_of_motor_can_id) \
-                    and rcv_motor_id == self._set_of_motor_can_id:
-                    logger.debug(f'get param value from all the motor. index:{index}')
-                    break
+                    # if len(rcv_motor_id) == len(self._set_of_motor_can_id) \
+                    #     and rcv_motor_id == self._set_of_motor_can_id:
+                    #     logger.debug(f'get param value from all the motor. index:{index}')
+                    #     break
 
-                # yield.
+                # checkout timeout:
+                if time.perf_counter() > timeout_point:
+                    raise IOError(f'get param value timeout, timeout sec:{timeout_sec}')
+
+                # yield to wait queueing.
                 time.sleep(0.)
 
+            assert rcv_motor_id == self._set_of_motor_can_id
+            return value_arr
+
         except Exception as exc:
-            logger.error(f'get param value helper failed: {exc=:} {type(exc)=:}')
+            logger.error(f'get param value failed: {exc=:} {type(exc)=:}')
             raise exc
 
-        return value_arr
 
 
     # def _get_param_helper(self, name:str)->List[SingleParamValue]:
