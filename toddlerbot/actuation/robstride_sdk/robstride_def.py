@@ -45,7 +45,8 @@ class SingleParamValue(NamedTuple):
         if isinstance(self.value,float):
             return f'single param value --> timestamp:{self.ts:.6f} can_id: {self.can_id} index: 0x{self.index:x} value: {self.value:.2f}'
         else:
-            return f'single param value --> timestamp:{self.ts:.6f} can_id: {self.can_id} index: 0x{self.index:x} value: {self.value:.2f}'
+            return f'single param value --> timestamp:{self.ts:.6f} can_id: {self.can_id} index: 0x{self.index:x} value: {self.value:d}'
+
 
 class ParamSpec(NamedTuple):
     index: int
@@ -172,14 +173,15 @@ class RunModeCmd:
 
 # param table index: 0x7026
 class ReportPeriodCmd:
-    P_10MS = 1
-    P_15MS = 2
-    P_20MS = 3
-    P_25MS = 4
-    P_30MS = 5
-    P_35MS = 6
-    P_40MS = 7
-    P_45MS = 8
+    # NOTE: RS data manual error: actually cmd value starting from 0
+    P_10MS = 0
+    P_15MS = 1
+    P_20MS = 2
+    P_25MS = 3
+    P_30MS = 4
+    P_35MS = 5
+    P_40MS = 6
+    P_45MS = 7
 
 # TODO: this is for RS02 only.
 class ParamThreshold:
