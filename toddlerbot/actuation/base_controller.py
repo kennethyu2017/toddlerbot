@@ -26,8 +26,7 @@ class BaseController(ABC):
         pass
 
     @abstractmethod
-    def initialize_motors(self):
-        pass
+    def initialize_motors(self):...
 
     # @abstractmethod
     # used for asyncio.
@@ -38,7 +37,7 @@ class BaseController(ABC):
         pass
 
     @abstractmethod
-    def get_motor_state(self, retries: int=0) -> Dict[int, JointState]:
+    def get_motor_state(self, timeout_sec: float) -> Dict[int, JointState]:
         pass
 
     @abstractmethod
@@ -48,16 +47,16 @@ class BaseController(ABC):
     @abstractmethod
     def set_kp(self, kp: Sequence[int|float]):...
 
-
-    @staticmethod
     @abstractmethod
-    def disable_motors(ids=None):...
+    def set_pos_kp(self, kp: Sequence[int|float]):...
 
 
-    @staticmethod
     @abstractmethod
-    def enable_motors(ids=None):...
+    def disable_motors(self,ids=None):...
 
+
+    @abstractmethod
+    def enable_motors(self,ids=None):...
 
     @classmethod
     @contextmanager

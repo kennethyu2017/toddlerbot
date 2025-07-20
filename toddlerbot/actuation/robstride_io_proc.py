@@ -94,6 +94,42 @@ class RSRunMode(Enum):
             return RunModeCmd.CSP_POSITION
 
 
+class RSReportPeriod(Enum):
+    P_10MS:auto()
+    P_15MS: auto()
+    P_20MS: auto()
+    P_25MS: auto()
+    P_30MS: auto()
+    P_35MS: auto()
+    P_40MS: auto()
+    P_45MS: auto()
+
+    def convert_to_rs_cmd(self) -> int:
+        if self == RSReportPeriod.P_10MS:
+            return ReportPeriodCmd.P_10MS
+
+        elif self == RSReportPeriod.P_15MS:
+            return ReportPeriodCmd.P_15MS
+
+        elif self == RSReportPeriod.P_20MS:
+            return ReportPeriodCmd.P_20MS
+
+        elif self == RSReportPeriod.P_25MS:
+            return ReportPeriodCmd.P_25MS
+
+        elif self == RSReportPeriod.P_30MS:
+            return ReportPeriodCmd.P_30MS
+
+        elif self == RSReportPeriod.P_35MS:
+            return ReportPeriodCmd.P_35MS
+
+        elif self == RSReportPeriod.P_40MS:
+            return ReportPeriodCmd.P_40MS
+
+        else:
+            return ReportPeriodCmd.P_45MS
+
+
 # bring up the can interface:
 def _bring_up_can_interface(if_name:str, bitrate: int):
     os_type = sys.platform.casefold()

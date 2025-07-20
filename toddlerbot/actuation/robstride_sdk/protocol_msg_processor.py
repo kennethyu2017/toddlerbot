@@ -227,8 +227,8 @@ class RSProtocolBuilder:
                                                  )
 
     @staticmethod
-    def set_motor_periodic_report(motor_can_id: Sequence[int], host_can_id: int,
-                                  enable:bool) ->List[Message]:
+    def toggle_motor_periodic_report(motor_can_id: Sequence[int], host_can_id: int,
+                                     enable:bool) ->List[Message]:
         assert 0 <= host_can_id <= 0xfe
 
         cmd: int = 1 if enable else 0
