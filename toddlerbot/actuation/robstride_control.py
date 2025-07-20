@@ -13,22 +13,21 @@ import multiprocessing as mp
 from queue import Full
 import bisect
 from functools import partial
+import logging
 
 if __name__ == '__main__':
-    from toddlerbot.actuation.robstride_io_proc import RSBaudRate,RSRunMode, RSReportPeriod
+    from toddlerbot.actuation.robstride_io_proc import RSBaudRate,RSRunMode, RSReportPeriod, ControlMsg
     from toddlerbot.actuation._module_logger import logger
     from toddlerbot.actuation.base_controller import BaseController,JointState
     from toddlerbot.actuation.robstride_sdk import *
+    from toddlerbot.utils import config_logging
 else:
-    from .robstride_io_proc import RSBaudRate, RSRunMode, RSReportPeriod
+    from .robstride_io_proc import RSBaudRate, RSRunMode, RSReportPeriod, ControlMsg
     from ._module_logger import logger
     from .base_controller import BaseController, JointState
     from .robstride_sdk import *
+    from ..utils import config_logging
 
-
-class ControlMsg(NamedTuple):
-    time_to_send: float     #in perf count.
-    msg_list: List[can.Message]
 
 class RobStrideConfig(NamedTuple):
     channel: str
@@ -54,17 +53,18 @@ class RobStrideController(BaseController):
     """Class for controlling RobStride RS02 motors."""
 
     # send to io_proc
-    _ctrl_msg_q: mp.Queue[ControlMsg]
+    _ctrl_msg_q: mp.Queue  #[ControlMsg]
 
     # recv from io_proc
-    _motor_state_frame_q: mp.Queue[MotorStateFrame]    # for periodic motor state report.
-    _motor_param_value_q: mp.Queue[SingleParamValue]   # for reading param tabel value.
+    _motor_state_frame_q: mp.Queue #[MotorStateFrame]    # for periodic motor state report.
+    _motor_param_value_q: mp.Queue #[SingleParamValue]   # for reading param tabel value.
 
     def __init__(self,*,
                  config: RobStrideConfig,
-                 ctrl_msg_q:mp.Queue[ControlMsg],
-                 motor_state_frame_q: mp.Queue[MotorStateFrame],
-                 motor_param_value_q: mp.Queue[SingleParamValue]):
+                 ctrl_msg_q:mp.Queue, #[ControlMsg],
+                 motor_state_frame_q: mp.Queue, # [MotorStateFrame],
+                 motor_param_value_q: mp.Queue, # [SingleParamValue]
+                 ):
         """Initializes the motor controller with the given configuration and motor IDs.
 
         Args:
@@ -177,9 +177,10 @@ class RobStrideController(BaseController):
         v_in = self.get_voltage(get_timeout_sec)
         assert len(v_in)==len(self._motor_can_id)
         logger.info(f"read Voltage of motors: (V): {v_in}")
-        if np.any(np.asarray(v_in,dtype=np.float32) < 46.):
+        if np.any(np.asarray(v_in,dtype=np.float32) < 46.) or np.any(np.asarray(v_in,dtype=np.float32) > 50.):
             raise ValueError(
-                "Voltage too low. Please check the power supply or charge the batteries."
+                "Voltage too low or too high than +48V."
+                " Please check the power supply or charge the batteries."
             )
 
         # ---- TODO: add overload protect, min/max pos.. to RS motors. ----
@@ -191,9 +192,10 @@ class RobStrideController(BaseController):
                                      get_timeout_sec=get_timeout_sec)
 
 
-        logger.info(f'--- set and check motor pos kp --->')
-        self._set_and_check_pos_kp(kp=self.config.pos_kp,
-                                   get_timeout_sec=get_timeout_sec)
+        if self.config.pos_kp is not None:
+            logger.info(f'--- set and check motor pos kp --->')
+            self._set_and_check_pos_kp(kp=self.config.pos_kp,
+                                       get_timeout_sec=get_timeout_sec)
 
         # TODO: check protection mode:
         # TODO: check torque limit:
@@ -209,9 +211,15 @@ class RobStrideController(BaseController):
         self._set_and_check_zero_scope(in_neg_pi_pos_pi=True,
                                        get_timeout_sec=get_timeout_sec)
 
-        logger.info(f'--- enable all the motors --->')
+        logger.info(f'--- set mech pos zero --->')
+        # TODO: check mech pos?
+        self.set_mech_pos_zero_nowait()
+
+        logger.warning(f'--- enable all the motors --->')
         # TODO: how to check all the motors are enabled?
         self._enable_motor_nowait(self._motor_can_id)
+        # NOTE: necessary to wait for RS be ready
+        time.sleep(3.)
 
         # logger.info(f'--- set and normalize motor init pos  --->')
         # # NOTE: first set goal pos to init_pos in config.json, then normalize init pos read from motor.
@@ -231,11 +239,18 @@ class RobStrideController(BaseController):
         self._set_and_check_motor_report_period(self.config.motor_report_period,
                                                 get_timeout_sec=get_timeout_sec)
 
+        # self.set_target_pos_nowait(np.asarray([0.87], dtype=np.float32))
+        # time.sleep(2.)
+        # self.set_target_pos_nowait(np.asarray([0.99], dtype=np.float32))
+        # time.sleep(2.)
+
         logger.info(f'--- enable the motor state periodic report  --->')
         # TODO:
-        # self.toggle_periodic_report_nowait(enable=True)
-
+        self.toggle_periodic_report_nowait(enable=True)
         time.sleep(1.0)
+        logger.info(f'--- disable the motor state periodic report  --->')
+        self.toggle_periodic_report_nowait(enable=False)
+
 
     def _set_and_check_zero_scope(self, in_neg_pi_pos_pi:bool, get_timeout_sec:float):
         # cmd: 0~2pi:0,  -pi~pi: 1
@@ -306,7 +321,7 @@ class RobStrideController(BaseController):
             self.set_target_pos_nowait(self.config.init_target_pos)
 
             self.read_mech_pos_tx()
-            curr_pos = self.get_mech_pos(timeout_sec=1.)
+            curr_pos = self.get_mech_pos(timeout_sec=0.5)
             logger.warning(f'read curr_pos: {curr_pos}')
 
             # delta_pos = read_pos - self.normalized_init_pos
@@ -664,7 +679,7 @@ class RobStrideController(BaseController):
     def read_pos_kp_tx(self)->None:
         self._read_param_tx_helper('loc_kp')
 
-    def set_mech_zero_nowait(self)->None:
+    def set_mech_pos_zero_nowait(self)->None:
         snd_msg:List[can.Message] = RSProtocolBuilder.set_mech_pos_zero(motor_can_id=self._motor_can_id,
                                                                         host_can_id=self._host_can_id)
         self._tx_msg(snd_msg)
@@ -721,7 +736,7 @@ class RobStrideController(BaseController):
                              ReportPeriodCmd.P_20MS, ReportPeriodCmd.P_25MS,
                              ReportPeriodCmd.P_30MS, ReportPeriodCmd.P_35MS,
                              ReportPeriodCmd.P_40MS, ReportPeriodCmd.P_45MS,}
-        # cmd = period_ms // 5 - 1  # 1 is 10ms, then add 1 for every 5ms.
+        # cmd = period_ms // 5 - 1  # 0 is 10ms, then add 1 for every 5ms.
         self._write_param_tx_helper('EPScan_time',[period_cmd] * len(self._motor_can_id) )
 
     def read_motor_report_period_tx(self)->None:
@@ -773,6 +788,14 @@ if __name__ == '__main__':
     import atexit
     from toddlerbot.actuation.robstride_io_proc import RobStrideIOProc
 
+    config_logging(root_logger_level=logging.INFO, root_handler_level=logging.NOTSET,
+                   root_fmt='--- {levelname} - module:{module} - func:{funcName} ---> \n{message}',
+                   root_date_fmt='%Y-%m-%d %H:%M:%S',
+                   # log_file='/tmp/toddler/imitate_episode.log',
+                   log_file=None,
+                   module_logger_config={'robstride_io_proc': logging.DEBUG})
+
+
     def mock_cpu_bound_policy(ctrl: BaseController):
         time.sleep(2.0)
         print(f'---> start initialize motors')
@@ -788,29 +811,44 @@ if __name__ == '__main__':
             if ret > 0xffffff:
                 ret = 0
 
-    def run_io_bound_task_in_spawned_process():
-        _proc = RobStrideIOProc()
+    def run_io_bound_task_in_spawned_process(*, motor_can_id: Sequence[int],         # ids of a group of actuators.
+                                                host_can_id: int,
+                                                channel: str,
+                                                baud_rate: RSBaudRate,
+                                                ctrl_msg_q: mp.Queue,  #[ControlMsg],
+                                                motor_state_frame_q: mp.Queue, # [MotorStateFrame],
+                                                motor_param_value_q: mp.Queue, # [SingleParamValue]
+                                             ):
+
+        _proc = RobStrideIOProc(motor_can_id=motor_can_id,
+                                host_can_id=host_can_id,
+                                channel=channel,
+                                baud_rate=baud_rate,
+                                ctrl_msg_q=ctrl_msg_q,
+                                motor_state_frame_q=motor_state_frame_q,
+                                motor_param_value_q=motor_param_value_q)
+
         return asyncio.run(_proc.send_rcv_task())
 
     _cfg = RobStrideConfig(channel='can0',
                           baud_rate=RSBaudRate.BPS_1M,
                           run_mode=RSRunMode.PP_POSITION,
-                          motor_report_period=RSReportPeriod.P_20MS,
+                          motor_report_period=RSReportPeriod.P_40MS,
                           host_can_id=0xfe,
                           motor_can_id=[0x7f],
                           pos_kp=None,
                           default_accel_PP_mode=None,
                           default_vel_PP_mode=None,
-                          init_target_pos=None)
+                          init_target_pos=np.asarray([0.],dtype=np.float32))
 
     _ctrl_msg_q = mp.Queue(maxsize=100)
     _motor_state_frame_q = mp.Queue(maxsize=100)
     _motor_param_value_q = mp.Queue(maxsize=100)
 
     controller = RobStrideController(config = _cfg,
-                                     ctrl_msg_q=_ctrl_msg_q,
-                                     motor_state_frame_q=_motor_state_frame_q,
-                                     motor_param_value_q=_motor_param_value_q)
+                                     ctrl_msg_q= _ctrl_msg_q,
+                                     motor_state_frame_q= _motor_state_frame_q,
+                                     motor_param_value_q= _motor_param_value_q)
 
     # with concurrent.futures.ProcessPoolExecutor(max_workers=1) as p_pool:
     #     fut:concurrent.futures.Future = p_pool.submit(run_io_bound_task_in_process_pool, controller)
@@ -820,6 +858,13 @@ if __name__ == '__main__':
     # process terminates.
     _io_proc = mp.Process(target=run_io_bound_task_in_spawned_process,
                          args=[],
+                         kwargs=dict(motor_can_id=_cfg.motor_can_id,
+                                     host_can_id=_cfg.host_can_id,
+                                     channel=_cfg.channel,
+                                     baud_rate=_cfg.baud_rate,
+                                     ctrl_msg_q=_ctrl_msg_q,
+                                     motor_state_frame_q=_motor_state_frame_q,
+                                     motor_param_value_q=_motor_param_value_q),
                          name='asyncio_send_rcv_can_msg',
                          daemon=True)
 
