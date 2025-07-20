@@ -170,6 +170,17 @@ class RunModeCmd:
     CURRENT = 3  # 电流模式
     CSP_POSITION = 5  # CSP位置模式
 
+# param table index: 0x7026
+class ReportPeriodCmd:
+    P_10MS = 1
+    P_15MS = 2
+    P_20MS = 3
+    P_25MS = 4
+    P_30MS = 5
+    P_35MS = 6
+    P_40MS = 7
+    P_45MS = 8
+
 # TODO: this is for RS02 only.
 class ParamThreshold:
     P_MIN = -12.57

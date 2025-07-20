@@ -14,5 +14,6 @@ __all__ = ['ParamConverter',
            'ParamSpec',
            'RunModeCmd',
            'BaudRateCmd',
+           'ReportPeriodCmd',
            # 'ROBSTRIDE_DEFAULT_BAUD_RATE'
             ]

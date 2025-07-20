@@ -824,8 +824,6 @@ def run_policy(*,
                 _record = StepRecord()
                 _record.time_pnt.step_start = timelib.time()
 
-
-
                 # Get the latest state from the queue
                 # obs = env.get_observation(1)
                 _cnt1=timelib.perf_counter_ns()
@@ -896,7 +894,7 @@ def run_policy(*,
                                        + loop_interval_ns
                                        - timelib.perf_counter_ns() )
 
-                logger.info(f"until_next_step_ns: {_until_next_step_ns/1_000_000:.1f} ms")
+                logger.info(f"until_next_step_ms: {_until_next_step_ns/1_000_000:.1f} ms")
                 if _until_next_step_ns > 0:
                     # logger.debug(f'+++++ sleep for {until_next_step_sec:.4f} sec ')
                     timelib.sleep(_until_next_step_ns / 1_000_000_000.)
