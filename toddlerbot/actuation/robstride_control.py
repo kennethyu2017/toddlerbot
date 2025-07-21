@@ -10,19 +10,20 @@ import numpy.typing as npt
 import can
 # from aioconsole import aprint
 import multiprocessing as mp
+from multiprocessing.connection import Connection
 from queue import Full
 import bisect
 from functools import partial
 import logging
 
 if __name__ == '__main__':
-    from toddlerbot.actuation.robstride_io_proc import RSBaudRate,RSRunMode, RSReportPeriod, ControlMsg
+    from toddlerbot.actuation.robstride_io_proc import RSBaudRate,RSRunMode, RSReportPeriod, ControlMsg, RSIOEvent
     from toddlerbot.actuation._module_logger import logger
     from toddlerbot.actuation.base_controller import BaseController,JointState
     from toddlerbot.actuation.robstride_sdk import *
     from toddlerbot.utils import config_logging
 else:
-    from .robstride_io_proc import RSBaudRate, RSRunMode, RSReportPeriod, ControlMsg
+    from .robstride_io_proc import RSBaudRate, RSRunMode, RSReportPeriod, ControlMsg, RSIOEvent
     from ._module_logger import logger
     from .base_controller import BaseController, JointState
     from .robstride_sdk import *
@@ -49,21 +50,24 @@ class RobStrideConfig(NamedTuple):
 
     # interp_method: str = "cubic"
 
+
 class RobStrideController(BaseController):
     """Class for controlling RobStride RS02 motors."""
 
+    # events between with io_proc
+    _event_conn_with_io_proc: Connection
     # send to io_proc
-    _ctrl_msg_q: mp.Queue  #[ControlMsg]
-
+    _motor_ctrl_q: mp.Queue  #[ControlMsg]
     # recv from io_proc
     _motor_state_frame_q: mp.Queue #[MotorStateFrame]    # for periodic motor state report.
     _motor_param_value_q: mp.Queue #[SingleParamValue]   # for reading param tabel value.
 
-    def __init__(self,*,
+    def __init__(self, *,
                  config: RobStrideConfig,
-                 ctrl_msg_q:mp.Queue, #[ControlMsg],
-                 motor_state_frame_q: mp.Queue, # [MotorStateFrame],
-                 motor_param_value_q: mp.Queue, # [SingleParamValue]
+                 event_conn_with_io_proc: Connection,
+                 motor_ctrl_q:mp.Queue,  #[ControlMsg],
+                 motor_state_frame_q: mp.Queue,  # [MotorStateFrame],
+                 motor_param_value_q: mp.Queue,  # [SingleParamValue]
                  ):
         """Initializes the motor controller with the given configuration and motor IDs.
 
@@ -84,6 +88,7 @@ class RobStrideController(BaseController):
                     f'\n with config: {config} ')
 
         self.config = config
+
         # NOTE: the index in self._motor_ids is used for read data array index, like pos,vel,etc.
         # we use immutable tuple instead of set/list.
         # and the element order is important, so we use sorted tuple to keep motor ids.
@@ -98,7 +103,8 @@ class RobStrideController(BaseController):
         assert 0x7f < config.host_can_id <= 0xfe
         self._host_can_id = config.host_can_id
 
-        self._ctrl_msg_q = ctrl_msg_q
+        self._event_conn_with_io_proc = event_conn_with_io_proc
+        self._motor_ctrl_q = motor_ctrl_q
         self._motor_state_frame_q = motor_state_frame_q
         self._motor_param_value_q = motor_param_value_q
 
@@ -116,7 +122,9 @@ class RobStrideController(BaseController):
         # then normalize init pos read from motor.
         # if config.init_pos is None, that is for calibrate_zero.
         # TODO: during calibrate_zero , setting init_pos to pi ??
-        self._normalized_init_pos: npt.NDArray[np.float32] | None = None
+        # self._normalized_init_pos: npt.NDArray[np.float32] | None = None
+        # init to zero:
+        self._normalized_init_pos : npt.NDArray[np.float32] = np.zeros(len(self._motor_can_id), dtype=np.float32)
 
         # # NOTE: first set goal pos to init_pos in config.json, then normalize init pos read from motor.
         # # if config.init_pos is None, that is for calibrate_zero.
@@ -168,11 +176,20 @@ class RobStrideController(BaseController):
         """
         logger.info("Initializing motors...")
 
-        # naive solution: method to wait 2. seconds for I/O task starting.
-        time.sleep(2.)
+        # waiting for I/O task ready.
+        logger.warning("=== waiting for RSIOEvent.ready ===")
+        event = self._event_conn_with_io_proc.recv()
+        logger.warning(f" rcv event from io proc: {event}")
+        if event is RSIOEvent.SndRcvTaskReady:
+            logger.warning("=== get RSIOEvent.ready, start send initializing msg to io proc. ===")
+        else:
+            # TODO: naive implementation. using state_machine in future.
+            raise NotImplementedError(f'we only support RSIOEvent.Ready event in controller initialize_motors state. '
+                                      f'TODO: using state_machine.')
+
         get_timeout_sec: float = 0.5
 
-        logger.info(f'--- checking motor voltage --->')
+        logger.info(f'=== checking motor voltage ===')
         self.read_voltage_tx()
         v_in = self.get_voltage(get_timeout_sec)
         assert len(v_in)==len(self._motor_can_id)
@@ -187,13 +204,14 @@ class RobStrideController(BaseController):
         # set canTimeout.
         # self.set_return_delay_time(self.config.return_delay_us)
 
-        logger.info(f'--- set and check motor run mode --->')
+        # NOTE: run mode can only be set in `motor-disabled` state.
+        logger.info(f'=== set and check motor run mode ===')
         self._set_and_check_run_mode(run_mode=self.config.run_mode,
                                      get_timeout_sec=get_timeout_sec)
 
 
         if self.config.pos_kp is not None:
-            logger.info(f'--- set and check motor pos kp --->')
+            logger.info(f'=== set and check motor pos kp ===')
             self._set_and_check_pos_kp(kp=self.config.pos_kp,
                                        get_timeout_sec=get_timeout_sec)
 
@@ -206,27 +224,37 @@ class RobStrideController(BaseController):
         # self.set_target_accel_nowait(self.config.default_accel_PP_mode)
         # self.set_target_vel_nowait(self.config.default_vel_PP_mode)
 
-        logger.info(f'--- set mech pos zero scope to -pi ~ pi --->')
+        logger.info(f'=== set mech pos zero scope to -pi ~ pi ===')
         # set mech zero scope to -pi~pi.
         self._set_and_check_zero_scope(in_neg_pi_pos_pi=True,
                                        get_timeout_sec=get_timeout_sec)
 
-        logger.info(f'--- set mech pos zero --->')
+        logger.info(f'=== set mech pos zero ===')
         # TODO: check mech pos?
         self.set_mech_pos_zero_nowait()
 
-        logger.warning(f'--- enable all the motors --->')
+        logger.warning(f'=== enable all the motors ===')
         # TODO: how to check all the motors are enabled?
+        # while not self._motor_state_frame_q.empty():
+        #     _ste = self._motor_state_frame_q.get_nowait()
+        #     logger.warning(f'\n--- flush motor state: {_ste} ---')
+        #     time.sleep(0.2)
+
         self._enable_motor_nowait(self._motor_can_id)
-        # NOTE: necessary to wait for RS be ready
+        logger.warning(f'=== read curr mech pos and wait for the param feedback to guarantee motor enabled.')
+        # wait for RS motor ready
         time.sleep(3.)
+        self.read_mech_pos_tx()
+        curr_pos = self.get_mech_pos(timeout_sec=0.5)
+        logger.warning(f'=== get curr_pos: {curr_pos}')
+        logger.warning(f'=== motor enabled successfully ===')
 
         # logger.info(f'--- set and normalize motor init pos  --->')
         # # NOTE: first set goal pos to init_pos in config.json, then normalize init pos read from motor.
         # if self.config.init_target_pos is not None:
         #     self.set_target_pos_nowait(self.config.init_target_pos)
 
-        logger.info(f'--- set and normalize motor init pos  --->')
+        logger.info(f'=== set and normalize motor init pos  ===')
         self._set_and_normalize_init_pos()
 
         # if self.config.init_target_pos is None:
@@ -235,7 +263,7 @@ class RobStrideController(BaseController):
         # else:
         #     self._normalize_init_pos()
 
-        logger.info(f'--- set and check motor state report period --->')
+        logger.info(f'=== set and check motor state report period ===')
         self._set_and_check_motor_report_period(self.config.motor_report_period,
                                                 get_timeout_sec=get_timeout_sec)
 
@@ -244,11 +272,11 @@ class RobStrideController(BaseController):
         # self.set_target_pos_nowait(np.asarray([0.99], dtype=np.float32))
         # time.sleep(2.)
 
-        logger.info(f'--- enable the motor state periodic report  --->')
-        # TODO:
+        logger.info(f'=== enable the motor state periodic report  ===')
+        # TODO: temply debug.
         self.toggle_periodic_report_nowait(enable=True)
         time.sleep(1.0)
-        logger.info(f'--- disable the motor state periodic report  --->')
+        logger.info(f'=== disable the motor state periodic report  ===')
         self.toggle_periodic_report_nowait(enable=False)
 
 
@@ -328,6 +356,7 @@ class RobStrideController(BaseController):
 
             delta_pos = curr_pos - np.asarray(self.config.init_target_pos, dtype=np.float32)
 
+            # TODO: optimize if delta_pos is very tiny. set to _normalized_init_pos None.
             delta_pos = (delta_pos + np.pi) % (2 * np.pi) - np.pi
 
             self._normalized_init_pos = curr_pos - delta_pos
@@ -349,6 +378,8 @@ class RobStrideController(BaseController):
 
         This method iterates over all currently open Feite clients and forces them to close if they are in use. It logs a message for each client that is being forcibly closed and then sets the client's port handler to not in use before disconnecting the client.
         """
+
+        logger.warning(f'=== close all the motors ===')
         open_clients: Set[FeiteGroupClient] = RobStrideIOProc.OPEN_CLIENTS  # type: ignore
         for _client in open_clients:
             # will tx motor_disable can msg to all motors:
@@ -421,14 +452,17 @@ class RobStrideController(BaseController):
 
             # raise immediately if full.
             ctrl_msg = ControlMsg(time_to_send=time_to_send, msg_list=msg)
-            self._ctrl_msg_q.put_nowait(ctrl_msg)
+            self._motor_ctrl_q.put_nowait(ctrl_msg)
 
         except Full as exc:
             logger.error(f'tx msg failed: _ctrl_msg_q is full ---> '
-                             f'length:{self._ctrl_msg_q.qsize()}.'
+                             f'length:{self._motor_ctrl_q.qsize()}.'
                              f' check the application running freq and asyncio send bandwidth.'
                          f'{exc=:} {type(exc)=:}')
             raise exc
+
+        except Exception as other_exc:
+            raise other_exc
 
     # executed in run_policy process. not real time data, we can set wait time.
     def _read_param_tx_helper(self, name:str)->None:
@@ -501,6 +535,7 @@ class RobStrideController(BaseController):
                 relative_pos = state.pos - self._normalized_init_pos
 
                 state_dict[state.can_id] = JointState(time=state.ts,
+                                                      error: use dict to mapping idx and can_id , and use
                                                       pos=relative_pos,
                                                       vel=state.vel,
                                                       tor=state.torque,
@@ -569,6 +604,13 @@ class RobStrideController(BaseController):
                 # TODO: use heapq to optimize index.
                 # insert_idx: int = self._motor_can_id.index(value.can_id)
                 # NOTE: self._motor_can_id must be sorted.
+
+                error: use
+                dict
+                to
+                mapping
+                idx and can_id, and use
+
                 insert_idx: int = bisect.bisect_left(self._motor_can_id,x=value.can_id)
                 value_arr[insert_idx] = value.value
 
@@ -773,6 +815,10 @@ class RobStrideController(BaseController):
         logger.info(f"enable motor id: {enable_id}")
         self._enable_motor_nowait(enable_id)
 
+    def __del__(self):
+        pass
+        # in case the io_proc still alive
+        # self.disable_motors(ids=None)
 
     # def read_model_number_tx(self, wait_sec: float)->None:
     #     snd_msg: List[can.Message] = RSProtocolBuilder.get_device_id(motor_can_id=self._motor_can_id,
@@ -795,7 +841,6 @@ if __name__ == '__main__':
                    log_file=None,
                    module_logger_config={'robstride_io_proc': logging.DEBUG})
 
-
     def mock_cpu_bound_policy(ctrl: BaseController):
         time.sleep(2.0)
         print(f'---> start initialize motors')
@@ -804,7 +849,7 @@ if __name__ == '__main__':
 
         ret : int = 0
         # while True:
-        for _ in range(10):
+        for _ in range(5):
             time.sleep(1.)
             ret+=1
             print(f'---cpu bound --- {ret=:} ----')
@@ -815,6 +860,7 @@ if __name__ == '__main__':
                                                 host_can_id: int,
                                                 channel: str,
                                                 baud_rate: RSBaudRate,
+                                                event_conn: Connection,
                                                 ctrl_msg_q: mp.Queue,  #[ControlMsg],
                                                 motor_state_frame_q: mp.Queue, # [MotorStateFrame],
                                                 motor_param_value_q: mp.Queue, # [SingleParamValue]
@@ -824,6 +870,7 @@ if __name__ == '__main__':
                                 host_can_id=host_can_id,
                                 channel=channel,
                                 baud_rate=baud_rate,
+                                event_conn_with_controller_proc=event_conn,
                                 ctrl_msg_q=ctrl_msg_q,
                                 motor_state_frame_q=motor_state_frame_q,
                                 motor_param_value_q=motor_param_value_q)
@@ -841,12 +888,24 @@ if __name__ == '__main__':
                           default_vel_PP_mode=None,
                           init_target_pos=np.asarray([0.],dtype=np.float32))
 
-    _ctrl_msg_q = mp.Queue(maxsize=100)
+    # NOTE: mp.Queue is always preferable, causing it is a high-level API rather than sync-primitive.
+    # mp.Queue using BoundedSemaphore to control the queue size. better than SimpleQueue which is unbounded.
+    # and mp.Queue creates a uni-directional connection Pipe(duplex=False).
+    # also better than mp.Pipe which has no management of queue size neither, just using OS PIPE to send/rcv.
+    _motor_ctrl_q = mp.Queue(maxsize=100)
     _motor_state_frame_q = mp.Queue(maxsize=100)
     _motor_param_value_q = mp.Queue(maxsize=100)
 
+    # duplex Pipe, used for exchange simple events between main proc and io proc.
+    # NOTE: if want to exchange event among multi-processes, use mp.Queue.
+    _io_proc_event_conn: Connection
+    _main_proc_event_conn: Connection
+    # pair of ends, used by each proc.
+    _io_proc_event_conn, _main_proc_event_conn = mp.Pipe(duplex=True)
+
     controller = RobStrideController(config = _cfg,
-                                     ctrl_msg_q= _ctrl_msg_q,
+                                     event_conn_with_io_proc=_main_proc_event_conn,
+                                     motor_ctrl_q= _motor_ctrl_q,
                                      motor_state_frame_q= _motor_state_frame_q,
                                      motor_param_value_q= _motor_param_value_q)
 
@@ -862,7 +921,8 @@ if __name__ == '__main__':
                                      host_can_id=_cfg.host_can_id,
                                      channel=_cfg.channel,
                                      baud_rate=_cfg.baud_rate,
-                                     ctrl_msg_q=_ctrl_msg_q,
+                                     event_conn=_io_proc_event_conn,
+                                     ctrl_msg_q=_motor_ctrl_q,
                                      motor_state_frame_q=_motor_state_frame_q,
                                      motor_param_value_q=_motor_param_value_q),
                          name='asyncio_send_rcv_can_msg',
@@ -871,17 +931,16 @@ if __name__ == '__main__':
     # io_thrd = threading.Thread(target=run_io_bound_task_in_spawned_process,args=[controller],daemon=True)
 
     # terminate gracefully.
-    def clean_io_process():
-        print(f'clean_io_process(): terminate io_process gracefully.')
-        while _io_proc.is_alive():
-            print(f'_io_proc is still alive: {_io_proc.is_alive()}, terminate it')
-            _io_proc.terminate()
-            time.sleep(0.5)
-        # fut.cancel()
-        print(f'_io_proc is alive: {_io_proc.is_alive()}')
-        print(f'close motors:')
-        controller.close_motors()
-        time.sleep(0.5)
+    # def clean_io_process():
+    #     print(f'clean_io_process(): terminate io_process gracefully.')
+    #     while _io_proc.is_alive():
+    #         print(f'_io_proc is still alive: {_io_proc.is_alive()}, terminate it')
+    #         _io_proc.terminate()
+    #         time.sleep(0.5)
+    #     # fut.cancel()
+    #     print(f'_io_proc is alive: {_io_proc.is_alive()}')
+    #     # controller.close_motors()
+    #     time.sleep(1.)
 
     # def clean__io_process():
     #     print(f'clean__io_process(): terminate _io_process gracefully.')
@@ -896,10 +955,30 @@ if __name__ == '__main__':
     #     time.sleep(0.5)
 
     def exit_handler():
-        print(f'called from exit_handler --->')
-        clean_io_process()
+        print(f'###### \n\ncalled from exit_handler of main proces/main thread: ---> \n\n ######')
+        clean_children_proc()
 
     atexit.register(exit_handler)
+
+    def clean_children_proc():
+        print(f'##### clean IO proc ---> ##### ')
+        for _p in  mp.active_children():
+            print(f'#####  active child process name:{_p.name} #####')
+
+            if _p.name == 'asyncio_send_rcv_can_msg':
+                print(f'##### IO proc still alive, start to clean ip proc ---> #####')
+                _main_proc_event_conn.send(RSIOEvent.ReqIODisconnect)
+                last_event = _main_proc_event_conn.recv()
+                if last_event is RSIOEvent.DoneIODisconnect:
+                    logger.warning(f'##### recv RSIOEvent.DoneIODisconnect from io proc, we can finish main process. ##### ' )
+                else:
+                    raise ValueError(f' ### recv unexpected event from io proc:{last_event} ###')
+
+            time.sleep(2.)
+            while _p.is_alive():
+                print(f'proc:{_p.name} is still alive: {_p.is_alive()}, terminate it')
+                _p.terminate()
+                time.sleep(0.5)
 
     try:
         print(f'start _io_process.')
@@ -910,7 +989,6 @@ if __name__ == '__main__':
         # TODO: naive solution to wait for the io task running. maybe using connection?
         while not _io_proc.is_alive():
             time.sleep(0.5)
-
         mock_cpu_bound_policy(controller)
 
     # try:
@@ -935,7 +1013,7 @@ if __name__ == '__main__':
         # normal finish.
         print(f'finally: clean up in finally--->')
         time.sleep(0.5)
-        clean_io_process()
+        # clean_io_process()
 
     # async def run_cpu_bound_policy_in_process_pool(loop: asyncio.AbstractEventLoop, ctrl:BaseController):
     #     try:

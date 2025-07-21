@@ -1,8 +1,9 @@
-import atexit
 import sys
 import time
 import subprocess
 import multiprocessing as mp
+from multiprocessing.connection import Connection
+import concurrent
 from typing import (Any, List, Sequence, NamedTuple,
                     Set, ClassVar)
 # deque does not use lock, but its append/popleft is atomic operation.
@@ -132,6 +133,16 @@ class RSReportPeriod(Enum):
         else:
             return ReportPeriodCmd.P_45MS
 
+class RSIOEvent(Enum):
+    # io proc --> controller proc
+    SndRcvTaskReady = auto()
+    DoneIODisconnect = auto()
+
+    # controller proc --> io proc
+    ReqIODisconnect = auto()
+
+    # common
+    Error = auto()
 
 # bring up the can interface:
 def _bring_up_can_interface(if_name:str, bitrate: int):
@@ -208,7 +219,7 @@ class RobStrideIOProc:
     OPEN_CLIENTS: ClassVar[Set[Any] ] = set()
 
     # instance variable.
-    bus: SocketcanBus | None
+    _bus: SocketcanBus|None
 
     """
     send data to motor:
@@ -225,16 +236,13 @@ class RobStrideIOProc:
     _loop_send_buffer_q: asyncio.Queue[can.Message]
     _loop_rcv_buffer_q: asyncio.Queue[can.Message]
 
-    _ctrl_msg_q : mp.Queue # [ControlMsg]
+    _event_conn_with_controller_proc: Connection
+    _motor_ctrl_q : mp.Queue # [ControlMsg]
+    # TODO: if necessary, can merge these queues. Causing mp.Queue/PIPE using pickle underneath,
+    #  at the controller proc, can de-multiplex according to isinstance(MotorStateFrame): ...
     _motor_state_frame_q : mp.Queue # [MotorStateFrame]
     _motor_param_value_q : mp.Queue # [SingleParamValue]
 
-    # used by motor operation API, cache msg to be sent out.
-    # _app_msg_send_buffer_q: deque[can.Message]
-    # _app_msg_send_buffer_q: asyncio.Queue[can.Message]
-
-    # process/thread safe queue.
-    # _app_msg_send_buffer_q: mp.Queue  #[can.Message]
 
     # index by motor can id.
     # TODO: protect by lock?
@@ -247,10 +255,10 @@ class RobStrideIOProc:
         host_can_id: int,                    # 0xfe
         channel: str,                   #= "can0",
         baud_rate: RSBaudRate,            # = 1_000_000 default for RS
+        event_conn_with_controller_proc: Connection,
         ctrl_msg_q: mp.Queue, #[ControlMsg],
         motor_state_frame_q: mp.Queue, #[MotorStateFrame],
         motor_param_value_q: mp.Queue, #[SingleParamValue],
-        # init_target_pos: npt.NDArray[np.float32]|None,  # set to `init_pos` in config.json, or None for calibrate-zero.
         # lazy_connect: bool,                #= False,
         # rcv_timeout_ms: int,               #= 5,    #usb serial latency timer, default 5 ms.
     ):
@@ -272,26 +280,17 @@ class RobStrideIOProc:
             raise ValueError(f'input config motor_can_id include duplicated values: {motor_can_id=:}')
 
         self._motor_can_id:npt.NDArray[np.uint32] = np.asarray(ids, dtype=np.uint32)  # not changed after instantiating a FeiteClient instance.
-
         assert  np.all(0 < self._motor_can_id) and np.all( self._motor_can_id <= 0x7f )
 
         assert 0x7f < host_can_id <= 0xfe
         self.host_can_id = host_can_id
 
         self.channel = channel
-
         self.baud_rate = baud_rate
-        # self._init_target_pos = init_target_pos
+        self._bus = None
 
         # self.lazy_connect = lazy_connect
         # self.rcv_timeout_ms = rcv_timeout_ms
-        self.bus = None
-
-        # self._app_msg_send_buffer_q = deque(maxlen= 5*len(motor_can_id))
-        # self._app_msg_send_buffer_q = asyncio.Queue(maxsize= 5*len(motor_can_id))
-
-        # process/thread safe queue.
-        # self._app_msg_send_buffer_q = mp.Queue(maxsize= 5*len(motor_can_id))
 
         # index through motor can id.
         # TODO: adjust queue size according to control freq.
@@ -300,7 +299,8 @@ class RobStrideIOProc:
         # self._motor_param_table = OrderedDict((_id, dict()) for _id in motor_can_id)
 
         # exchange data between RSController process:
-        self._ctrl_msg_q = ctrl_msg_q
+        self._event_conn_with_controller_proc = event_conn_with_controller_proc
+        self._motor_ctrl_q = ctrl_msg_q
         self._motor_state_frame_q = motor_state_frame_q
         self._motor_param_value_q = motor_param_value_q
 
@@ -309,12 +309,16 @@ class RobStrideIOProc:
         self._loop_send_buffer_q: asyncio.Queue[can.Message] = asyncio.Queue(maxsize=10 * len(motor_can_id))
 
         self._connect()
+
+        # event_handler_thread = threading.Thread(target=, args=(), kwargs={},daemon=True)
+        # event_handler_thread.start()
+
         RobStrideIOProc.OPEN_CLIENTS.add(self)
 
 
     # NOTE: callback invoked in running_loop: do not implement as co-routine directly:
     def _on_read_available(self) -> None:
-        if msg := self.bus.recv(timeout=0):
+        if msg := self._bus.recv(timeout=0):
             # if buffer q is full, raise error directly.
             try:
                 # append/popleft op is atomic, no need to add lock.
@@ -328,7 +332,7 @@ class RobStrideIOProc:
         if not self._loop_send_buffer_q.empty():
             try:
                 msg = self._loop_send_buffer_q.get_nowait()
-                self.bus.send(msg, timeout=0)
+                self._bus.send(msg, timeout=0)
                 self._loop_send_buffer_q.task_done()
 
             except Exception as exc:
@@ -364,14 +368,18 @@ class RobStrideIOProc:
 
                     # p_table[param_value.index] = param_value
 
-                elif ext_id.comm_type == CommunicationType.MOTOR_FEEDBACK:
+                elif ext_id.comm_type == CommunicationType.MOTOR_FEEDBACK or \
+                        ext_id.comm_type == CommunicationType.MOTOR_PERIODIC_REPORT:
                     # TODO: add error handler.
                     motor_state_frame = RSProtocolParser.motor_state_feedback(data2=ext_id.data2, data=msg.data,
                                                                               ts=msg.timestamp)
                     await alogger.debug(f'{motor_state_frame}')
 
-                    # will raise immediately if full.
-                    self._motor_state_frame_q.put_nowait(motor_state_frame)
+                    # TODO: we only send periodic report to controller.
+                    #  for comm type(2) msg, only parse error, then drop.
+                    if ext_id.comm_type == CommunicationType.MOTOR_PERIODIC_REPORT:
+                        # will raise immediately if full.
+                        self._motor_state_frame_q.put_nowait(motor_state_frame)
 
                     # depending on the run_policy process to fetch obs, so no need to use
                     # `await` to yield our cpu core, and even yield, this will not accelerate
@@ -411,10 +419,10 @@ class RobStrideIOProc:
             # 1 ns.
             # await asyncio.sleep(1e-9)
 
-            if not self._ctrl_msg_q.empty():
+            if not self._motor_ctrl_q.empty():
                 try:
                     # will raise immediately if empty.
-                    ctrl_msg:ControlMsg = self._ctrl_msg_q.get_nowait()   #non-block.
+                    ctrl_msg:ControlMsg = self._motor_ctrl_q.get_nowait()   #non-block.
                     if ctrl_msg.time_to_send != 0:
                         # async def _ttt():
                         #     await asyncio.sleep(ctrl_msg.time_to_send)
@@ -430,6 +438,7 @@ class RobStrideIOProc:
                         # NOTE: must propagate to up layer task_group to cancel the remaining tasks in task_group.
                         await alogger.error(f'dump send msg task failed: {exc=:} {type(exc)=:}')
                         raise exc
+
 
     # async def _dump_send_msg(self):
     #     while True:
@@ -465,8 +474,36 @@ class RobStrideIOProc:
     #     finally:
     #         pass
 
+    # blocking function.
+    def _event_handler(self):
+        """
+        handle event from controller proc.
+        """
+        while True:
+            # blocking wait.
+            event = self._event_conn_with_controller_proc.recv()
+            if event is RSIOEvent.ReqIODisconnect:
+                logger.warning(f'***** IO proc recv RSIOEvent.Disconnect from controller proc. will raise Exception to '
+                               f'terminate SndRcvTask. ')
+                raise ConnectionAbortedError(f'***** IO proc recv RSIOEvent.Disconnect from controller proc, '
+                                             f' will end snd/rcv task and disconnect from can BUS: {self.channel} *****')
+                # TODO: let finally of snd/rcv task to disconnect.
+                # self.disconnect()
+                # return
+
+            else:
+                raise NotImplementedError(f'***** IO Proc only support RSIOEvent.Disconnect, but got: {event}. ***** ')
+
+            # TODO: necessary?
+            # time.sleep(.5)
+
+    async def _run_event_handler_in_thread_pool(self, loop: asyncio.AbstractEventLoop) -> None:
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            return await loop.run_in_executor(
+                pool, self._event_handler)
+
     def _connect(self):
-        assert self.bus is None, "Client is already started."
+        assert self._bus is None, "Client is already started."
 
         # NOTE: `sudo ip link set can0 up type can bitrate 1000000` first.
         # TODO: modify Ubuntu system file to bring up can0 automatically.
@@ -478,7 +515,7 @@ class RobStrideIOProc:
                 # 29-bit mask.
                 {'can_id': self.host_can_id, 'can_mask': 0xff, 'extended': True},
             ]
-            self.bus = SocketcanBus(channel=self.channel,
+            self._bus = SocketcanBus(channel=self.channel,
                                     can_filters=filters)
         except Exception as exc:
             alogger.error(f'create socket bus failed: channel: {self.channel} {exc=:} {type(exc)=:}')
@@ -487,25 +524,38 @@ class RobStrideIOProc:
     def disconnect(self):
         """Disconnects from the RobStride motors."""
 
-        logger.warning(f'disconnect from RS motors--->')
+        logger.warning(f' === start disconnect from RS motors === ')
 
-        if self.bus is None:
-            # already disconnected.
+        if self._bus is None:
+            logger.warning(f'io_proc.bus is None, already disconnected, do nothing.')
             return
 
         # Ensure motors are disabled at the end in IOTask,
         # better than put in RSController in case of IOTask exit due to any Exception.
         # using block-io to send, asyncio task is already shutdown.
-        motor_disable_msg: List[can.Message] = RSProtocolBuilder.motor_disable(motor_can_id=self._motor_can_id,
-                                                                               host_can_id=self.host_can_id)
-        for _m in motor_disable_msg:
+        logger.warning(f'=== send motor disable can msg to RS motors ===')
+        motor_disable: List[can.Message] = RSProtocolBuilder.motor_disable(motor_can_id=self._motor_can_id,
+                                                                           host_can_id=self.host_can_id)
+        for _m in motor_disable:
             # TODO: handle timeout exception.
-            logger.warning(f'--- finally disable motor can msg:{_m} ')
-            self.bus.send(_m,0.1)
+            logger.warning(f'=== finally motor disable can msg:{_m} === ')
+            self._bus.send(_m,0.1)
+            time.sleep(0.05)
 
         time.sleep(0.5)
-        self.bus.shutdown()
-        self.bus = None
+        logger.warning(f'=== send disable periodic report can msg to RS motors ===')
+        report_disable: List[can.Message] = RSProtocolBuilder.toggle_motor_periodic_report(motor_can_id=self._motor_can_id,
+                                                                                           host_can_id=self.host_can_id,
+                                                                                           enable=False)
+        for _m in report_disable:
+            # TODO: handle timeout exception.
+            logger.warning(f'=== finally disable periodic report can msg:{_m} === ')
+            self._bus.send(_m, 0.1)
+            time.sleep(0.05)
+
+        time.sleep(0.5)
+        self._bus.shutdown()
+        self._bus = None
 
         # self.motor_state_queue_dict.clear()
         # self.motor_param_queue_dict.clear()
@@ -515,6 +565,9 @@ class RobStrideIOProc:
 
         _shutdown_can_interface(self.channel)
         time.sleep(0.5)
+        logger.warning(f'=== finish disable RS motors, and shutdown the can bus. ===')
+        time.sleep(0.5)
+        self._event_conn_with_controller_proc.send(RSIOEvent.DoneIODisconnect)
 
     async def send_rcv_task(self):
         """Connects to the motors, and start send / rcv msgs loop.
@@ -529,7 +582,7 @@ class RobStrideIOProc:
         # self.set_torque_enabled(self._motor_ids, True)
 
         try:
-            file_dsc = self.bus.fileno()
+            file_dsc = self._bus.fileno()
         except NotImplementedError as exc:
             # Bus doesn't support fileno, we fall back to thread based reader
             await alogger.error(f'bus not support fileno, we can not use it for async read/write.')
@@ -543,14 +596,18 @@ class RobStrideIOProc:
 
         try:
             async with asyncio.TaskGroup() as tg:
-                task_rcv:asyncio.Task = tg.create_task(self._parse_rcv_msg())
-                task_snd:asyncio.Task = tg.create_task(self._dump_send_msg())
+                task_rcv: asyncio.Task = tg.create_task(self._parse_rcv_msg())
+                task_snd: asyncio.Task = tg.create_task(self._dump_send_msg())
+                task_event_hdl: asyncio.Task = tg.create_task(self._run_event_handler_in_thread_pool(loop))
+
+                await asyncio.sleep(1.0)
+                self._event_conn_with_controller_proc.send(RSIOEvent.SndRcvTaskReady)
 
         except Exception as exc:
             await alogger.error(f'run task group failed: {exc=:} {type(exc)=:} ' )
 
         finally:
-            await alogger.warning(f'---> exit RobStrideClient send_rcv_task...')
+            await alogger.warning(f'####   exit RobStrideClient send_rcv_task, will disconnect. #### ')
 
             # clear loop reader/writer callback.
             loop.remove_reader(file_dsc)
@@ -569,8 +626,10 @@ class RobStrideIOProc:
             # await aprint(f'snd buffer cleared.')
 
             # task_rcv.result()...
-            # await self.disconnect()
 
+            # disable motors and shutdown the can bus.
+            self.disconnect()
+            await asyncio.sleep(0.5)
 
 
     # RS manual suggest not modify torque_limit and other protection mode parameter.
@@ -600,25 +659,24 @@ class RobStrideIOProc:
             RobStrideIOProc.OPEN_CLIENTS.remove(self)
 
 
+# def _client_cleanup_handler():
+#     """Handles cleanup of open RS clients by forcibly closing active connections.
+#
+#     Iterates over all open Feite clients and checks if their port handlers are in use.
+#     If a port handler is active, logs a warning message and forces the client to close
+#     by setting the port handler's `is_using` attribute to False and disconnecting the client.
+#     """
+#
+#     logger.warning(f' called on _client_cleanup_handler, disconnect RS motors:')
+#
+#     open_clients: List[RobStrideIOProc] = list(RobStrideIOProc.OPEN_CLIENTS)  # type: ignore
+#     for open_client in open_clients:
+#         # TODO: how to finish the main_job asyncio task group?
+#         open_client.disconnect()
 
-
-def _client_cleanup_handler():
-    """Handles cleanup of open RS clients by forcibly closing active connections.
-
-    Iterates over all open Feite clients and checks if their port handlers are in use.
-    If a port handler is active, logs a warning message and forces the client to close
-    by setting the port handler's `is_using` attribute to False and disconnecting the client.
-    """
-
-    logger.warning(f' called on _client_cleanup_handler, disconnect RS motors:')
-
-    open_clients: List[RobStrideIOProc] = list(RobStrideIOProc.OPEN_CLIENTS)  # type: ignore
-    for open_client in open_clients:
-        # TODO: how to finish the main_job asyncio task group?
-        open_client.disconnect()
-
+# TODO: no use for a child process.
 # Register global cleanup function.
-atexit.register(_client_cleanup_handler)
+# atexit.register(_client_cleanup_handler)
 
 
 # if __name__ == '__main__':
