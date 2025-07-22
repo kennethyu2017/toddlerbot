@@ -37,7 +37,7 @@ class BaseController(ABC):
         pass
 
     @abstractmethod
-    def get_motor_state(self, timeout_sec: float) -> Dict[int, JointState]:
+    def get_motor_state(self, timeout_sec: float|None) -> Dict[int, JointState]:
         pass
 
     @abstractmethod

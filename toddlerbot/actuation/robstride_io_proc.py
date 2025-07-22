@@ -21,7 +21,7 @@ from enum import Enum,auto
 from toddlerbot.actuation.robstride_sdk import *
 from toddlerbot.actuation._module_logger import logger
 
-alogger = Logger.with_default_handlers(level=LogLevel.DEBUG)
+alogger = Logger.with_default_handlers(level=LogLevel.WARNING)
 
 # @dataclass
 # class MotorData:
@@ -502,6 +502,42 @@ class RobStrideIOProc:
             return await loop.run_in_executor(
                 pool, self._event_handler)
 
+
+    def _toggle_motor_helper(self, enable:bool):
+        """
+        low-level function.
+        invoked at connect/disconnect.
+        """
+        behaviour:str = 'enable' if enable else 'disable'
+        logger.warning(f'=== send motor {behaviour} can msg to RS motors ===')
+        if enable:
+            motor_running_start_stop: List[can.Message] = RSProtocolBuilder.motor_enable(motor_can_id=self._motor_can_id,
+                                                                               host_can_id=self.host_can_id)
+        else:
+            motor_running_start_stop: List[can.Message] = RSProtocolBuilder.motor_disable(motor_can_id=self._motor_can_id,
+                                                                                      host_can_id=self.host_can_id)
+
+        for _m in motor_running_start_stop:
+            # TODO: handle timeout exception.
+            logger.debug(f'=== motor {behaviour} can msg:{_m} === ')
+            self._bus.send(_m, 0.1)
+            time.sleep(0.05)
+
+        time.sleep(0.5)
+
+        logger.warning(f'=== send {behaviour} periodic report can msg to RS motors ===')
+        report_start_stop: List[can.Message] = RSProtocolBuilder.toggle_motor_periodic_report(
+            motor_can_id=self._motor_can_id,
+            host_can_id=self.host_can_id,
+            enable=enable)
+
+        for _m in report_start_stop:
+            # TODO: handle timeout exception.
+            logger.debug(f'=== {behaviour} periodic report can msg:{_m} === ')
+            self._bus.send(_m, 0.1)
+            time.sleep(0.05)
+
+
     def _connect(self):
         assert self._bus is None, "Client is already started."
 
@@ -521,6 +557,15 @@ class RobStrideIOProc:
             alogger.error(f'create socket bus failed: channel: {self.channel} {exc=:} {type(exc)=:}')
             raise exc
 
+        # Ensure motors running and periodic report are disabled at the beginning of IOTask,
+        # before RS Controller send/recv msgs, because maybe previous running did not disable motor running / periodic report
+        # successfully due to some exception exiting from programme.
+        # using block-io to send, asyncio task is still not started.
+        finally:
+            if self._bus is not None:
+                self._toggle_motor_helper(enable=False)
+
+
     def disconnect(self):
         """Disconnects from the RobStride motors."""
 
@@ -530,28 +575,10 @@ class RobStrideIOProc:
             logger.warning(f'io_proc.bus is None, already disconnected, do nothing.')
             return
 
-        # Ensure motors are disabled at the end in IOTask,
+        # Ensure motors running and periodic report are disabled at the end in IOTask,
         # better than put in RSController in case of IOTask exit due to any Exception.
         # using block-io to send, asyncio task is already shutdown.
-        logger.warning(f'=== send motor disable can msg to RS motors ===')
-        motor_disable: List[can.Message] = RSProtocolBuilder.motor_disable(motor_can_id=self._motor_can_id,
-                                                                           host_can_id=self.host_can_id)
-        for _m in motor_disable:
-            # TODO: handle timeout exception.
-            logger.warning(f'=== finally motor disable can msg:{_m} === ')
-            self._bus.send(_m,0.1)
-            time.sleep(0.05)
-
-        time.sleep(0.5)
-        logger.warning(f'=== send disable periodic report can msg to RS motors ===')
-        report_disable: List[can.Message] = RSProtocolBuilder.toggle_motor_periodic_report(motor_can_id=self._motor_can_id,
-                                                                                           host_can_id=self.host_can_id,
-                                                                                           enable=False)
-        for _m in report_disable:
-            # TODO: handle timeout exception.
-            logger.warning(f'=== finally disable periodic report can msg:{_m} === ')
-            self._bus.send(_m, 0.1)
-            time.sleep(0.05)
+        self._toggle_motor_helper(enable=False)
 
         time.sleep(0.5)
         self._bus.shutdown()
