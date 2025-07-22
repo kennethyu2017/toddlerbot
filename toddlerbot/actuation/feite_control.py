@@ -427,10 +427,10 @@ class FeiteController(BaseController):
         for _client in open_clients:
             if ids is not None:
                 # get the intersecting list between ids and _motor_ids
-                set_ids = set(_client._motor_can_id) & set(ids)
+                set_ids = set(_client._motor_can_id_ordering) & set(ids)
                 logger.info(f"set motor id: {set_ids} toque {enabled=:}")
             else:
-                set_ids = _client._motor_can_id
+                set_ids = _client._motor_can_id_ordering
                 logger.info(f"set all the motors in client with ids: {set_ids} toque {enabled=:}")
 
             _client.set_torque_enabled(motor_ids=set_ids, enabled=enabled, retries=2)

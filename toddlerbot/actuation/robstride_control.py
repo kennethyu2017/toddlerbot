@@ -4,7 +4,7 @@ experimented for robstride RS02 actuator.  by kenneth yu.
 
 import time
 from typing import (Dict, NamedTuple, Sequence,
-                    Tuple, Callable, List)
+                    Tuple, Callable, List, OrderedDict)
 import numpy as np
 import numpy.typing as npt
 import can
@@ -12,7 +12,7 @@ import can
 import multiprocessing as mp
 from multiprocessing.connection import Connection
 from queue import Full
-import bisect
+# import bisect
 from functools import partial
 import logging
 
@@ -44,9 +44,9 @@ class RobStrideConfig(NamedTuple):
     # TODO: move into config.json.
     # default_torque_limit: npt.NDArray[np.uint16] |None = None
 
-    default_accel_PP_mode: npt.NDArray[np.float32] |None = None   # [1.6 * np.pi]
-    default_vel_PP_mode: npt.NDArray[np.float32] |None = None      # [1.4 * np.pi]
-    init_target_pos: npt.NDArray[np.float32] |None = None    # None = None
+    default_accel_PP_mode: Sequence[float] |None = None   # [1.6 * np.pi]
+    default_vel_PP_mode: Sequence[float] |None = None      # [1.4 * np.pi]
+    init_target_pos: Sequence[float] |None = None    # None = None
 
     # interp_method: str = "cubic"
 
@@ -61,6 +61,9 @@ class RobStrideController(BaseController):
     # recv from io_proc
     _motor_state_frame_q: mp.Queue #[MotorStateFrame]    # for periodic motor state report.
     _motor_param_value_q: mp.Queue #[SingleParamValue]   # for reading param tabel value.
+
+    # index in self._motor_can_id tuple.
+    _can_id_to_ordering_index: OrderedDict[int, int]
 
     def __init__(self, *,
                  config: RobStrideConfig,
@@ -92,13 +95,18 @@ class RobStrideController(BaseController):
         # NOTE: the index in self._motor_ids is used for read data array index, like pos,vel,etc.
         # we use immutable tuple instead of set/list.
         # and the element order is important, so we use sorted tuple to keep motor ids.
-        self._motor_can_id = tuple( sorted(set(config.motor_can_id)) )
+        self._motor_can_id_ordering = tuple(sorted(set(config.motor_can_id)))
 
-        if len(self._motor_can_id) != len(config.motor_can_id):
+        if len(self._motor_can_id_ordering) != len(config.motor_can_id):
             raise ValueError(f'input config motor_can_id include duplicated values: {config.motor_can_id=:}')
 
-        assert np.all(0 < np.asarray(self._motor_can_id)) and np.all(np.asarray(self._motor_can_id) <= 0x7f)
-        self._set_of_motor_can_id = set(self._motor_can_id)
+        assert np.all(0 < np.asarray(self._motor_can_id_ordering)) and np.all(np.asarray(self._motor_can_id_ordering) <= 0x7f)
+
+        # self._can_id_to_ordering_index:OrderedDict[int,int] = OrderedDict( enumerate(self._motor_can_id_ordering) )
+        self._can_id_to_ordering_index: OrderedDict[int, int] = OrderedDict(zip(self._motor_can_id_ordering,
+                                                                                range(len(self._motor_can_id_ordering))))
+
+        self._set_of_motor_can_id = set(self._motor_can_id_ordering)
 
         assert 0x7f < config.host_can_id <= 0xfe
         self._host_can_id = config.host_can_id
@@ -124,7 +132,7 @@ class RobStrideController(BaseController):
         # TODO: during calibrate_zero , setting init_pos to pi ??
         # self._normalized_init_pos: npt.NDArray[np.float32] | None = None
         # init to zero:
-        self._normalized_init_pos : npt.NDArray[np.float32] = np.zeros(len(self._motor_can_id), dtype=np.float32)
+        self._normalized_init_pos : npt.NDArray[np.float32] = np.zeros(len(self._motor_can_id_ordering), dtype=np.float32)
 
         # # NOTE: first set goal pos to init_pos in config.json, then normalize init pos read from motor.
         # # if config.init_pos is None, that is for calibrate_zero.
@@ -192,7 +200,7 @@ class RobStrideController(BaseController):
         logger.info(f'=== checking motor voltage ===')
         self.read_voltage_tx()
         v_in = self.get_voltage(get_timeout_sec)
-        assert len(v_in)==len(self._motor_can_id)
+        assert len(v_in)==len(self._motor_can_id_ordering)
         logger.info(f"read Voltage of motors: (V): {v_in}")
         if np.any(np.asarray(v_in,dtype=np.float32) < 46.) or np.any(np.asarray(v_in,dtype=np.float32) > 50.):
             raise ValueError(
@@ -221,8 +229,13 @@ class RobStrideController(BaseController):
 
         # TODO: we only use PP mode, to set accel/vel for PP mode.
         # set acc, vel, adjust present pos as init_pos from config.
-        # self.set_target_accel_nowait(self.config.default_accel_PP_mode)
-        # self.set_target_vel_nowait(self.config.default_vel_PP_mode)
+        if self.config.default_accel_PP_mode is not None:
+            self.set_target_accel_nowait(np.asarray(self.config.default_accel_PP_mode, dtype=np.float32))
+            time.sleep(0.1)
+
+        if self.config.default_vel_PP_mode is not None:
+            self.set_target_vel_nowait(np.asarray(self.config.default_vel_PP_mode, dtype=np.float32))
+            time.sleep(0.1)
 
         logger.info(f'=== set mech pos zero scope to -pi ~ pi ===')
         # set mech zero scope to -pi~pi.
@@ -240,7 +253,7 @@ class RobStrideController(BaseController):
         #     logger.warning(f'\n--- flush motor state: {_ste} ---')
         #     time.sleep(0.2)
 
-        self._enable_motor_nowait(self._motor_can_id)
+        self._enable_motor_nowait(self._motor_can_id_ordering)
         logger.warning(f'=== read curr mech pos and wait for the param feedback to guarantee motor enabled.')
         # wait for RS motor ready
         time.sleep(3.)
@@ -267,17 +280,19 @@ class RobStrideController(BaseController):
         self._set_and_check_motor_report_period(self.config.motor_report_period,
                                                 get_timeout_sec=get_timeout_sec)
 
+        time.sleep(2.)
+
         # self.set_target_pos_nowait(np.asarray([0.87], dtype=np.float32))
         # time.sleep(2.)
         # self.set_target_pos_nowait(np.asarray([0.99], dtype=np.float32))
         # time.sleep(2.)
 
-        logger.info(f'=== enable the motor state periodic report  ===')
+        # logger.info(f'=== enable the motor state periodic report  ===')
         # TODO: temply debug.
-        self.toggle_periodic_report_nowait(enable=True)
-        time.sleep(1.0)
-        logger.info(f'=== disable the motor state periodic report  ===')
-        self.toggle_periodic_report_nowait(enable=False)
+        # self.toggle_periodic_report_nowait(enable=True)
+        # time.sleep(1.0)
+        # logger.info(f'=== disable the motor state periodic report  ===')
+        # self.toggle_periodic_report_nowait(enable=False)
 
 
     def _set_and_check_zero_scope(self, in_neg_pi_pos_pi:bool, get_timeout_sec:float):
@@ -346,7 +361,7 @@ class RobStrideController(BaseController):
 
         # NOTE: first set goal pos to init_pos in config.json, then normalize init pos read from motor.
         if self.config.init_target_pos is not None:
-            self.set_target_pos_nowait(self.config.init_target_pos)
+            self.set_target_pos_nowait(np.asarray(self.config.init_target_pos,dtype=np.float32))
 
             self.read_mech_pos_tx()
             curr_pos = self.get_mech_pos(timeout_sec=0.5)
@@ -363,7 +378,7 @@ class RobStrideController(BaseController):
 
         else:
             # for calibrate_zero.
-            self._normalized_init_pos = np.zeros(len(self._motor_can_id), dtype=np.float32)
+            self._normalized_init_pos = np.zeros(len(self._motor_can_id_ordering), dtype=np.float32)
 
         # -pi ~ pi
         assert np.all(abs(self._normalized_init_pos) <= np.pi)
@@ -410,7 +425,7 @@ class RobStrideController(BaseController):
 
     # NOTE: will offset using self.normalized_init_pos
     # @profile()
-    def get_motor_state(self, timeout_sec:float) -> Dict[int, JointState]:
+    def get_motor_state(self, timeout_sec:float|None) -> Dict[int, JointState]:
         """Retrieves the current state of the motors, including position, velocity, and current.
 
         Args:
@@ -473,9 +488,9 @@ class RobStrideController(BaseController):
         index = RS_param_table_spec[name].index
 
         # build read msg.
-        snd_msg:List[can.Message] = RSProtocolBuilder.read_single_param(motor_can_id=self._motor_can_id,
-                                            host_can_id=self._host_can_id,
-                                            index=index)
+        snd_msg:List[can.Message] = RSProtocolBuilder.read_single_param(motor_can_id=self._motor_can_id_ordering,
+                                                                        host_can_id=self._host_can_id,
+                                                                        index=index)
         self._tx_msg(snd_msg)
 
 
@@ -487,7 +502,7 @@ class RobStrideController(BaseController):
         p_spec:ParamSpec = RS_param_table_spec[name]
 
         # build read msg.
-        snd_msg: List[can.Message] = RSProtocolBuilder.write_single_param(motor_can_id=self._motor_can_id,
+        snd_msg: List[can.Message] = RSProtocolBuilder.write_single_param(motor_can_id=self._motor_can_id_ordering,
                                                                           host_can_id=self._host_can_id,
                                                                           index=p_spec.index,
                                                                           param_value=value,
@@ -497,10 +512,13 @@ class RobStrideController(BaseController):
 
 
     # blocking get.
-    def _get_motor_state_helper(self, timeout_sec:float) \
+    def _get_motor_state_helper(self, timeout_sec:float|None) \
             ->Dict[int,JointState]:  #  List[SingleParamValue]:
         """
          raise exc if the corresponding param not received.
+         Args:
+             timeout_sec: None -- wait forever.
+
         """
         # TODO: guarantee the order.
 
@@ -508,15 +526,22 @@ class RobStrideController(BaseController):
         state_dict: Dict[int, JointState] = {}
         # rcv_motor_id:set[int] = set()
 
-        deadline:float = time.perf_counter() + timeout_sec
+        deadline: float = -1.
+
+        if timeout_sec is not None:
+            deadline:float = time.perf_counter() + timeout_sec
 
         try:
             # TODO: naive solution.
             while len(state_dict) < len(self._set_of_motor_can_id):
                 # check timeout:
-                q_get_timeout: float = deadline - time.perf_counter()
-                if q_get_timeout < 0:
-                    raise IOError(f'get motor state frame timeout, timeout sec:{timeout_sec}')
+                if timeout_sec is not None:
+                    q_get_timeout: float|None = deadline - time.perf_counter()
+                    if q_get_timeout < 0:
+                        raise IOError(f'get motor state frame timeout, timeout sec:{timeout_sec}')
+                else:
+                    # block waiting forever.
+                    q_get_timeout = None
 
                 # mp.Queue will raise Empty if timeout.
                 state:MotorStateFrame = self._motor_state_frame_q.get(block=True,timeout=q_get_timeout)
@@ -532,10 +557,10 @@ class RobStrideController(BaseController):
                 assert state.can_id not in state_dict
 
                 # relative to init pos.
-                relative_pos = state.pos - self._normalized_init_pos
+                ordering_idx = self._can_id_to_ordering_index[state.can_id]
+                relative_pos = state.pos - self._normalized_init_pos[ordering_idx]
 
                 state_dict[state.can_id] = JointState(time=state.ts,
-                                                      error: use dict to mapping idx and can_id , and use
                                                       pos=relative_pos,
                                                       vel=state.vel,
                                                       tor=state.torque,
@@ -568,7 +593,7 @@ class RobStrideController(BaseController):
         else:
             raise TypeError
 
-        value_arr = np.empty(shape=len(self._motor_can_id), dtype=dtype)
+        value_arr = np.empty(shape=len(self._motor_can_id_ordering), dtype=dtype)
         rcv_motor_id:set[int] = set()
 
         deadline:float = time.perf_counter() + timeout_sec
@@ -604,15 +629,9 @@ class RobStrideController(BaseController):
                 # TODO: use heapq to optimize index.
                 # insert_idx: int = self._motor_can_id.index(value.can_id)
                 # NOTE: self._motor_can_id must be sorted.
-
-                error: use
-                dict
-                to
-                mapping
-                idx and can_id, and use
-
-                insert_idx: int = bisect.bisect_left(self._motor_can_id,x=value.can_id)
-                value_arr[insert_idx] = value.value
+                # insert_idx: int = bisect.bisect_left(self._motor_can_id_ordering, x=value.can_id)
+                ordering_idx = self._can_id_to_ordering_index[value.can_id]
+                value_arr[ordering_idx] = value.value
 
                 # if len(rcv_motor_id) == len(self._set_of_motor_can_id) \
                 #     and rcv_motor_id == self._set_of_motor_can_id:
@@ -703,7 +722,7 @@ class RobStrideController(BaseController):
                             RunModeCmd.SPEED, RunModeCmd.CURRENT,
                             RunModeCmd.CSP_POSITION}
 
-        self._write_param_tx_helper('run_mode', [mode_cmd] * len(self._motor_can_id))
+        self._write_param_tx_helper('run_mode', [mode_cmd] * len(self._motor_can_id_ordering))
 
     # TODO: return timestamp.
     def get_run_mode(self, timeout_sec: float) -> npt.NDArray[np.float32|np.int32]:
@@ -722,7 +741,7 @@ class RobStrideController(BaseController):
         self._read_param_tx_helper('loc_kp')
 
     def set_mech_pos_zero_nowait(self)->None:
-        snd_msg:List[can.Message] = RSProtocolBuilder.set_mech_pos_zero(motor_can_id=self._motor_can_id,
+        snd_msg:List[can.Message] = RSProtocolBuilder.set_mech_pos_zero(motor_can_id=self._motor_can_id_ordering,
                                                                         host_can_id=self._host_can_id)
         self._tx_msg(snd_msg)
 
@@ -730,7 +749,7 @@ class RobStrideController(BaseController):
         # cmd: 0~2pi:0,  -pi~pi: 1
         # cmd :int = 1 if in_neg_pi_pos_pi else 0
         assert cmd in {0,1}
-        self._write_param_tx_helper(name='zero_sta', value=[cmd] * len(self._motor_can_id))
+        self._write_param_tx_helper(name='zero_sta', value=[cmd] * len(self._motor_can_id_ordering))
 
     def read_zero_scope_tx(self)->None:
         self._read_param_tx_helper('zero_sta')
@@ -738,12 +757,15 @@ class RobStrideController(BaseController):
     def get_zero_scope(self, timeout_sec:float):
         return self._get_param_value_helper('zero_sta', timeout_sec)
 
-
     def set_target_accel_nowait(self, accel: npt.NDArray[np.float32])->None:
-        raise NotImplemented
+        min_max =RS_param_table_spec['acc_set'].min_max
+        assert np.all(min_max[0] < accel) and np.all( accel <= min_max[1])
+        self._write_param_tx_helper(name='acc_set', value=accel)
 
     def set_target_vel_nowait(self, vel: npt.NDArray[np.float32])->None:
-        raise NotImplemented
+        min_max =RS_param_table_spec['vel_max'].min_max
+        assert np.all(min_max[0] < vel) and np.all( vel <= min_max[1])
+        self._write_param_tx_helper(name='vel_max', value=vel)
 
     def set_target_pos_nowait(self, pos: npt.NDArray[np.float32])->None:
         """Writes the given desired positions.
@@ -753,7 +775,7 @@ class RobStrideController(BaseController):
              to represent rotor direction.
              element order in `pos` must be same as self.motor_can_id.
         """
-        assert len(self._motor_can_id) == len(pos)
+        assert len(self._motor_can_id_ordering) == len(pos)
         # TODO: only allow -2Pi ~ 2Pi.
         if not np.all(np.abs(pos) < 2 * np.pi):
             raise ValueError(f'not allowed goal pos: {pos}, which should be in [-2pi, 2pi] ')
@@ -767,8 +789,8 @@ class RobStrideController(BaseController):
         return self._get_param_value_helper('mechPos', timeout_sec)
 
     def toggle_periodic_report_nowait(self, enable:bool):
-        snd_msg: List[can.Message] = RSProtocolBuilder.toggle_motor_periodic_report(motor_can_id=self._motor_can_id,
-                                                                                    host_can_id=self._host_can_id,enable=enable )
+        snd_msg: List[can.Message] = RSProtocolBuilder.toggle_motor_periodic_report(motor_can_id=self._motor_can_id_ordering,
+                                                                                    host_can_id=self._host_can_id, enable=enable)
         self._tx_msg(snd_msg)
 
     def set_motor_report_period_nowait(self, period_cmd: int)->None:
@@ -779,7 +801,7 @@ class RobStrideController(BaseController):
                              ReportPeriodCmd.P_30MS, ReportPeriodCmd.P_35MS,
                              ReportPeriodCmd.P_40MS, ReportPeriodCmd.P_45MS,}
         # cmd = period_ms // 5 - 1  # 0 is 10ms, then add 1 for every 5ms.
-        self._write_param_tx_helper('EPScan_time',[period_cmd] * len(self._motor_can_id) )
+        self._write_param_tx_helper('EPScan_time', [period_cmd] * len(self._motor_can_id_ordering))
 
     def read_motor_report_period_tx(self)->None:
         self._read_param_tx_helper('EPScan_time')
@@ -801,7 +823,7 @@ class RobStrideController(BaseController):
         if ids is not None:
             disable_id = tuple(self._set_of_motor_can_id & set(ids))
         else:
-            disable_id = self._motor_can_id
+            disable_id = self._motor_can_id_ordering
 
         logger.info(f"disable motor id: {disable_id}")
         self._disable_motor_nowait(disable_id)
@@ -810,7 +832,7 @@ class RobStrideController(BaseController):
         if ids is not None:
             enable_id = tuple(self._set_of_motor_can_id & set(ids))
         else:
-            enable_id = self._motor_can_id
+            enable_id = self._motor_can_id_ordering
 
         logger.info(f"enable motor id: {enable_id}")
         self._enable_motor_nowait(enable_id)
