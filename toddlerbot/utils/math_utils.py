@@ -1,9 +1,9 @@
 import math
 from dataclasses import is_dataclass
 from typing import Any, Dict, List, Optional, Tuple
+import bisect
 
 from scipy.signal import chirp
-
 from .array_utils import (array_lib as np, ArrayType)
 
 
@@ -614,7 +614,8 @@ def interpolate_action(
         return action_arr[-1]
 
     # Use binary search to find the segment containing current_time
-    idx = binary_search(time_arr, t)
+    # idx = binary_search(time_arr, t)
+    idx = bisect.bisect_left(time_arr, x=t)
     idx = max(0, min(idx, len(time_arr) - 2))  # Ensure idx is within valid range
 
     p_start = action_arr[idx]

@@ -6,11 +6,19 @@ import asyncio
 import atexit
 import logging
 import time
-from typing import Sequence
+from typing import Sequence, List
+from collections import OrderedDict
 import argparse
+import time as timelib
+from dataclasses import dataclass
+from copy import deepcopy
 import numpy as np
+import numpy.typing as npt
+from pathlib import Path
+import pickle
 import multiprocessing as mp
 from multiprocessing.connection import Connection
+from tqdm import tqdm
 
 from toddlerbot.actuation._module_logger import logger
 from toddlerbot.utils.config_logging import config_logging
@@ -20,7 +28,12 @@ from toddlerbot.actuation.robstride_io_proc import (RobStrideIOProc, RSIOEvent,
 from toddlerbot.actuation.robstride_control import ( RobStrideConfig,
                                                      RobStrideController )
 
-from toddlerbot.actuation.robstride_sdk.rs_bandwidth_test import MotorBandwidthTester, Action
+# from toddlerbot.actuation.robstride_sdk.rs_bandwidth_test import MotorBandwidthTester, Action
+from toddlerbot.policies import (Action, StepRecord,RUN_POLICY_LOG_FOLDER_FMT,
+                                 RUN_STEP_RECORD_PICKLE_FILE,RUN_EPISODE_MOTOR_KP_PICKLE_FILE)
+from toddlerbot.policies.run_policy import _plot_run_log
+from toddlerbot.actuation.robstride_sdk.mp_rs_sysID import MpSysIDPolicy,MockRobot, MotorKpSetter
+from toddlerbot.sim import Obs
 
 MOTOR_CAN_ID = 0x7f
 HOST_CAN_ID =0xfe
@@ -57,30 +70,196 @@ def _run_io_bound_task_in_spawned_process(*, motor_can_id: Sequence[int],  # ids
                             motor_param_value_q=motor_param_value_q)
     return asyncio.run(_proc.send_rcv_task())
 
-def _cpu_bound_policy(ctrl: RobStrideController):
-    bd_tester = MotorBandwidthTester(sample_rate=25)  # 40ms motor report interval.
+# def _cpu_bound_motor_bd_width_policy(ctrl: RobStrideController):
+#     bd_tester = MotorBandwidthTester(sample_rate=25)  # 40ms motor report interval.
+#
+#     print(f'---> start initialize motors')
+#     ctrl.initialize_motors()
+#     print(f'finish initialize motors <---')
+#
+#     bd_tester.pre_process()
+#
+#     # TODO: use barrier to sync?
+#     ctrl.toggle_periodic_report_nowait(enable=True)
+#
+#     action = Action(value=None,last=False)
+#     # use `last` to send last obs of last action to bd_tester.
+#     while not action.last:
+#         # block waiting for periodic motor report.
+#         obs:JointState = ctrl.get_motor_state(None)[MOTOR_CAN_ID]
+#         logger.debug(f' === get joint state: {obs}  ===')
+#         action = bd_tester.step(obs)
+#
+#         if action.value is not None:
+#             ctrl.set_pos([action.value])
+#
+#     bd_tester.post_process()
+
+
+def _save_run_log(step_record_list: List[StepRecord], pickle_file: Path):
+    # log_dir = exp_folder / 'step_record'
+    if not pickle_file.parent.exists():
+        pickle_file.parent.mkdir(parents=True)
+
+    # with open(log_dir / 'step_record_list.pkl', 'wb') as _f:
+    with open(pickle_file, 'wb') as _f:
+        pickle.dump(step_record_list, _f)
+
+
+def _save_policy_log(*, policy: MpSysIDPolicy,
+                     log_dir: Path,
+                     step_record_list: List[StepRecord]):
+    # log_dir = exp_folder / policy.name
+    if not log_dir.exists():
+        log_dir.mkdir()
+
+    # with open(log_dir/'episode_motor_kp.pkl', "wb") as _f:
+    with open(log_dir / RUN_EPISODE_MOTOR_KP_PICKLE_FILE,  # .format(policy_name=policy.name),
+              "wb") as _f:
+        pickle.dump(policy.episode_info, _f)
+
+
+def _cpu_bound_sysID_policy(rs_ctrl: RobStrideController):
+
+    sysID_policy = MpSysIDPolicy(init_motor_pos=np.asarray([0.],dtype=np.float32),
+                                 jnt_cfg_limit=(-np.pi/2, np.pi/2),
+                                 control_dt_sec=0.04)  # 40ms motor report interval.
 
     print(f'---> start initialize motors')
-    ctrl.initialize_motors()
+    rs_ctrl.initialize_motors()
     print(f'finish initialize motors <---')
 
-    bd_tester.pre_process()
+    step_record_list: List[StepRecord] = []
+    _step_count: int = 0
+    # update tqdm every 1 sec.
+    p_bar_steps: int = max(1, int(1 / sysID_policy.control_dt_sec))
 
-    # TODO: use barrier to sync?
-    ctrl.toggle_periodic_report_nowait(enable=True)
+    # for sysID only.
+    # _cur_ep_idx :int = -1
+    motor_kp_setter = MotorKpSetter()
 
-    action = Action(value=None,last=False)
-    # use `last` to send last obs of last action to bd_tester.
-    while not action.last:
-        # block waiting for periodic motor report.
-        obs:JointState = ctrl.get_motor_state(None)[MOTOR_CAN_ID]
-        logger.debug(f' === get joint state: {obs}  ===')
-        action = bd_tester.step(obs)
+    # TODO: for tqdm,  if total is float('inf'), Infinite iterations,
+    #  behave same as `total-unknown`: can not show progress bar.
+    # not use tqdm for n_steps_total is inf?
+    sysID_policy.pre_process()
 
-        if action.value is not None:
-            ctrl.set_pos([action.value])
+    with  (tqdm(total=sysID_policy.n_steps_total, desc="Running the policy",
+               colour='CYAN', unit='step', unit_scale=True) as p_bar):
 
-    bd_tester.post_process()
+        run_start_time = timelib.time()
+        run_start_perf_cnt = timelib.perf_counter()
+
+        try:
+            # TODO: use barrier to sync?
+            rs_ctrl.toggle_periodic_report_nowait(enable=True)
+            # action = Action(value=None, last=False)
+            # while not action.last:
+            while _step_count < sysID_policy.n_steps_total:
+                # TODO: temply try.
+                _loop_start_ns: int = timelib.perf_counter_ns()
+
+                _record = StepRecord()
+                _record.time_pnt.step_start = timelib.time()
+
+                # Get the latest state from the queue
+                jnt_state: JointState = rs_ctrl.get_motor_state(None)[MOTOR_CAN_ID]
+                logger.debug(f' === get joint state: {jnt_state}  ===')
+
+                # change to epoch time.
+                jnt_state.time -= run_start_time
+
+                _record.time_pnt.recv_obs = timelib.perf_counter() - run_start_perf_cnt
+
+                # for sysID policy to change motor kp if kp changed.
+                motor_kp_setter.set_kp(policy=sysID_policy,
+                                       ctrl=rs_ctrl,
+                                       step_count=_step_count,
+                                       obs_time=jnt_state.time)
+
+                control_inputs, motor_target_arr = sysID_policy.step(jnt_state)
+                _record.time_pnt.inference = timelib.perf_counter() - run_start_perf_cnt
+
+                if _step_count % 50 == 1:
+                    # NOTE: set/get value should be normalized by feite_controller.init_pos
+                    logger.info(f'prev act:{step_record_list[-1].motor_act}, {jnt_state.pos=:}, {motor_target_arr=:}')
+
+                # env.set_motor_target(motor_angle_dict)
+                rs_ctrl.set_pos(motor_target_arr)
+                _record.time_pnt.set_action = timelib.perf_counter() - run_start_perf_cnt
+                _record.time_pnt.sim_step = timelib.perf_counter() - run_start_perf_cnt
+
+                _record.obs = Obs(time=jnt_state.time,
+                                  motor_pos= np.asarray([jnt_state.pos], dtype=np.float32),
+                                  motor_vel= np.asarray([jnt_state.vel], dtype=np.float32),
+                                  motor_tor= np.asarray([jnt_state.tor], dtype=np.float32))
+
+                _record.ctrl_input = deepcopy(control_inputs)
+                _record.motor_act = deepcopy(motor_target_arr)
+
+                _step_count += 1
+
+                # update tqdm every 1 sec (time measured in policy.control_dt).
+                if _step_count % p_bar_steps == 0:
+                    p_bar.update(p_bar_steps)
+
+                _record.time_pnt.step_end = timelib.perf_counter() - run_start_perf_cnt
+                step_record_list.append(_record)
+
+        except KeyboardInterrupt:
+            # only catch Keyboard Interrupt as normal exit from while loop,
+            # and save running logs in and after `finally` block.
+            logger.warning("KeyboardInterrupt received. exit while loop, and save running logs.")
+
+        except Exception as err:
+            # other exceptions, like IOError, re-raise the exception to outer `try.. ex...fi..`.
+            # without saving running logs.
+            # NOTE: the `finally` block will be executed before re-raise to outer `try` block.
+            logger.error(f'Unexpected error occurred: {err=:}, {type(err)=:}. re-raise to outer handler.')
+            raise
+
+        finally:
+            # p_bar.close()
+            logger.info(f'exit from run while loop, final step_count: {_step_count},'
+                        f' step record count: {len(step_record_list)}')
+
+            # TODO: save recording file every n steps n seconds. ... not at the end of while loop.....
+            # exp_name = f"{robot.name}_{policy.name}_{env.env_name}"
+            # exp_folder = Path('run_policy_log') / f'{exp_name}_{cur_time}'
+            # 'run_policy_log/{robot_name}_{policy_name}_{env_name}_{cur_time}'
+            cur_time = timelib.strftime("%Y%m%d_%H%M%S")
+            exp_folder = Path(RUN_POLICY_LOG_FOLDER_FMT.format(robot_name='RS02',
+                                                               policy_name='MpSysID',
+                                                               env_name='sysID',
+                                                               cur_time=cur_time))
+            if not exp_folder.exists():
+                exp_folder.mkdir(parents=True, exist_ok=True)
+
+            # Using context mgr to close env, not use close() standalone.
+            # close() also set torque off for all connected motors.
+            # env.close()
+
+            # ----  at end of `finally` execution, if there is un-handled Exp, will raise to outer `try` block; else,
+            # execution continues the following code.
+
+    # ---- save logs only when: 1. finish while loop; 2. KeyboardInterrupt. ----
+
+    # TODO: write log data every n steps..n seconds.. not at the end of while loop.....
+    _save_run_log(step_record_list, exp_folder / RUN_STEP_RECORD_PICKLE_FILE)
+    _save_policy_log(policy=sysID_policy,
+                     log_dir=exp_folder,  # / policy.name,
+                     step_record_list=step_record_list)
+
+    logger.info("--- Plot policy run logg --->")
+    mock_rbt = MockRobot('RS_sysID')
+
+    _plot_run_log(
+        mock_rbt,
+        sysID_policy,
+        step_record_list,
+        exp_folder / 'plot'
+    )
+
+    sysID_policy.post_process()
 
 
 def _main(args: argparse.Namespace):
@@ -140,7 +319,7 @@ def _main(args: argparse.Namespace):
                               host_can_id=HOST_CAN_ID,
                               motor_can_id=[MOTOR_CAN_ID],
                               pos_kp=[30],
-                              default_accel_PP_mode=[90],
+                              default_accel_PP_mode=[190],
                               default_vel_PP_mode=[40],
                               init_target_pos=np.asarray([0.], dtype=np.float32))
 
@@ -176,7 +355,8 @@ def _main(args: argparse.Namespace):
             time.sleep(0.5)
 
         logger.warning(f'start cpu bound process.')
-        _cpu_bound_policy(controller)
+        # _cpu_bound_policy(controller)
+        _cpu_bound_sysID_policy(controller)
 
     except Exception as error:
         logger.error(f'--- exception in main process: {error=:} {type(error)=:}')

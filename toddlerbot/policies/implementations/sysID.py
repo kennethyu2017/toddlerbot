@@ -658,7 +658,7 @@ def get_ep_trajectory_stat(robot:Robot, policy:SysIDPolicy)\
                               axis=0, dtype=np.float32)
 
     # rpm
-    target_rpm = target_vel * 60/(2*3.14)
+    target_rpm = target_vel * 60/(2*np.pi)
 
     # calc acc
     vel_diff = np.diff(target_vel, n=1, axis=0)

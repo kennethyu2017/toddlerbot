@@ -122,7 +122,7 @@ RS_param_table_spec : Dict[str, ParamSpec] = {
                          dtype=float,
                          signed=True,
                          # TODO> max acc of RS?
-                         min_max=(0., 100.)),
+                         min_max=(0., 200.)),
 
     'EPScan_time': ParamSpec(index=0x7026,
                              n_bytes=2,
