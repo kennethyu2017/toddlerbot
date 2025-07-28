@@ -36,11 +36,6 @@ class StepRecord:
     time_seq: List[float] = field(default_factory=list)
     pos_seq: List[float] = field(default_factory=list)
 
-class Action(NamedTuple):
-    value: float|None = None
-    last: bool = False
-
-
 class MotorBandwidthTester:
     def __init__(self, *,
                  sample_rate: int,

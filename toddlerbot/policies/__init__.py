@@ -10,6 +10,10 @@ RUN_STEP_RECORD_PICKLE_FILE = 'step_record/step_record_list.pkl'
 RUN_EPISODE_MOTOR_KP_PICKLE_FILE = 'episode_motor_kp.pkl'
 
 
+class Action(NamedTuple):
+    value: float|None = None
+    last: bool = False
+
 @dataclass(init=True)
 class _StepTimePnt:
     step_start:float = float('inf')
@@ -39,6 +43,7 @@ __all__ = ['sysIDEpisodeInfo',
            'RUN_EPISODE_MOTOR_KP_PICKLE_FILE',
            'StepRecord',
            '_CHIRP_END_FREQ',
+           'Action',
            'get_ep_trajectory_stat']
 
 
