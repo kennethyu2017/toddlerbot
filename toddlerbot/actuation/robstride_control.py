@@ -154,19 +154,21 @@ class RobStrideController(BaseController):
     @staticmethod
     def _set_param_with_double_check(*, set_fn:Callable[[Sequence[float|int] |int|float],None],
                                      set_value: Sequence[float|int] |float|int|None,
-                                     read_tx_fn:Callable[[],None],
+                                     read_tx_fn:Callable[[],None] | None,
                                      get_fn:Callable[[], Sequence[int|float]]
                                      ):
         set_fn(set_value)
+
         # double check:
-        read_tx_fn()
-        # time.sleep(wait_sec)
-        fetched_value = get_fn()
-        logger.info(f"fetched value from motors: {fetched_value}")
-        if np.any(np.asarray(fetched_value) != set_value):
-            raise IOError(
-                f"not all motors are set through: {set_fn.__name__} to value: {set_value}."
-            )
+        if read_tx_fn is not None:
+            read_tx_fn()
+            # time.sleep(wait_sec)
+            fetched_value = get_fn()
+            logger.info(f"fetched value from motors: {fetched_value}")
+            if np.any(np.asarray(fetched_value) != set_value):
+                raise IOError(
+                    f"not all motors are set through: {set_fn.__name__} to value: {set_value}."
+                )
 
 
     # NOTE: called after send_rcv_task running in loop.
@@ -238,9 +240,12 @@ class RobStrideController(BaseController):
             time.sleep(0.1)
 
         logger.info(f'=== set mech pos zero scope to -pi ~ pi ===')
+        # TODO: for RS03/04, the 0x7026~0x7029 params are write only, not readable.
         # set mech zero scope to -pi~pi.
         self._set_and_check_zero_scope(in_neg_pi_pos_pi=True,
-                                       get_timeout_sec=get_timeout_sec)
+                                       get_timeout_sec=get_timeout_sec,
+                                       # TODO: distinguish RS02/03/04
+                                       read_and_check=False)
 
         logger.info(f'=== set mech pos zero ===')
         # TODO: check mech pos?
@@ -277,8 +282,11 @@ class RobStrideController(BaseController):
         #     self._normalize_init_pos()
 
         logger.info(f'=== set and check motor state report period ===')
-        self._set_and_check_motor_report_period(self.config.motor_report_period,
-                                                get_timeout_sec=get_timeout_sec)
+        # TODO: for RS03/04, the 0x7026~0x7029 params are write only, not readable.
+        self._set_and_check_motor_report_period(period=self.config.motor_report_period,
+                                                get_timeout_sec=get_timeout_sec,
+                                                # TODO: distinguish RS02/03/04.
+                                                read_and_check=False)
 
         time.sleep(2.)
 
@@ -288,19 +296,21 @@ class RobStrideController(BaseController):
         # time.sleep(2.)
 
         # logger.info(f'=== enable the motor state periodic report  ===')
-        # TODO: temply debug.
+        # TODO: temply for checking the report period.
         # self.toggle_periodic_report_nowait(enable=True)
         # time.sleep(1.0)
         # logger.info(f'=== disable the motor state periodic report  ===')
         # self.toggle_periodic_report_nowait(enable=False)
+        # time.sleep(1.0)
 
 
-    def _set_and_check_zero_scope(self, in_neg_pi_pos_pi:bool, get_timeout_sec:float):
+    # TODO: for RS04, the 0x7026~0x7029 params are write only, not readable.
+    def _set_and_check_zero_scope(self, *, in_neg_pi_pos_pi:bool, get_timeout_sec:float, read_and_check:bool):
         # cmd: 0~2pi:0,  -pi~pi: 1
         scope_cmd:int = 1 if in_neg_pi_pos_pi else 0
         self._set_param_with_double_check(set_fn=self.set_zero_scope_nowait,
                                           set_value=scope_cmd,
-                                          read_tx_fn=self.read_zero_scope_tx,
+                                          read_tx_fn=self.read_zero_scope_tx if read_and_check else None,
                                           get_fn=partial(self.get_zero_scope, get_timeout_sec)
                                           )
 
@@ -319,7 +329,9 @@ class RobStrideController(BaseController):
                                           get_fn=partial(self.get_run_mode, get_timeout_sec)
                                           )
 
-    def _set_and_check_motor_report_period(self, period: RSReportPeriod, get_timeout_sec:float):
+    def _set_and_check_motor_report_period(self, *, period: RSReportPeriod,
+                                           get_timeout_sec:float,
+                                           read_and_check:bool):
         period_cmd: int = period.convert_to_rs_cmd()
         assert period_cmd in {ReportPeriodCmd.P_10MS,
                               ReportPeriodCmd.P_15MS,
@@ -333,7 +345,7 @@ class RobStrideController(BaseController):
 
         self._set_param_with_double_check(set_fn=self.set_motor_report_period_nowait,
                                           set_value=period_cmd,
-                                          read_tx_fn=self.read_motor_report_period_tx,
+                                          read_tx_fn=self.read_motor_report_period_tx if read_and_check else None,
                                           get_fn=partial(self.get_motor_report_period,
                                                          get_timeout_sec)
                                           )

@@ -13,7 +13,7 @@ from toddlerbot.actuation.robstride_sdk import *
 alogger = Logger.with_default_handlers()
 
 CAN_CHANNEL_NAME : str = r'can0'    #r'PCAN_USBBUS1'
-MOTOR_CAN_ID_SET: Set[int] = {0x7f}  # default ID of RS.
+MOTOR_CAN_ID_SET: Set[int] = {31}  # 0x7f}  # default ID of RS.
 HOST_CAN_ID: int = 0xfe
 
 # LISTENERS: List[Callable[[Message], None]] = []
