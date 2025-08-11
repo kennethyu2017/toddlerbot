@@ -373,7 +373,7 @@ class RobStrideIOProc:
                     # TODO: add error handler.
                     motor_state_frame = RSProtocolParser.motor_state_feedback(data2=ext_id.data2, data=msg.data,
                                                                               ts=msg.timestamp)
-                    await alogger.debug(f'{motor_state_frame}')
+                    await alogger.debug(f'comm_type:{ext_id.comm_type} {motor_state_frame}')
 
                     # TODO: we only send periodic report to controller.
                     #  for comm type(2) msg, only parse error, then drop.
