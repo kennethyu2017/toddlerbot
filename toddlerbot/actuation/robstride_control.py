@@ -1,7 +1,7 @@
 """
 experimented for robstride RS02 actuator.  by kenneth yu.
 """
-
+import pathlib
 import time
 from typing import (Dict, NamedTuple, Sequence,
                     Tuple, Callable, List, OrderedDict)
@@ -15,6 +15,9 @@ from queue import Full
 # import bisect
 from functools import partial
 import logging
+import argparse
+from pathlib import Path
+import pickle
 
 if __name__ == '__main__':
     from toddlerbot.actuation.robstride_io_proc import RSBaudRate,RSRunMode, RSReportPeriod, ControlMsg, RSIOEvent
@@ -22,6 +25,7 @@ if __name__ == '__main__':
     from toddlerbot.actuation.base_controller import BaseController,JointState
     from toddlerbot.actuation.robstride_sdk import *
     from toddlerbot.utils import config_logging
+
 else:
     from .robstride_io_proc import RSBaudRate, RSRunMode, RSReportPeriod, ControlMsg, RSIOEvent
     from ._module_logger import logger
@@ -116,15 +120,16 @@ class RobStrideController(BaseController):
         self._motor_state_frame_q = motor_state_frame_q
         self._motor_param_value_q = motor_param_value_q
 
-        # self.lock = Lock()
 
-        # self.client = RobStrideIOProc(motor_can_id=self._motor_id,
-        #                               host_can_id=config.host_can_id,
-        #                               channel=config.channel,
-        #                               baud_rate=config.baud_rate,
-        #                               )
+        # TODO: just for debug.
+        self._prev_state_dict :Dict[int, JointState] | None = None
+        self._report_ts_record:Dict[int, List[float]] = { _id:[] for _id in self._motor_can_id_ordering }
+        self._start_ts = None
 
-        # self.initialize_motors()
+        # record_report_ts_file:Path = Path(f'record_motor_report_period') / f'datetime_{time.strftime("%Y%m%d_%H%M%S")}.pkl'
+        # if not record_report_ts_file.parent.exists():
+        #     record_report_ts_file.parent.mkdir(parents=True, exist_ok=False)
+
 
         # NOTE: TO adjust the init pos bias: first set goal pos to init_pos in config.json,
         # then normalize init pos read from motor.
@@ -150,6 +155,12 @@ class RobStrideController(BaseController):
     # used for asyncio.
     # async def send_rcv_task(self):
     #     await self.client.send_rcv_task()
+
+    def save_report_ts_record(self, exp_folder: Path):
+        pkl_file = exp_folder / f'report_ts_record_{time.strftime("%Y%m%d_%H%M%S")}.pkl'
+        with open(pkl_file, 'w+b') as _f:
+            pickle.dump(self._report_ts_record, _f)
+        time.sleep(0.5)
 
     @staticmethod
     def _set_param_with_double_check(*, set_fn:Callable[[Sequence[float|int] |int|float],None],
@@ -532,6 +543,11 @@ class RobStrideController(BaseController):
              timeout_sec: None -- wait forever.
 
         """
+
+        # TODO: temply debug only.
+        if self._start_ts is None:
+            self._start_ts = time.time()
+
         # TODO: guarantee the order.
 
         # TODO: ordered dict?
@@ -564,9 +580,22 @@ class RobStrideController(BaseController):
                 # less than 10ms
                 assert time.time() - state.ts < 1e-2
 
+                # TODO: temply for debug.
+                if self._prev_state_dict is not None:
+                    if (state.ts - self._prev_state_dict[state.can_id].time) > 0.45:
+                        assert False, f' recv motor state frame time gap exceed 45ms: {state.ts - self._prev_state_dict[state.can_id]}'
+
+                if (num_recv_frame := len(self._report_ts_record[state.can_id])) % 100 == 0:
+                    logger.info(f'\n ---> motor id:{state.can_id} frame seq:{num_recv_frame}  ts:{state.ts}')
+
+                self._report_ts_record[state.can_id].append(state.ts - self._start_ts)
+
                 # assert state.can_id not in rcv_motor_id
                 # rcv_motor_id.add(state.can_id)
-                assert state.can_id not in state_dict
+                assert state.can_id not in state_dict, f'\n--- state.can_id = {state.can_id}'\
+                                                       f'\n--- problematic recv state pkt: {state}'\
+                                                       f'\n--- already rcved: {state_dict}'\
+                                                       f'\n-- prev state of all motor:{self._prev_state_dict}'
 
                 # relative to init pos.
                 ordering_idx = self._can_id_to_ordering_index[state.can_id]
@@ -579,11 +608,16 @@ class RobStrideController(BaseController):
                                                       temp=state.temp)
 
             assert state_dict.keys() == self._set_of_motor_can_id
+
+            # TODO: just for debug
+            self._prev_state_dict = state_dict
+
             return state_dict
 
         except Exception as exc:
             logger.error(f'get motor state helper failed: {exc=:} {type(exc)=:}')
             raise exc
+
 
     # blocking get.
     def _get_param_value_helper(self, name: str, timeout_sec:float) \
@@ -788,9 +822,9 @@ class RobStrideController(BaseController):
              element order in `pos` must be same as self.motor_can_id.
         """
         assert len(self._motor_can_id_ordering) == len(pos)
-        # TODO: only allow -2Pi ~ 2Pi.
-        if not np.all(np.abs(pos) < 2 * np.pi):
-            raise ValueError(f'not allowed goal pos: {pos}, which should be in [-2pi, 2pi] ')
+        # TODO: during debug stage, only allow -Pi/2 ~ Pi/2.
+        if not np.all(np.abs(pos) < np.pi/2 ):
+            raise ValueError(f'not allowed goal pos: {pos}, which should be in [-pi/2, pi/2] ')
 
         self._write_param_tx_helper('loc_ref', pos)
 
@@ -804,6 +838,12 @@ class RobStrideController(BaseController):
         snd_msg: List[can.Message] = RSProtocolBuilder.toggle_motor_periodic_report(motor_can_id=self._motor_can_id_ordering,
                                                                                     host_can_id=self._host_can_id, enable=enable)
         self._tx_msg(snd_msg)
+
+    def toggle_read_motor_state_periodically(self, enable:bool):
+        snd_event:RSIOEvent = RSIOEvent.EnableReadMotorState if enable \
+            else RSIOEvent.DisableReadMotorState
+
+        self._event_conn_with_io_proc.send(snd_event)
 
     def set_motor_report_period_nowait(self, period_cmd: int)->None:
         # TODO: use Enum.
@@ -860,67 +900,18 @@ class RobStrideController(BaseController):
     #     self._tx_msg(snd_msg)
 
 
-
-if __name__ == '__main__':
-    # import concurrent.futures
-    import asyncio
-    # import threading
-    import atexit
-    from toddlerbot.actuation.robstride_io_proc import RobStrideIOProc
-
-    config_logging(root_logger_level=logging.INFO, root_handler_level=logging.NOTSET,
-                   root_fmt='--- {levelname} - module:{module} - func:{funcName} ---> \n{message}',
-                   root_date_fmt='%Y-%m-%d %H:%M:%S',
-                   # log_file='/tmp/toddler/imitate_episode.log',
-                   log_file=None,
-                   module_logger_config={'robstride_io_proc': logging.DEBUG})
-
-    def mock_cpu_bound_policy(ctrl: BaseController):
-        time.sleep(2.0)
-        print(f'---> start initialize motors')
-        ctrl.initialize_motors()
-        print(f'finish initialize motors <---')
-
-        ret : int = 0
-        # while True:
-        for _ in range(5):
-            time.sleep(1.)
-            ret+=1
-            print(f'---cpu bound --- {ret=:} ----')
-            if ret > 0xffffff:
-                ret = 0
-
-    def run_io_bound_task_in_spawned_process(*, motor_can_id: Sequence[int],         # ids of a group of actuators.
-                                                host_can_id: int,
-                                                channel: str,
-                                                baud_rate: RSBaudRate,
-                                                event_conn: Connection,
-                                                ctrl_msg_q: mp.Queue,  #[ControlMsg],
-                                                motor_state_frame_q: mp.Queue, # [MotorStateFrame],
-                                                motor_param_value_q: mp.Queue, # [SingleParamValue]
-                                             ):
-
-        _proc = RobStrideIOProc(motor_can_id=motor_can_id,
-                                host_can_id=host_can_id,
-                                channel=channel,
-                                baud_rate=baud_rate,
-                                event_conn_with_controller_proc=event_conn,
-                                ctrl_msg_q=ctrl_msg_q,
-                                motor_state_frame_q=motor_state_frame_q,
-                                motor_param_value_q=motor_param_value_q)
-
-        return asyncio.run(_proc.send_rcv_task())
+def _test_main(args: argparse.Namespace):
 
     _cfg = RobStrideConfig(channel='can0',
-                          baud_rate=RSBaudRate.BPS_1M,
-                          run_mode=RSRunMode.PP_POSITION,
-                          motor_report_period=RSReportPeriod.P_40MS,
-                          host_can_id=0xfe,
-                          motor_can_id=[0x7f],
-                          pos_kp=None,
-                          default_accel_PP_mode=None,
-                          default_vel_PP_mode=None,
-                          init_target_pos=np.asarray([0.],dtype=np.float32))
+                           baud_rate=RSBaudRate.BPS_1M,
+                           run_mode=RSRunMode.PP_POSITION,
+                           motor_report_period=RSReportPeriod.P_40MS,
+                           host_can_id=_HOST_CAN_ID,
+                           motor_can_id=args.motor_id,
+                           pos_kp=None,
+                           default_accel_PP_mode=None,
+                           default_vel_PP_mode=None,
+                           init_target_pos=np.asarray([0.], dtype=np.float32))
 
     # NOTE: mp.Queue is always preferable, causing it is a high-level API rather than sync-primitive.
     # mp.Queue using BoundedSemaphore to control the queue size. better than SimpleQueue which is unbounded.
@@ -937,11 +928,11 @@ if __name__ == '__main__':
     # pair of ends, used by each proc.
     _io_proc_event_conn, _main_proc_event_conn = mp.Pipe(duplex=True)
 
-    controller = RobStrideController(config = _cfg,
+    controller = RobStrideController(config=_cfg,
                                      event_conn_with_io_proc=_main_proc_event_conn,
-                                     motor_ctrl_q= _motor_ctrl_q,
-                                     motor_state_frame_q= _motor_state_frame_q,
-                                     motor_param_value_q= _motor_param_value_q)
+                                     motor_ctrl_q=_motor_ctrl_q,
+                                     motor_state_frame_q=_motor_state_frame_q,
+                                     motor_param_value_q=_motor_param_value_q)
 
     # with concurrent.futures.ProcessPoolExecutor(max_workers=1) as p_pool:
     #     fut:concurrent.futures.Future = p_pool.submit(run_io_bound_task_in_process_pool, controller)
@@ -950,17 +941,18 @@ if __name__ == '__main__':
     # terminates, not the concept of Linux/Unix daemon services which will kept at backgroud even after the parent
     # process terminates.
     _io_proc = mp.Process(target=run_io_bound_task_in_spawned_process,
-                         args=[],
-                         kwargs=dict(motor_can_id=_cfg.motor_can_id,
-                                     host_can_id=_cfg.host_can_id,
-                                     channel=_cfg.channel,
-                                     baud_rate=_cfg.baud_rate,
-                                     event_conn=_io_proc_event_conn,
-                                     ctrl_msg_q=_motor_ctrl_q,
-                                     motor_state_frame_q=_motor_state_frame_q,
-                                     motor_param_value_q=_motor_param_value_q),
-                         name='asyncio_send_rcv_can_msg',
-                         daemon=True)
+                          args=[],
+                          kwargs=dict(motor_can_id=_cfg.motor_can_id,
+                                      host_can_id=_cfg.host_can_id,
+                                      channel=_cfg.channel,
+                                      baud_rate=_cfg.baud_rate,
+                                      event_conn=_io_proc_event_conn,
+                                      ctrl_msg_q=_motor_ctrl_q,
+                                      motor_state_frame_q=_motor_state_frame_q,
+                                      motor_param_value_q=_motor_param_value_q,
+                                      read_motor_state_period_sec=args.read_motor_state_period,),
+                          name='asyncio_send_rcv_can_msg',
+                          daemon=True)
 
     # io_thrd = threading.Thread(target=run_io_bound_task_in_spawned_process,args=[controller],daemon=True)
 
@@ -988,12 +980,6 @@ if __name__ == '__main__':
     #     controller.close_motors()
     #     time.sleep(0.5)
 
-    def exit_handler():
-        print(f'###### \n\ncalled from exit_handler of main proces/main thread: ---> \n\n ######')
-        clean_children_proc()
-
-    atexit.register(exit_handler)
-
     def clean_children_proc():
         print(f'##### clean IO proc ---> ##### ')
         for _p in  mp.active_children():
@@ -1014,6 +1000,12 @@ if __name__ == '__main__':
                 _p.terminate()
                 time.sleep(0.5)
 
+    def exit_handler():
+        print(f'###### \n\ncalled from exit_handler of main proces/main thread: ---> \n\n ######')
+        clean_children_proc()
+
+    atexit.register(exit_handler)
+
     try:
         print(f'start _io_process.')
         _io_proc.start()
@@ -1023,19 +1015,11 @@ if __name__ == '__main__':
         # TODO: naive solution to wait for the io task running. maybe using connection?
         while not _io_proc.is_alive():
             time.sleep(0.5)
-        mock_cpu_bound_policy(controller)
 
-    # try:
-    #     print(f'start _io_process.')
-    #     io_thrd.start()
-    #     # _io_proc.join()
-    #     print(f'_io_proc is alive: {io_thrd.is_alive()}')
-    #     print(f'start mock cpu bound policy.')
-    #     # TODO: naive solution to wait for the io task running. maybe using connection?
-    #     while not io_thrd.is_alive():
-    #         time.sleep(0.5)
-    #
-    #     mock_cpu_bound_policy(controller)
+        # mock_cpu_bound_policy(controller)
+        # calibrate_qpos_limit_policy(controller, 31)
+
+        record_motor_state_periodically(controller, args)
 
 
     except Exception as error:
@@ -1048,6 +1032,216 @@ if __name__ == '__main__':
         print(f'finally: clean up in finally--->')
         time.sleep(0.5)
         # clean_io_process()
+
+
+if __name__ == '__main__':
+    # from pathlib import Path
+    from tqdm import tqdm
+    # import pickle
+
+    # leg-left
+    # _MOTOR_CAN_ID = 35  # {31,32,33,34,35}   #0x7f
+    _HOST_CAN_ID = 0xfe
+
+    # import concurrent.futures
+    import asyncio
+    # import threading
+    import atexit
+    from toddlerbot.actuation.robstride_io_proc import RobStrideIOProc
+
+    def _args_parsing() -> argparse.Namespace:
+        parser = argparse.ArgumentParser(prog='mp run a policy.')
+        parser.add_argument(
+            "--motor-id",
+            type=int,
+            action='extend',
+            nargs='+',
+            default=None,
+            required=True,
+            help="The can id of motor.",
+        )
+
+        parser.add_argument(
+            '--record-sec',
+            type=int,
+            default=None,
+            required=True,
+            help='motor periodic report record lasting seconds.',
+        )
+
+        parser.add_argument(
+            '--read-motor-state-period',
+            type=float,
+            default=None,
+            required=True,
+            help='read motor state period in seconds.',
+        )
+
+        return parser.parse_args()
+
+    def record_motor_state_periodically(ctrl: RobStrideController, args: argparse.Namespace):
+        report_ts_record:Dict[int, List[float]] = { _id:[] for _id in ctrl._motor_can_id_ordering }
+
+        exp_folder = Path(f'record_motor_report_period')
+        if not exp_folder.exists():
+            exp_folder.mkdir(parents=True, exist_ok=False)
+
+        cur_time_str = time.strftime("%Y%m%d_%H%M%S")
+        record_file:Path = exp_folder / f'datetime_{cur_time_str}.pkl'
+
+        # # 40ms report period.
+        # total_steps = 20. / 0.04
+        total_record_sec :int = args.record_sec
+        start_ts :float = time.time()
+
+        try:
+            # ctrl.toggle_periodic_report_nowait(True)
+            ctrl.toggle_read_motor_state_periodically(True)
+
+            with (tqdm(total=total_record_sec, colour='CYAN', unit='seconds', unit_scale=True) as p_bar):
+                while time.time() - start_ts <= total_record_sec:
+                    # mp.Queue will raise Empty if timeout.
+                    state:MotorStateFrame = ctrl._motor_state_frame_q.get(block=True,timeout=None)
+
+                    assert state is not None
+                    assert state.can_id in report_ts_record
+                    # allow less than 10ms local host processing time
+                    assert time.time() - state.ts < 1e-2
+
+                    if (num_recv_frame:=len(report_ts_record[state.can_id])) % 200 == 0:
+                        # log at every 50 report frame of each motor.
+                        logger.info(f'\n ---> motor id:{state.can_id} frame seq:{num_recv_frame}  ts:{state.ts}')
+
+                    report_ts_record[state.can_id].append(state.ts)
+
+                    if ( passed_sec:=round(time.time() - start_ts)) > p_bar.n:
+                        p_bar.update(passed_sec - p_bar.n)
+
+        except Exception as exc:
+            logger.error(f'test_motor_report_period failed: {exc=:} {type(exc)=:}')
+            raise exc
+
+        finally:
+            logger.warning(f'--- exiting from record motor report period...')
+            # ctrl.toggle_periodic_report_nowait(False)
+            ctrl.toggle_read_motor_state_periodically(False)
+
+            time.sleep(.5)
+
+            with open(record_file, 'wb') as _f:
+                pickle.dump(report_ts_record, _f)
+
+            time.sleep(.5)
+
+
+    def mock_cpu_bound_policy(ctrl: RobStrideController):
+        time.sleep(2.0)
+        print(f'---> start initialize motors')
+        ctrl.initialize_motors()
+        print(f'finish initialize motors <---')
+
+        ret : int = 0
+        # while True:
+        for _ in range(5):
+            time.sleep(1.)
+            ret+=1
+            print(f'---cpu bound --- {ret=:} ----')
+            if ret > 0xffffff:
+                ret = 0
+
+    def calibrate_qpos_limit_policy(ctrl: RobStrideController, motor_id:int):
+        time.sleep(2.0)
+        print(f'---> start initialize motors')
+        ctrl.initialize_motors()
+        print(f'finish initialize motors <---')
+        time.sleep(1.)
+
+        qpos_lower: float = 1000.
+        qpos_upper: float = -1000.
+
+        exp_folder = Path(f'calibrate_joint_limit')
+        if not exp_folder.exists():
+            exp_folder.mkdir(parents=True, exist_ok=True)
+
+        cur_time_str = time.strftime("%Y%m%d_%H%M%S")
+        result_file:Path = exp_folder / f'id_{motor_id}_time_{cur_time_str}'
+
+        ctrl.disable_motors()
+        ctrl.toggle_periodic_report_nowait(enable=True)
+
+        try:
+            while True:
+                # Get the latest state from the queue. block wait.
+                jnt_state: JointState = ctrl.get_motor_state(None)[motor_id]
+                logger.debug(f' === get joint state: {jnt_state}  ===')
+
+                assert  -2*np.pi < jnt_state.pos < 2*np.pi, f'only allow the qpos between [-2pi, 2pi], get qpos:{jnt_state.pos}'
+
+                if qpos_lower > jnt_state.pos:
+                    logger.warning(f'=======> update qpos_lower to :{jnt_state.pos}')
+                    qpos_lower = jnt_state.pos
+                    # qpos_lower = min(jnt_state.pos, qpos_lower)
+
+                if qpos_upper < jnt_state.pos:
+                    logger.warning(f'=======> update qpos_upper to :{jnt_state.pos}')
+                    qpos_upper = jnt_state.pos
+                    # qpos_upper = max(jnt_state.pos, qpos_upper)
+
+        except Exception as err:
+            print(f'--- exception in find_qpos_limit_policy: {err=:} {type(err)=:}')
+            time.sleep(0.5)
+            raise err
+
+        finally:
+            ctrl.toggle_periodic_report_nowait(False)
+            with open(result_file, 'wt') as _f:
+                _f.write(f'qpos_lower: {qpos_lower:.2f}\n'
+                         f'qpos_upper: {qpos_upper:.2f}')
+
+            logger.warning(f'=====> write joint limit to file: {result_file.resolve()}')
+            time.sleep(0.5)
+
+
+    def run_io_bound_task_in_spawned_process(*, motor_can_id: Sequence[int],         # ids of a group of actuators.
+                                                host_can_id: int,
+                                                channel: str,
+                                                baud_rate: RSBaudRate,
+                                                event_conn: Connection,
+                                                ctrl_msg_q: mp.Queue,  #[ControlMsg],
+                                                motor_state_frame_q: mp.Queue, # [MotorStateFrame],
+                                                motor_param_value_q: mp.Queue, # [SingleParamValue]
+                                                read_motor_state_period_sec:float,
+                                             ):
+
+        _proc = RobStrideIOProc(motor_can_id=motor_can_id,
+                                host_can_id=host_can_id,
+                                channel=channel,
+                                baud_rate=baud_rate,
+                                event_conn_with_controller_proc=event_conn,
+                                ctrl_msg_q=ctrl_msg_q,
+                                motor_state_frame_q=motor_state_frame_q,
+                                motor_param_value_q=motor_param_value_q,
+                                read_motor_state_period_sec=read_motor_state_period_sec  # 40ms
+                                )
+
+        return asyncio.run(_proc.send_rcv_task())
+
+
+    _parsed_args = _args_parsing()
+    config_logging(root_logger_level=logging.INFO, root_handler_level=logging.NOTSET,
+                   # root_fmt='--- {levelname} - module:{module} - func:{funcName} ---> \n{message}',
+                   root_fmt='{message}',
+                   root_date_fmt='%Y-%m-%d %H:%M:%S',
+                   # log_file='/tmp/toddler/imitate_episode.log',
+                   log_file=None,
+                   module_logger_config={'robstride_io_proc': logging.DEBUG})
+    # use root logger for __main__.
+    logger = logging.getLogger('root')
+    logger.info('parsed args --->\n{}'.format('\n'.join(
+        f'{arg_name}={arg_value}' for arg_name, arg_value in
+        sorted(_parsed_args.__dict__.items(), key=lambda k_v_pair: k_v_pair[0]))))
+
+    _test_main(_parsed_args)
 
     # async def run_cpu_bound_policy_in_process_pool(loop: asyncio.AbstractEventLoop, ctrl:BaseController):
     #     try:

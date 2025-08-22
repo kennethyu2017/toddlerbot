@@ -4,6 +4,8 @@ from typing import Dict,Type, NamedTuple, Tuple
 
 param_table_index_to_name: Dict[int,str] = {
     0X7005:'run_mode',
+    # TODO: debug only.
+    0X7006:'iq_ref',
     0X700B:'limit_torque',
     0X7016:'loc_ref',
     0X7019:'mechPos',
@@ -24,7 +26,7 @@ class ExtID(NamedTuple):
 
 class MotorStateFrame(NamedTuple):
     ts: float  # time stamp.
-    can_id: int
+    can_id: int  # motor can id
     pos: float
     vel: float
     torque: float
@@ -64,6 +66,14 @@ RS_param_table_spec : Dict[str, ParamSpec] = {
                           dtype=int,
                           signed=False,
                           min_max=(0, 5)),
+
+    # TODO: debug only.
+    'iq_ref': ParamSpec(index=0x7006,
+                          n_bytes=4,
+                          dtype=float,
+                          signed=True,
+                          min_max=(-23, 23)),
+
 
     'limit_torque': ParamSpec(index=0x700B,
                               n_bytes=4,
