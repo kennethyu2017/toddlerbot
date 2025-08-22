@@ -522,7 +522,9 @@ class MotionReference(ABC):
     ) -> ArrayType:
         """Calculates the inverse kinematics for the center of mass (COM) of a bipedal robot leg.
 
-        This function computes the joint angles required to position the robot's leg such that the center of mass is at the specified coordinates. It uses the lengths of the leg segments and default positions to determine the necessary joint angles.
+        This function computes the joint angles required to position the robot's leg such that the center of mass
+         is at the specified coordinates. It uses the lengths of the leg segments and default positions
+          to determine the necessary joint angles.
 
         Args:
             com_z (float or ArrayType): The z-coordinate of the center of mass.

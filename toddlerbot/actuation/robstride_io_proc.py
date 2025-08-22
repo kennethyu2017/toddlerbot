@@ -5,7 +5,7 @@ import multiprocessing as mp
 from multiprocessing.connection import Connection
 import concurrent
 from typing import (Any, List, Sequence, NamedTuple,
-                    Set, ClassVar)
+                    Set, ClassVar,Coroutine)
 # deque does not use lock, but its append/popleft is atomic operation.
 # from collections import OrderedDict, deque
 import asyncio
@@ -140,6 +140,8 @@ class RSIOEvent(Enum):
 
     # controller proc --> io proc
     ReqIODisconnect = auto()
+    EnableReadMotorState = auto()
+    DisableReadMotorState = auto()
 
     # common
     Error = auto()
@@ -259,6 +261,7 @@ class RobStrideIOProc:
         ctrl_msg_q: mp.Queue, #[ControlMsg],
         motor_state_frame_q: mp.Queue, #[MotorStateFrame],
         motor_param_value_q: mp.Queue, #[SingleParamValue],
+        read_motor_state_period_sec: float,
         # lazy_connect: bool,                #= False,
         # rcv_timeout_ms: int,               #= 5,    #usb serial latency timer, default 5 ms.
     ):
@@ -283,7 +286,7 @@ class RobStrideIOProc:
         assert  np.all(0 < self._motor_can_id) and np.all( self._motor_can_id <= 0x7f )
 
         assert 0x7f < host_can_id <= 0xfe
-        self.host_can_id = host_can_id
+        self._host_can_id = host_can_id
 
         self.channel = channel
         self.baud_rate = baud_rate
@@ -304,9 +307,15 @@ class RobStrideIOProc:
         self._motor_state_frame_q = motor_state_frame_q
         self._motor_param_value_q = motor_param_value_q
 
+        self._read_motor_state_period_sec = read_motor_state_period_sec
+        self._enable_read_motor_state = asyncio.Event() #initial value is False.
+
         # TODO: protected by lock.
         self._loop_rcv_buffer_q: asyncio.Queue[can.Message] = asyncio.Queue(maxsize=10 * len(motor_can_id))
         self._loop_send_buffer_q: asyncio.Queue[can.Message] = asyncio.Queue(maxsize=10 * len(motor_can_id))
+
+        # as tokens for periodic read motor state.
+        self._waiting_motor_state_id:Set[int] = set()
 
         self._connect()
 
@@ -341,6 +350,10 @@ class RobStrideIOProc:
     async def _parse_rcv_msg(self) -> None:
         while True:
             msg: can.Message|None = None
+
+            # an optimized way to yield.
+            await asyncio.sleep(0.)
+
             try:
                 msg = await self._loop_rcv_buffer_q.get()
 
@@ -370,16 +383,25 @@ class RobStrideIOProc:
 
                 elif ext_id.comm_type == CommunicationType.MOTOR_FEEDBACK or \
                         ext_id.comm_type == CommunicationType.MOTOR_PERIODIC_REPORT:
+
                     # TODO: add error handler.
                     motor_state_frame = RSProtocolParser.motor_state_feedback(data2=ext_id.data2, data=msg.data,
                                                                               ts=msg.timestamp)
                     await alogger.debug(f'comm_type:{ext_id.comm_type} {motor_state_frame}')
 
-                    # TODO: we only send periodic report to controller.
-                    #  for comm type(2) msg, only parse error, then drop.
-                    if ext_id.comm_type == CommunicationType.MOTOR_PERIODIC_REPORT:
-                        # will raise immediately if full.
-                        self._motor_state_frame_q.put_nowait(motor_state_frame)
+                    # TODO: discard `periodic report` solution, causing it is hard to
+                    # synchronize all the RS motors.
+                    # if ext_id.comm_type == CommunicationType.MOTOR_PERIODIC_REPORT:
+                    if ext_id.comm_type == CommunicationType.MOTOR_FEEDBACK:
+                        # TODO: naive solution. use StateMachine in future.
+                        # if the feedback is due to other msg, e.g., set_pos, we just ignore through
+                        # self._waiting_motor_state_id token mechanism.
+                        # TODO: handle feedback pkt lost, dis-order, delay ... etc.
+                        if motor_state_frame.can_id in self._waiting_motor_state_id:
+                            # will raise immediately if full.
+                            # await alogger.debug(f' ---> put into state frame q: {motor_state_frame}')
+                            self._motor_state_frame_q.put_nowait(motor_state_frame)
+                            self._waiting_motor_state_id.remove(motor_state_frame.can_id)
 
                     # depending on the run_policy process to fetch obs, so no need to use
                     # `await` to yield our cpu core, and even yield, this will not accelerate
@@ -439,6 +461,62 @@ class RobStrideIOProc:
                         await alogger.error(f'dump send msg task failed: {exc=:} {type(exc)=:}')
                         raise exc
 
+    async def _read_motor_state_periodically(self):
+        # TODO: here we use `trick` to write `iq_ref` param dummy value, causing the motor feedback
+        # comm type 2 msg, then we can get pos/vel/torque in a single msg.
+
+        dummy_write_param_name: str = 'iq_ref'
+        dummy_write_value: List[float] = [0.0]*len(self._motor_can_id)
+
+        p_spec = RS_param_table_spec[dummy_write_param_name]
+
+        snd_msg: List[can.message] = RSProtocolBuilder.write_single_param(
+            motor_can_id=self._motor_can_id,
+            host_can_id=self._host_can_id,
+            index=p_spec.index,
+            param_value=dummy_write_value,
+            param_spec=p_spec)
+
+        while True:
+            if not self._enable_read_motor_state.is_set():
+                # block current task.
+                await self._enable_read_motor_state.wait()
+
+            loop_start_time:float = time.perf_counter()
+
+            # await alogger.debug(f' ====== _read_motor_state_periodically task wake up, local time: {time.time()} =====')
+
+            try:
+                # index:int = RS_param_table_spec['mechPos'].index
+                # build read msg.
+                # snd_msg: List[can.Message] = RSProtocolBuilder.read_single_param(
+                #     motor_can_id=self._motor_can_id,
+                #     host_can_id=self._host_can_id,
+                #     index=index)
+
+                for _id, _m in zip(self._motor_can_id, snd_msg):
+                    await alogger.debug(f'send write dummy param msg, host time: {time.time()} msg ---> {_m}')
+                    # if buffer slots are available, we can put all msg into loop send buffer queue together,
+                    # they will be sent as a 'bump' during later event loop scheduling of _on_write_available task. better for
+                    # `psydo-sync` between motors.
+                    await self._loop_send_buffer_q.put(_m)
+                    # issue a token for parse msg task to queue motor state frame.
+                    assert _id not in self._waiting_motor_state_id,\
+                        f'Error: motor id:{_id} should not in self._waiting_motor_state_id:{self._waiting_motor_state_id} '
+                    self._waiting_motor_state_id.add(_id)
+
+            except Exception as exc:
+                    # NOTE: must propagate to up layer task_group to cancel the remaining tasks in task_group.
+                    await alogger.error(f'read pos periodically task failed: {exc=:} {type(exc)=:}')
+                    raise exc
+
+            # TODO: use step_count * control_dt to calculate time to sleep ?
+            time_to_sleep:float = self._read_motor_state_period_sec - (time.perf_counter() - loop_start_time)
+            assert time_to_sleep > 0.001, f'time_to_sleep should be greater than 1ms, but get: {time_to_sleep}'
+
+            alogger.debug(f'async sleep sec for read motor state period: {time_to_sleep}')
+            await asyncio.sleep(time_to_sleep)
+
 
     # async def _dump_send_msg(self):
     #     while True:
@@ -475,24 +553,54 @@ class RobStrideIOProc:
     #         pass
 
     # blocking function.
-    def _event_handler(self):
+    def _event_handler(self,
+                       loop:asyncio.AbstractEventLoop):
         """
         handle event from controller proc.
+        Args:
+            loop: same loop as dump/recv/read_motor_state task.
         """
-        while True:
-            # blocking wait.
-            event = self._event_conn_with_controller_proc.recv()
-            if event is RSIOEvent.ReqIODisconnect:
-                logger.warning(f'***** IO proc recv RSIOEvent.Disconnect from controller proc. will raise Exception to '
-                               f'terminate SndRcvTask. ')
-                raise ConnectionAbortedError(f'***** IO proc recv RSIOEvent.Disconnect from controller proc, '
-                                             f' will end snd/rcv task and disconnect from can BUS: {self.channel} *****')
-                # TODO: let finally of snd/rcv task to disconnect.
-                # self.disconnect()
-                # return
+        # keep reference of tasks.
+        background_task_set = set()
 
-            else:
-                raise NotImplementedError(f'***** IO Proc only support RSIOEvent.Disconnect, but got: {event}. ***** ')
+        def _build_asyncio_task(coro: Coroutine):
+            task: asyncio.Task = loop.create_task(coro)
+            background_task_set.add(task)
+            task.add_done_callback(background_task_set.discard)
+
+        while True:
+
+            # blocking wait.
+            match (event:=self._event_conn_with_controller_proc.recv()):
+                case RSIOEvent.ReqIODisconnect:
+                    logger.warning(f'***** IO proc recv RSIOEvent.Disconnect from controller proc. will raise Exception to '
+                                   f'terminate SndRcvTask. ')
+                    raise ConnectionAbortedError(f'***** IO proc recv RSIOEvent.Disconnect from controller proc, '
+                                                 f' will end snd/rcv task and disconnect from can BUS: {self.channel} *****')
+                    # TODO: let finally of snd/rcv task to disconnect.
+                    # self.disconnect()
+                    # return
+
+                case RSIOEvent.EnableReadMotorState:
+                    logger.warning(f'***** IO proc recv RSIOEvent.EnableReadMotorState from controller proc.'
+                                   f' will start read motor state periodically task. ')
+
+                    async def _enable_read():
+                        return self._enable_read_motor_state.set()
+                    # NOTE: must use the same loop as read_motor_state task which call Event.wait().
+                    _build_asyncio_task(_enable_read())
+
+                case RSIOEvent.DisableReadMotorState:
+                    logger.warning(f'***** IO proc recv RSIOEvent.DisableReadMotorState from controller proc.'
+                                   f' will stop read motor state periodically task. ')
+
+                    async def _disable_read():
+                        return self._enable_read_motor_state.clear()
+                    # NOTE: must use the same loop as read_motor_state task which call Event.wait().
+                    _build_asyncio_task(_disable_read())
+
+                case _:
+                    raise NotImplementedError(f'***** IO Proc only support RSIOEvent.Disconnect, but got: {event}. ***** ')
 
             # TODO: necessary?
             # time.sleep(.5)
@@ -500,7 +608,7 @@ class RobStrideIOProc:
     async def _run_event_handler_in_thread_pool(self, loop: asyncio.AbstractEventLoop) -> None:
         with concurrent.futures.ThreadPoolExecutor() as pool:
             return await loop.run_in_executor(
-                pool, self._event_handler)
+                pool, self._event_handler,loop)
 
 
     def _toggle_motor_helper(self, enable:bool):
@@ -512,10 +620,10 @@ class RobStrideIOProc:
         logger.warning(f'=== send motor {behaviour} can msg to RS motors ===')
         if enable:
             motor_running_start_stop: List[can.Message] = RSProtocolBuilder.motor_enable(motor_can_id=self._motor_can_id,
-                                                                               host_can_id=self.host_can_id)
+                                                                                         host_can_id=self._host_can_id)
         else:
             motor_running_start_stop: List[can.Message] = RSProtocolBuilder.motor_disable(motor_can_id=self._motor_can_id,
-                                                                                      host_can_id=self.host_can_id)
+                                                                                          host_can_id=self._host_can_id)
 
         for _m in motor_running_start_stop:
             # TODO: handle timeout exception.
@@ -528,7 +636,7 @@ class RobStrideIOProc:
         logger.warning(f'=== send {behaviour} periodic report can msg to RS motors ===')
         report_start_stop: List[can.Message] = RSProtocolBuilder.toggle_motor_periodic_report(
             motor_can_id=self._motor_can_id,
-            host_can_id=self.host_can_id,
+            host_can_id=self._host_can_id,
             enable=enable)
 
         for _m in report_start_stop:
@@ -549,7 +657,7 @@ class RobStrideIOProc:
         try:
             filters = [
                 # 29-bit mask.
-                {'can_id': self.host_can_id, 'can_mask': 0xff, 'extended': True},
+                {'can_id': self._host_can_id, 'can_mask': 0xff, 'extended': True},
             ]
             self._bus = SocketcanBus(channel=self.channel,
                                     can_filters=filters)
@@ -623,8 +731,11 @@ class RobStrideIOProc:
 
         try:
             async with asyncio.TaskGroup() as tg:
+                # TODO: add strong references for all the tasks????
                 task_rcv: asyncio.Task = tg.create_task(self._parse_rcv_msg())
                 task_snd: asyncio.Task = tg.create_task(self._dump_send_msg())
+                task_read_motor_state: asyncio.Task = tg.create_task(self._read_motor_state_periodically())
+                # block waiting for IPC event, so must put into individual thread.
                 task_event_hdl: asyncio.Task = tg.create_task(self._run_event_handler_in_thread_pool(loop))
 
                 await asyncio.sleep(1.0)

@@ -6,7 +6,7 @@ import asyncio
 import atexit
 import logging
 import time
-from typing import Sequence, List
+from typing import Sequence, List, Dict
 from collections import OrderedDict
 import argparse
 import time as timelib
@@ -35,11 +35,17 @@ from toddlerbot.policies.run_policy import _plot_run_log
 from toddlerbot.actuation.robstride_sdk.mp_rs_sysID import MpSysIDPolicy,MockRobot, MotorKpSetter
 from toddlerbot.sim import Obs
 
-MOTOR_CAN_ID = 0x7f
-HOST_CAN_ID =0xfe
-
 def _args_parsing() -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog='mp run a policy.')
+    parser.add_argument(
+        "--motor-id",
+        type=int,
+        action='extend',
+        nargs='+',
+        default=None,
+        help="The can id of motor.",
+    )
+
     # TODO: confusing.  we can separate them into two fields:  --policy xxx  --fixed true/false.
     # parser.add_argument(
     #     "--policy",
@@ -119,10 +125,15 @@ def _save_policy_log(*, policy: MpSysIDPolicy,
         pickle.dump(policy.episode_info, _f)
 
 
-def _cpu_bound_sysID_policy(rs_ctrl: RobStrideController):
+def _cpu_bound_sysID_policy(rs_ctrl: RobStrideController, robot:MockRobot):
 
+    # TODO: same sysID policy for all the motors, temply for debug.
     sysID_policy = MpSysIDPolicy(init_motor_pos=np.asarray([0.],dtype=np.float32),
-                                 jnt_cfg_limit=(-np.pi/2, np.pi/2),
+                                 # TODO: same jnt limit for all the connected motors.
+                                 jnt_cfg_limit=robot.joint_cfg_limits,
+                                 # jnt_cfg_limit=  (-np.pi/2, np.pi/2),
+                                 # TODO: for calibrated Hip Pitch only.
+                                 # jnt_cfg_limit=(-0.45, 0.42),
                                  control_dt_sec=0.04)  # 40ms motor report interval.
 
     print(f'---> start initialize motors')
@@ -150,8 +161,12 @@ def _cpu_bound_sysID_policy(rs_ctrl: RobStrideController):
         run_start_perf_cnt = timelib.perf_counter()
 
         try:
+
             # TODO: use barrier to sync?
-            rs_ctrl.toggle_periodic_report_nowait(enable=True)
+            # TODO: can not guarantee RS motors local clock are synchronized with each other, so can not use
+            # periodic report solution to get motor state.
+            # rs_ctrl.toggle_periodic_report_nowait(enable=True)
+
             # action = Action(value=None, last=False)
             # while not action.last:
             while _step_count < sysID_policy.n_steps_total:
@@ -162,11 +177,14 @@ def _cpu_bound_sysID_policy(rs_ctrl: RobStrideController):
                 _record.time_pnt.step_start = timelib.time()
 
                 # Get the latest state from the queue
-                jnt_state: JointState = rs_ctrl.get_motor_state(None)[MOTOR_CAN_ID]
+                # jnt_state: JointState = rs_ctrl.get_motor_state(None)[motor_id]
+                jnt_state: Dict[int,JointState] = rs_ctrl.get_motor_state(None)
                 logger.debug(f' === get joint state: {jnt_state}  ===')
 
                 # change to epoch time.
-                jnt_state.time -= run_start_time
+                # TODO: use the obs time of first motor id.
+                obs_time = jnt_state[robot.motor_id_ordering[0]].time
+                obs_time -= run_start_time
 
                 _record.time_pnt.recv_obs = timelib.perf_counter() - run_start_perf_cnt
 
@@ -174,24 +192,33 @@ def _cpu_bound_sysID_policy(rs_ctrl: RobStrideController):
                 motor_kp_setter.set_kp(policy=sysID_policy,
                                        ctrl=rs_ctrl,
                                        step_count=_step_count,
-                                       obs_time=jnt_state.time)
+                                       obs_time=obs_time,
+                                       robot=robot)
 
-                control_inputs, motor_target_arr = sysID_policy.step(jnt_state)
+                # TODO: use same motor target action for all the connected motors.
+                control_inputs, motor_target_arr = sysID_policy.step(obs_time)  # jnt_state)
+                motor_target_arr:npt.NDArray = np.tile(motor_target_arr,(len(robot.motor_id_ordering),))
+
+
                 _record.time_pnt.inference = timelib.perf_counter() - run_start_perf_cnt
 
-                if _step_count % 50 == 1:
+                if _step_count % 100 == 1:
                     # NOTE: set/get value should be normalized by feite_controller.init_pos
-                    logger.info(f'prev act:{step_record_list[-1].motor_act}, {jnt_state.pos=:}, {motor_target_arr=:}')
+                    logger.info(f'prev act:{step_record_list[-1].motor_act}, '
+                                # f'{jnt_state.pos=:}, '
+                                f'{motor_target_arr=:}')
 
                 # env.set_motor_target(motor_angle_dict)
+
                 rs_ctrl.set_pos(motor_target_arr)
+
                 _record.time_pnt.set_action = timelib.perf_counter() - run_start_perf_cnt
                 _record.time_pnt.sim_step = timelib.perf_counter() - run_start_perf_cnt
 
-                _record.obs = Obs(time=jnt_state.time,
-                                  motor_pos= np.asarray([jnt_state.pos], dtype=np.float32),
-                                  motor_vel= np.asarray([jnt_state.vel], dtype=np.float32),
-                                  motor_tor= np.asarray([jnt_state.tor], dtype=np.float32))
+                _record.obs = Obs(time= obs_time, # jnt_state.time,
+                                  motor_pos= np.asarray([jnt_state[_id].pos for _id in robot.motor_id_ordering], dtype=np.float32),
+                                  motor_vel= np.asarray([jnt_state[_id].vel for _id in robot.motor_id_ordering], dtype=np.float32),
+                                  motor_tor= np.asarray([jnt_state[_id].tor for _id in robot.motor_id_ordering], dtype=np.float32))
 
                 _record.ctrl_input = deepcopy(control_inputs)
                 _record.motor_act = deepcopy(motor_target_arr)
@@ -227,12 +254,14 @@ def _cpu_bound_sysID_policy(rs_ctrl: RobStrideController):
             # exp_folder = Path('run_policy_log') / f'{exp_name}_{cur_time}'
             # 'run_policy_log/{robot_name}_{policy_name}_{env_name}_{cur_time}'
             cur_time = timelib.strftime("%Y%m%d_%H%M%S")
-            exp_folder = Path(RUN_POLICY_LOG_FOLDER_FMT.format(robot_name='RS02',
+            exp_folder = Path(RUN_POLICY_LOG_FOLDER_FMT.format(robot_name=f'RS_motors',
                                                                policy_name='MpSysID',
-                                                               env_name='sysID',
+                                                               env_name='env_real',
                                                                cur_time=cur_time))
             if not exp_folder.exists():
                 exp_folder.mkdir(parents=True, exist_ok=True)
+
+            rs_ctrl.save_report_ts_record(exp_folder)
 
             # Using context mgr to close env, not use close() standalone.
             # close() also set torque off for all connected motors.
@@ -250,10 +279,9 @@ def _cpu_bound_sysID_policy(rs_ctrl: RobStrideController):
                      step_record_list=step_record_list)
 
     logger.info("--- Plot policy run logg --->")
-    mock_rbt = MockRobot('RS_sysID')
 
     _plot_run_log(
-        mock_rbt,
+        robot,
         sysID_policy,
         step_record_list,
         exp_folder / 'plot'
@@ -316,12 +344,12 @@ def _main(args: argparse.Namespace):
                               baud_rate=RSBaudRate.BPS_1M,
                               run_mode=RSRunMode.PP_POSITION,
                               motor_report_period=RSReportPeriod.P_40MS,
-                              host_can_id=HOST_CAN_ID,
-                              motor_can_id=[MOTOR_CAN_ID],
-                              pos_kp=[30],
-                              default_accel_PP_mode=[190],
-                              default_vel_PP_mode=[40],
-                              init_target_pos=np.asarray([0.], dtype=np.float32))
+                              host_can_id=_HOST_CAN_ID,
+                              motor_can_id=_parsed_args.motor_id,
+                              pos_kp=[_DEFAULT_POS_KP] * len(_parsed_args.motor_id), #[30],
+                              default_accel_PP_mode=[_DEFAULT_ACCEL_PP_MODE] * len(_parsed_args.motor_id),  # [190],
+                              default_vel_PP_mode=[_DEFAULT_VEL_PP_MODE] * len(_parsed_args.motor_id),  # [40],
+                              init_target_pos=np.asarray([0.]*len(_parsed_args.motor_id), dtype=np.float32))
 
     # NOTE: python `daemon` process mimic the behaviour of thread, which will be terminated after the parent process
     # terminates, not the concept of Linux/Unix daemon services which will kept at background even after the parent
@@ -356,7 +384,8 @@ def _main(args: argparse.Namespace):
 
         logger.warning(f'start cpu bound process.')
         # _cpu_bound_policy(controller)
-        _cpu_bound_sysID_policy(controller)
+        mock_rbt = MockRobot('RS_sysID', args.motor_id)
+        _cpu_bound_sysID_policy(controller, mock_rbt)
 
     except Exception as error:
         logger.error(f'--- exception in main process: {error=:} {type(error)=:}')
@@ -370,6 +399,13 @@ def _main(args: argparse.Namespace):
 
 
 if __name__ == '__main__':
+    # leg-left
+    _MOTOR_ID_CHOICES = {31,32,33,34,35}   #0x7f
+    _HOST_CAN_ID = 0xfe
+
+    _DEFAULT_POS_KP = 30
+    _DEFAULT_ACCEL_PP_MODE = 20  #190
+    _DEFAULT_VEL_PP_MODE = 20  #40
 
     _parsed_args = _args_parsing()
     # TODO: move into yaml config.

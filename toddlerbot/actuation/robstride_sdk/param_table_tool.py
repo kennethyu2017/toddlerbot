@@ -13,7 +13,7 @@ from toddlerbot.actuation.robstride_sdk import *
 alogger = Logger.with_default_handlers()
 
 CAN_CHANNEL_NAME : str = r'can0'    #r'PCAN_USBBUS1'
-MOTOR_CAN_ID_SET: Set[int] = {31}  # 0x7f}  # default ID of RS.
+MOTOR_CAN_ID_SET: Set[int] = {31,32,33,34,35}  # 0x7f}  # default ID of RS.
 HOST_CAN_ID: int = 0xfe
 
 # LISTENERS: List[Callable[[Message], None]] = []
@@ -74,7 +74,7 @@ async def _tx_write_param_msg(*, value: int|float,
                                                   param_spec=param_spec
                                                   )[0]
 
-    await alogger.debug(f'write single param can msg: {tx_msg}')
+    await alogger.debug(f'write single param can msg, host time:{time.time()}  msg ---> {tx_msg}')
     global _send_msg_time_stamp
     _send_msg_time_stamp = time.perf_counter()
     await SND_BUFFER_Q.put(tx_msg)
@@ -87,7 +87,7 @@ async def _tx_read_param_msg(*, motor_can_id: int,
                                                  host_can_id=HOST_CAN_ID,
                                                  index=index)[0]
 
-    await alogger.debug(f'tx read single param can msg: {tx_msg}')
+    await alogger.debug(f'tx read single param can msg, host time:{time.time()}  msg ---> {tx_msg}')
 
     global _send_msg_time_stamp
     _send_msg_time_stamp = time.perf_counter()
@@ -228,7 +228,7 @@ async def _read_helper():
     await aprint(f'\n--- start READ motor param table ( only support read single motor and single param till now ):')
     motor_can_id = await _input_int_or_float_helper(dtype=int,
                                                     legal_check=lambda _x: _x in MOTOR_CAN_ID_SET,
-                                                    prompt=f'\ninput read motor can id in choices {MOTOR_CAN_ID_SET} : ')
+                                                    prompt=f'\ninput read motor can id in choices {sorted(MOTOR_CAN_ID_SET)} : ')
 
     index = await _input_int_or_float_helper(dtype=int,
                                              legal_check=lambda _x: 0x7005 <= _x <= 0x7029,
@@ -241,7 +241,7 @@ async def _write_helper():
     await aprint(f'\n--- start WRITE motor control table:')
     motor_can_id = await _input_int_or_float_helper(dtype=int,
                                                     legal_check=lambda _x: _x in MOTOR_CAN_ID_SET,
-                                                    prompt=f'\ninput write motor id in choices {MOTOR_CAN_ID_SET} : ')
+                                                    prompt=f'\ninput write motor id in choices {sorted(MOTOR_CAN_ID_SET)} : ')
 
     index = await _input_int_or_float_helper(dtype=int,
                                              legal_check=lambda _x: 0x7005 <= _x <= 0x7029,

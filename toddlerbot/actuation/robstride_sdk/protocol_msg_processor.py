@@ -174,9 +174,9 @@ class RSProtocolBuilder:
 
         for _v in param_value:
             if lower is not None:
-                assert lower <= _v
+                assert np.all(lower <= _v)
             if upper is not None:
-                assert _v <= upper
+                assert np.all(_v <= upper)
 
             # data1 = bytearray(8)
             data1 = bytearray(4)
