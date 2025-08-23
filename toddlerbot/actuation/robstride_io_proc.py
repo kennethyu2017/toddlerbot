@@ -4,6 +4,7 @@ import subprocess
 import multiprocessing as mp
 from multiprocessing.connection import Connection
 import concurrent
+from concurrent.futures import Future
 from typing import (Any, List, Sequence, NamedTuple,
                     Set, ClassVar,Coroutine)
 # deque does not use lock, but its append/popleft is atomic operation.
@@ -462,6 +463,13 @@ class RobStrideIOProc:
                         raise exc
 
     async def _read_motor_state_periodically(self):
+        """
+
+        NOTE: we do not use the can_bus.send_periodic() method, causing it is implemented
+        though threading.Thread and use time.sleep() which will block thread executing periodic send.
+        But we prefer use asyncio here.
+
+        """
         # TODO: here we use `trick` to write `iq_ref` param dummy value, causing the motor feedback
         # comm type 2 msg, then we can get pos/vel/torque in a single msg.
 
@@ -481,6 +489,11 @@ class RobStrideIOProc:
             if not self._enable_read_motor_state.is_set():
                 # block current task.
                 await self._enable_read_motor_state.wait()
+
+                while not self._motor_state_frame_q.empty():
+                    await alogger.warning(f'----  self._motor_state_frame_q is not empty. '
+                                          f'qsize: {self._motor_state_frame_q.qsize()}')
+                    _ = self._motor_state_frame_q.get_nowait()
 
             loop_start_time:float = time.perf_counter()
 
@@ -561,49 +574,65 @@ class RobStrideIOProc:
             loop: same loop as dump/recv/read_motor_state task.
         """
         # keep reference of tasks.
-        background_task_set = set()
+        background_futures: Set[Future] = set()
 
-        def _build_asyncio_task(coro: Coroutine):
-            task: asyncio.Task = loop.create_task(coro)
-            background_task_set.add(task)
-            task.add_done_callback(background_task_set.discard)
+        def _submit_coro(coro: Coroutine):
+            # TODO:NOTE: do not use loop.create_task directly, which is not thread-safe.
+            # task: asyncio.Task = loop.create_task(coro)
+            # background_task_set.add(task)
+            # task.add_done_callback(background_task_set.discard)
 
-        while True:
+            # submit coroutine to the given `loop`, and executed in the Thread where `loop` is running at.
+            fut: Future = asyncio.run_coroutine_threadsafe(coro,loop)
+            # add strong reference.
+            background_futures.add(fut)
+            fut.add_done_callback(background_futures.discard)
 
+        try:
+            while True:
             # blocking wait.
-            match (event:=self._event_conn_with_controller_proc.recv()):
-                case RSIOEvent.ReqIODisconnect:
-                    logger.warning(f'***** IO proc recv RSIOEvent.Disconnect from controller proc. will raise Exception to '
-                                   f'terminate SndRcvTask. ')
-                    raise ConnectionAbortedError(f'***** IO proc recv RSIOEvent.Disconnect from controller proc, '
-                                                 f' will end snd/rcv task and disconnect from can BUS: {self.channel} *****')
-                    # TODO: let finally of snd/rcv task to disconnect.
-                    # self.disconnect()
-                    # return
+                match (event:=self._event_conn_with_controller_proc.recv()):
+                    case RSIOEvent.ReqIODisconnect:
+                        logger.warning(f'***** IO proc recv RSIOEvent.Disconnect from controller proc. will raise Exception to '
+                                       f'terminate SndRcvTask. ')
+                        raise ConnectionAbortedError(f'***** IO proc recv RSIOEvent.Disconnect from controller proc, '
+                                                     f' will end snd/rcv task and disconnect from can BUS: {self.channel} *****')
+                        # TODO: let finally of snd/rcv task to disconnect.
+                        # self.disconnect()
+                        # return
 
-                case RSIOEvent.EnableReadMotorState:
-                    logger.warning(f'***** IO proc recv RSIOEvent.EnableReadMotorState from controller proc.'
-                                   f' will start read motor state periodically task. ')
+                    case RSIOEvent.EnableReadMotorState:
+                        logger.warning(f'***** IO proc recv RSIOEvent.EnableReadMotorState from controller proc.'
+                                       f' will start read motor state periodically task. ')
 
-                    async def _enable_read():
-                        return self._enable_read_motor_state.set()
-                    # NOTE: must use the same loop as read_motor_state task which call Event.wait().
-                    _build_asyncio_task(_enable_read())
+                        async def _enable_read():
+                            return self._enable_read_motor_state.set()
 
-                case RSIOEvent.DisableReadMotorState:
-                    logger.warning(f'***** IO proc recv RSIOEvent.DisableReadMotorState from controller proc.'
-                                   f' will stop read motor state periodically task. ')
+                        # NOTE: must use the same loop, as read_motor_state task which call Event.wait(), to execute _enable_read coro.
+                        _submit_coro(_enable_read())
 
-                    async def _disable_read():
-                        return self._enable_read_motor_state.clear()
-                    # NOTE: must use the same loop as read_motor_state task which call Event.wait().
-                    _build_asyncio_task(_disable_read())
+                    case RSIOEvent.DisableReadMotorState:
+                        logger.warning(f'***** IO proc recv RSIOEvent.DisableReadMotorState from controller proc.'
+                                       f' will stop read motor state periodically task. ')
 
-                case _:
-                    raise NotImplementedError(f'***** IO Proc only support RSIOEvent.Disconnect, but got: {event}. ***** ')
+                        async def _disable_read():
+                            return self._enable_read_motor_state.clear()
 
-            # TODO: necessary?
-            # time.sleep(.5)
+                        # NOTE: must use the same loop, as read_motor_state task which call Event.wait(), to execute _disable_read coro.
+                        _submit_coro(_disable_read())
+
+                    case _:
+                        raise NotImplementedError(f'***** IO Proc only support RSIOEvent.Disconnect, but got: {event}. ***** ')
+        except Exception as exc:
+            # NOTE: must propagate to up layer task_group to cancel the remaining tasks in task_group.
+            logger.error(f'_event_handler thread failed: {exc=:} {type(exc)=:}')
+            raise exc
+
+        finally:
+            for _f in background_futures:
+                _f.cancel()
+                # TODO: clear ref?
+                # background_futures.remove(_f)
 
     async def _run_event_handler_in_thread_pool(self, loop: asyncio.AbstractEventLoop) -> None:
         with concurrent.futures.ThreadPoolExecutor() as pool:
@@ -618,6 +647,20 @@ class RobStrideIOProc:
         """
         behaviour:str = 'enable' if enable else 'disable'
         logger.warning(f'=== send motor {behaviour} can msg to RS motors ===')
+
+        # recv and drop the motor feedback msg.
+        def _recv_and_drop_feedback():
+            rcv_feedback: can.Message = self._bus.recv(timeout=0.01)
+            ext_id = RSProtocolParser.decode_ext_id(rcv_feedback.arbitration_id)
+            if ext_id.comm_type == CommunicationType.MOTOR_FEEDBACK:
+                # TODO: add error handler.
+                _ = RSProtocolParser.motor_state_feedback(data2=ext_id.data2,
+                                                          data=rcv_feedback.data,
+                                                          ts=rcv_feedback.timestamp)
+            else:
+                raise IOError(f'receive error comm type :{ext_id.comm_type}  motor id: {ext_id.data2 & 0xff}')
+
+
         if enable:
             motor_running_start_stop: List[can.Message] = RSProtocolBuilder.motor_enable(motor_can_id=self._motor_can_id,
                                                                                          host_can_id=self._host_can_id)
@@ -630,20 +673,22 @@ class RobStrideIOProc:
             logger.debug(f'=== motor {behaviour} can msg:{_m} === ')
             self._bus.send(_m, 0.1)
             time.sleep(0.05)
+            _recv_and_drop_feedback()
 
         time.sleep(0.5)
 
-        logger.warning(f'=== send {behaviour} periodic report can msg to RS motors ===')
-        report_start_stop: List[can.Message] = RSProtocolBuilder.toggle_motor_periodic_report(
-            motor_can_id=self._motor_can_id,
-            host_can_id=self._host_can_id,
-            enable=enable)
-
-        for _m in report_start_stop:
-            # TODO: handle timeout exception.
-            logger.debug(f'=== {behaviour} periodic report can msg:{_m} === ')
-            self._bus.send(_m, 0.1)
-            time.sleep(0.05)
+        # logger.warning(f'=== send {behaviour} periodic report can msg to RS motors ===')
+        # report_start_stop: List[can.Message] = RSProtocolBuilder.toggle_motor_periodic_report(
+        #     motor_can_id=self._motor_can_id,
+        #     host_can_id=self._host_can_id,
+        #     enable=enable)
+        #
+        # for _m in report_start_stop:
+        #     # TODO: handle timeout exception.
+        #     logger.debug(f'=== {behaviour} periodic report can msg:{_m} === ')
+        #     self._bus.send(_m, 0.1)
+        #     time.sleep(0.05)
+        #     _recv_and_drop_feedback()
 
 
     def _connect(self):
@@ -733,12 +778,18 @@ class RobStrideIOProc:
             async with asyncio.TaskGroup() as tg:
                 # TODO: add strong references for all the tasks????
                 task_rcv: asyncio.Task = tg.create_task(self._parse_rcv_msg())
+
+                await asyncio.sleep(0.2)
                 task_snd: asyncio.Task = tg.create_task(self._dump_send_msg())
+
+                await asyncio.sleep(0.2)
                 task_read_motor_state: asyncio.Task = tg.create_task(self._read_motor_state_periodically())
+
+                await asyncio.sleep(0.2)
                 # block waiting for IPC event, so must put into individual thread.
                 task_event_hdl: asyncio.Task = tg.create_task(self._run_event_handler_in_thread_pool(loop))
 
-                await asyncio.sleep(1.0)
+                await asyncio.sleep(0.5)
                 self._event_conn_with_controller_proc.send(RSIOEvent.SndRcvTaskReady)
 
         except Exception as exc:
