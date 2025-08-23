@@ -418,8 +418,8 @@ if __name__ == '__main__':
     _HOST_CAN_ID = 0xfe
 
     _DEFAULT_POS_KP = 30
-    _DEFAULT_ACCEL_PP_MODE = 190   # 20
-    _DEFAULT_VEL_PP_MODE = 40  # 20
+    _DEFAULT_ACCEL_PP_MODE = 20 #190
+    _DEFAULT_VEL_PP_MODE = 30 #40
 
     _parsed_args = _args_parsing()
     # TODO: move into yaml config.
