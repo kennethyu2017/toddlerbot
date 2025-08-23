@@ -45,6 +45,13 @@ def _args_parsing() -> argparse.Namespace:
         default=None,
         help="The can id of motor.",
     )
+    parser.add_argument(
+        '--read-motor-state-period',
+        type=float,
+        default=None,
+        required=True,
+        help='read motor state period in seconds.',
+    )
 
     # TODO: confusing.  we can separate them into two fields:  --policy xxx  --fixed true/false.
     # parser.add_argument(
@@ -65,6 +72,7 @@ def _run_io_bound_task_in_spawned_process(*, motor_can_id: Sequence[int],  # ids
                                          ctrl_msg_q: mp.Queue,  # [ControlMsg],
                                          motor_state_frame_q: mp.Queue,  # [MotorStateFrame],
                                          motor_param_value_q: mp.Queue,  # [SingleParamValue]
+                                         read_motor_state_period: float,
                                          )->None:
     _proc = RobStrideIOProc(motor_can_id=motor_can_id,
                             host_can_id=host_can_id,
@@ -73,7 +81,9 @@ def _run_io_bound_task_in_spawned_process(*, motor_can_id: Sequence[int],  # ids
                             event_conn_with_controller_proc=event_conn,
                             ctrl_msg_q=ctrl_msg_q,
                             motor_state_frame_q=motor_state_frame_q,
-                            motor_param_value_q=motor_param_value_q)
+                            motor_param_value_q=motor_param_value_q,
+                            read_motor_state_period_sec=read_motor_state_period,
+                            )
     return asyncio.run(_proc.send_rcv_task())
 
 # def _cpu_bound_motor_bd_width_policy(ctrl: RobStrideController):
@@ -166,6 +176,7 @@ def _cpu_bound_sysID_policy(rs_ctrl: RobStrideController, robot:MockRobot):
             # TODO: can not guarantee RS motors local clock are synchronized with each other, so can not use
             # periodic report solution to get motor state.
             # rs_ctrl.toggle_periodic_report_nowait(enable=True)
+            rs_ctrl.toggle_read_motor_state_periodically(enable=True)
 
             # action = Action(value=None, last=False)
             # while not action.last:
@@ -248,6 +259,8 @@ def _cpu_bound_sysID_policy(rs_ctrl: RobStrideController, robot:MockRobot):
             # p_bar.close()
             logger.info(f'exit from run while loop, final step_count: {_step_count},'
                         f' step record count: {len(step_record_list)}')
+
+            rs_ctrl.toggle_read_motor_state_periodically(enable=False)
 
             # TODO: save recording file every n steps n seconds. ... not at the end of while loop.....
             # exp_name = f"{robot.name}_{policy.name}_{env.env_name}"
@@ -363,7 +376,8 @@ def _main(args: argparse.Namespace):
                                       event_conn=_io_proc_event_conn,
                                       ctrl_msg_q=_motor_ctrl_q,
                                       motor_state_frame_q=_motor_state_frame_q,
-                                      motor_param_value_q=_motor_param_value_q),
+                                      motor_param_value_q=_motor_param_value_q,
+                                      read_motor_state_period=args.read_motor_state_period),
                           name='asyncio_send_rcv_can_msg',
                           daemon=True)
 
@@ -404,8 +418,8 @@ if __name__ == '__main__':
     _HOST_CAN_ID = 0xfe
 
     _DEFAULT_POS_KP = 30
-    _DEFAULT_ACCEL_PP_MODE = 20  #190
-    _DEFAULT_VEL_PP_MODE = 20  #40
+    _DEFAULT_ACCEL_PP_MODE = 190   # 20
+    _DEFAULT_VEL_PP_MODE = 40  # 20
 
     _parsed_args = _args_parsing()
     # TODO: move into yaml config.

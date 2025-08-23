@@ -349,11 +349,14 @@ class RobStrideIOProc:
                 raise OSError(f'send msg from buffer queue failed: {exc=:} {type(exc)=:}')
 
     async def _parse_rcv_msg(self) -> None:
+
+        alogger.warning(f'---- start _parse_rcv_msg task ----')
+
         while True:
             msg: can.Message|None = None
 
-            # an optimized way to yield.
-            await asyncio.sleep(0.)
+            #TODO: should use an optimized way to yield.
+            # await asyncio.sleep(0.)
 
             try:
                 msg = await self._loop_rcv_buffer_q.get()
@@ -367,6 +370,7 @@ class RobStrideIOProc:
                 #     raise ValueError(f'rcv msg dest can id is not host, dest id: {ext_id.dest_can_id}')
 
                 await alogger.debug(f'parse msg result--->')
+
                 if ext_id.comm_type == CommunicationType.SINGLE_PARAM_READ:
                     param_value:SingleParamValue = RSProtocolParser.single_param(data2=ext_id.data2, data=msg.data, ts=msg.timestamp)
                     await alogger.debug(f'{param_value}')
@@ -436,16 +440,22 @@ class RobStrideIOProc:
                     self._loop_rcv_buffer_q.task_done()
 
     async def _dump_send_msg(self):
+
+        alogger.warning(f'---- start _dump_send_msg task ----')
+
         while True:
             # an optimized way to yield.
             await asyncio.sleep(0.)
-            # 1 ns.
-            # await asyncio.sleep(1e-9)
 
             if not self._motor_ctrl_q.empty():
                 try:
+                    # NOTE: _motor_ctrl_q block wait will block current event loop, so
+                    # we can not use the .get() method directly.
+                    # ctrl_msg: ControlMsg = self._motor_ctrl_q.get(block=True,timeout=None)
+
                     # will raise immediately if empty.
                     ctrl_msg:ControlMsg = self._motor_ctrl_q.get_nowait()   #non-block.
+
                     if ctrl_msg.time_to_send != 0:
                         # async def _ttt():
                         #     await asyncio.sleep(ctrl_msg.time_to_send)
@@ -470,6 +480,8 @@ class RobStrideIOProc:
         But we prefer use asyncio here.
 
         """
+        alogger.warning(f'---- start _read_motor_state_periodically task ----')
+
         # TODO: here we use `trick` to write `iq_ref` param dummy value, causing the motor feedback
         # comm type 2 msg, then we can get pos/vel/torque in a single msg.
 
@@ -573,6 +585,9 @@ class RobStrideIOProc:
         Args:
             loop: same loop as dump/recv/read_motor_state task.
         """
+
+        logger.warning(f'---- start _event_handler task ----')
+
         # keep reference of tasks.
         background_futures: Set[Future] = set()
 
@@ -590,7 +605,7 @@ class RobStrideIOProc:
 
         try:
             while True:
-            # blocking wait.
+                # blocking wait.
                 match (event:=self._event_conn_with_controller_proc.recv()):
                     case RSIOEvent.ReqIODisconnect:
                         logger.warning(f'***** IO proc recv RSIOEvent.Disconnect from controller proc. will raise Exception to '

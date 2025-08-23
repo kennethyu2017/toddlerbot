@@ -32,11 +32,11 @@ else:
 # This script collects data for system identification of the motors.
 # in seconds.
 _WARM_UP_DURATION = 2.0
-_CHIRP_SIGNAL_DURATION = 20 # 10.0
+_CHIRP_SIGNAL_DURATION = 10.0
 _CHIRP_START_FREQ = 0.1
 
 # TODO: 3 is enough?
-_CHIRP_END_FREQ = 6 # 10.
+_CHIRP_END_FREQ = 3 # 10.
 _CHIRP_DECAY_RATE = 0.1  #0.1
 _RESET_DURATION = 2.0
 
