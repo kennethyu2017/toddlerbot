@@ -1,0 +1,82 @@
+<mujoco model="kbot_both_leg_scene">
+  <include file="mjc_compiled_kbot_both_leg_feet_collision_only.xml"/>
+
+<!-- will affect the visual/scale below -->
+<!--    meansize will scale the rendered: coordinate frame display, contact point, contact force, ... -->
+  <statistic center="0 0 .7" extent="1.2" meansize=".06"/>
+<!--  <statistic center="0 0 .30" extent="1.5" meansize=".08"/>-->
+<!--    <statistic center="0 0 .30" extent="1.5"/>-->
+
+  <visual>
+    <headlight diffuse=".8 .8 .8" ambient=".2 .2 .2" specular="1 1 1"/>
+<!--    <rgba force="1 0 0 1" />-->
+        <rgba force="1 0 0 1"  haze=".15 .25 .35 0" />
+<!--    <global azimuth="140" elevation="-20"/>-->
+    <global azimuth="120" elevation="-20"/>
+    <map force=".01"/>
+    <scale forcewidth=".3" contactwidth=".5" contactheight=".2" framewidth=".03" framelength=".4"/>
+    <quality shadowsize="8192"/>
+  </visual>
+
+  <asset>
+<!--    skybox must be the first texture in model. -->
+<!--    <texture type="skybox" builtin="gradient" rgb1="1 1 1" rgb2="1 1 1" width="800" height="800"/>-->
+    <texture type="skybox" builtin="gradient" rgb1=".3 .5 .7" rgb2="0 0 0" width="800" />
+
+<!--    <texture type="2d" name="groundplane" builtin="checker" mark="edge" rgb1="1 1 1" rgb2="1 1 1"-->
+<!--      markrgb="0 0 0" width="300" height="300"/>-->
+<!--      <texture type="2d" name="groundplane" builtin="checker" mark="edge" rgb1="1 1 1" rgb2="1 1 1"-->
+<!--      markrgb="0 0 0" width="300" height="300"/>-->
+    <texture type="2d" name="groundplane" builtin="checker" mark="edge" rgb1=".2 .3 .4"
+            rgb2=".1 .2 .3"  markrgb=".8 .8 .8" width="100" height="100"/>
+
+<!--    <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="5 5" reflectance="0"/>-->
+    <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="5 5" reflectance=".2"/>
+
+  </asset>
+
+  <worldbody>
+<!--    <light type="spot" pos="0 0 6.5" dir="0 0 -1" />-->
+<!--    <light mode="targetbody" target="virtual_floating_base" type="spot" name="target_to_robot" pos="0 0 4.5" dir="0 0 -1"  />-->
+    <geom name="floor" size="0 0 .01" type="plane" material="groundplane" group="0"/>
+  </worldbody>
+
+<!--  <include file="sensors.xml"/>-->
+
+<!--  <keyframe>-->
+<!--    <key name="home"-->
+<!--      qpos="-->
+<!--      0 0 .785-->
+<!--      1 0 0 0-->
+<!--      -.1 0 0 .3 -.2 0-->
+<!--      -.1 0 0 .3 -.2 0-->
+<!--      0 0 0-->
+<!--      .2 .2 0 1.28 0 0 0-->
+<!--      .2 -.2 0 1.28 0 0 0-->
+<!--      "-->
+<!--      ctrl="-->
+<!--      -.1 0 0 .3 -.2 0-->
+<!--      -.1 0 0 .3 -.2 0-->
+<!--      0 0 0-->
+<!--      .2 .2 0 1.28 0 0 0-->
+<!--      .2 -.2 0 1.28 0 0 0-->
+<!--      "/>-->
+<!--    <key name="knees_bent"-->
+<!--      qpos="-->
+<!--      0 0 .755-->
+<!--      1 0 0 0-->
+<!--      -.312 0 0 .669 -.363 0-->
+<!--      -.312 0 0 .669 -.363 0-->
+<!--      0 0 .073-->
+<!--      .2 .2 0 .6 0 0 0-->
+<!--      .2 -.2 0 .6 0 0 0-->
+<!--      "-->
+<!--      ctrl="-->
+<!--      -.312 0 0 .669 -.363 0-->
+<!--      -.312 0 0 .669 -.363 0-->
+<!--      0 0 .073-->
+<!--      .2 .2 0 .6 0 0 0-->
+<!--      .2 -.2 0 .6 0 0 0-->
+<!--    "/>-->
+<!--  </keyframe>-->
+</mujoco>

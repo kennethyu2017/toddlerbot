@@ -1,0 +1,13 @@
+{
+    "document_id": "f113281372e4169121004b65",
+    "workspace_id": "c80b55f27aca32e7170d61fc",
+    "output_format": "mujoco",
+    "output_filename": "leg_R_subassembly",
+    "robot_name": "leg_R_subassembly",
+    "assembly_name": "leg_R_subassembly",
+    "include_configuration_suffix": false,
+    "draw_frames": true,
+    "merge_stls": true,
+    "simplify_stls": true,
+    "maxSTLSize": 3
+}

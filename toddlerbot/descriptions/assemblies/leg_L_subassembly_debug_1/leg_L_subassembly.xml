@@ -1,0 +1,180 @@
+<?xml version="1.0" ?>
+<mujoco model="kbot_both_leg">
+  <compiler angle="radian" meshdir="assets" autolimits="true"/>
+  <default>
+    <default class="kbot_both_leg">
+      <joint frictionloss="0.1" armature="0.005"/>
+      <position kp="50" dampratio="1"/>
+      <default class="visual">
+        <geom type="mesh" contype="0" conaffinity="0" group="2"/>
+      </default>
+      <default class="collision">
+        <geom group="3"/>
+      </default>
+    </default>
+  </default>
+  <worldbody>
+    <body name="kd_d_101_l_hip_static" pos="0 0 0.90" quat="1 0 0 0" childclass="kbot_both_leg">
+<!--      <freejoint/>-->
+      <inertial pos="0.0300979 0.000647175 -0.0590774" mass="0.0206588"
+                fullinertia="0.004857 0.00293685 0.00295097 -4.54033e-05 -7.77773e-05 -1.76051e-05"/>
+<!--      <geom type="mesh" class="visual" pos="0 3.85803e-15 2.39392e-15" quat="1 0 0 0" mesh="kd_d_104_l_hip_yoke_hardstop" material="kd_d_104_l_hip_yoke_hardstop_material"/>-->
+      <geom type="mesh" class="collision" pos="0 3.85803e-15 2.39392e-15" quat="1 0 0 0" mesh="kd_d_104_l_hip_yoke_hardstop" material="kd_d_104_l_hip_yoke_hardstop_material"/>
+<!--      <geom type="mesh" class="visual" pos="0 0 0" quat="1 0 0 0" mesh="kc_d_107_l_cover" material="kc_d_107_l_cover_material"/>-->
+      <geom type="mesh" class="collision" pos="0 0 0" quat="1 0 0 0" mesh="kc_d_107_l_cover" material="kc_d_107_l_cover_material"/>
+<!--      <geom type="mesh" class="visual" pos="3.26128e-16 6.57881e-15 7.28584e-15" quat="1 0 0 0" mesh="l_hip_pitch_rs04" material="l_hip_pitch_rs04_material"/>-->
+      <geom type="mesh" class="collision" pos="3.26128e-16 6.57881e-15 7.28584e-15" quat="1 0 0 0" mesh="l_hip_pitch_rs04" material="l_hip_pitch_rs04_material"/>
+<!--      <geom type="mesh" class="visual" pos="0 0 0" quat="1 0 0 0" mesh="kd_d_101_l_hip_static" material="kd_d_101_l_hip_static_material"/>-->
+      <geom type="mesh" class="collision" pos="0 0 0" quat="1 0 0 0" mesh="kd_d_101_l_hip_static" material="kd_d_101_l_hip_static_material"/>
+      <site group="3" name="imu_on_pelvis" pos="0.0330531 -7.41794e-18 -9.04359e-18" quat="1 0 0 0"/>
+      <body name="kd_d_102_l_hip_yoke_drive" pos="0.055 6.17562e-15 -0.064" quat="0.5 -0.5 -0.5 0.5">
+        <joint axis="0 0 1" name="left_hip_pitch_RS04" type="hinge" range="-1.0471975511965976 2.2165681500327987"/>
+        <inertial pos="-0.00301868 0.006173 -0.0412792" mass="0.0554486"
+                  fullinertia="0.000938904 0.00125843 0.00133868 4.90719e-05 -3.75504e-05 0.000187393"/>
+<!--        <geom type="mesh" class="visual" pos="-1.38778e-17 -0.064 0.054" quat="0.5 0.5 0.5 -0.5" mesh="kd_d_105_l_hipyokehardstoptooth" material="kd_d_105_l_hipyokehardstoptooth_material"/>-->
+<!--        <geom type="mesh" class="collision" pos="-1.38778e-17 -0.064 0.054" quat="0.5 0.5 0.5 -0.5" mesh="kd_d_105_l_hipyokehardstoptooth" material="kd_d_105_l_hipyokehardstoptooth_material"/>-->
+<!--        <geom type="mesh" class="visual" pos="-1.38778e-17 -0.064 0.055" quat="0.5 0.5 0.5 -0.5" mesh="kd_d_103_l_hip_yoke_idle" material="kd_d_103_l_hip_yoke_idle_material"/>-->
+        <geom type="mesh" class="collision" pos="-1.38778e-17 -0.064 0.055" quat="0.5 0.5 0.5 -0.5" mesh="kd_d_103_l_hip_yoke_idle" material="kd_d_103_l_hip_yoke_idle_material"/>
+<!--        <geom type="mesh" class="visual" pos="0.04235 0.03 -0.071" quat="6.48398e-17 -3.14578e-17 0.707107 -0.707107" mesh="bearing_skf_61805_hip_roll_idle" material="bearing_skf_61805_hip_roll_idle_material"/>-->
+        <geom type="mesh" class="collision" pos="0.04235 0.03 -0.071" quat="6.48398e-17 -3.14578e-17 0.707107 -0.707107" mesh="bearing_skf_61805_hip_roll_idle" material="bearing_skf_61805_hip_roll_idle_material"/>
+<!--        <geom type="mesh" class="visual" pos="0 -0.064 0.055" quat="0.5 0.5 0.5 -0.5" mesh="kd_d_102_l_hip_yoke_drive" material="kd_d_102_l_hip_yoke_drive_material"/>-->
+        <geom type="mesh" class="collision" pos="0 -0.064 0.055" quat="0.5 0.5 0.5 -0.5" mesh="kd_d_102_l_hip_yoke_drive" material="kd_d_102_l_hip_yoke_drive_material"/>
+        <body name="kd_d_201_l_upper_thigh_drive" pos="-0.02925 0.03 -0.071" quat="3.19957e-15 -0.707107 -3.33067e-15 0.707107">
+          <joint axis="0 0 1" name="left_hip_roll_RS03" type="hinge" range="-0.2094395102393089 2.268928027592639"/>
+          <inertial pos="0.000136582 -0.0593371 -0.0260728" mass="0.0243686" fullinertia="0.01051 0.00325732 0.0109178 -1.54432e-06 9.7205e-06 0.000304446"/>
+          <geom type="mesh" class="visual" pos="-0.126 0.094 -0.02925" quat="0.707107 -0.707107 2.22045e-16 -8.6141e-17" mesh="kd_d_201_l_upper_thigh_drive" material="kd_d_201_l_upper_thigh_drive_material"/>
+          <geom type="mesh" class="collision" pos="-0.126 0.094 -0.02925" quat="0.707107 -0.707107 2.22045e-16 -8.6141e-17" mesh="kd_d_201_l_upper_thigh_drive" material="kd_d_201_l_upper_thigh_drive_material"/>
+          <geom type="mesh" class="visual" pos="-0.126 0.094 -0.02925" quat="0.707107 -0.707107 0 1.0518e-45" mesh="l_hip_roll_rs03" material="l_hip_roll_rs03_material"/>
+          <geom type="mesh" class="collision" pos="-0.126 0.094 -0.02925" quat="0.707107 -0.707107 0 1.0518e-45" mesh="l_hip_roll_rs03" material="l_hip_roll_rs03_material"/>
+          <geom type="mesh" class="visual" pos="-0.126 0.094 -0.02925" quat="0.707107 -0.707107 2.22045e-16 -8.6141e-17" mesh="kd_d_202_l_upper_thigh_idle" material="kd_d_202_l_upper_thigh_idle_material"/>
+          <geom type="mesh" class="collision" pos="-0.126 0.094 -0.02925" quat="0.707107 -0.707107 2.22045e-16 -8.6141e-17" mesh="kd_d_202_l_upper_thigh_idle" material="kd_d_202_l_upper_thigh_idle_material"/>
+          <geom type="mesh" class="visual" pos="-0.126 0.094 -0.02925" quat="0.707107 -0.707107 4.44089e-16 -4.55357e-16" mesh="l_hip_yaw_rs03" material="l_hip_yaw_rs03_material"/>
+          <geom type="mesh" class="collision" pos="-0.126 0.094 -0.02925" quat="0.707107 -0.707107 4.44089e-16 -4.55357e-16" mesh="l_hip_yaw_rs03" material="l_hip_yaw_rs03_material"/>
+          <geom type="mesh" class="visual" pos="-0.126 0.094 -0.02925" quat="0.707107 -0.707107 6.66134e-16 -6.3509e-16" mesh="kd_d_203_l_thigh_yaw_hard_stopper" material="kd_d_203_l_thigh_yaw_hard_stopper_material"/>
+          <geom type="mesh" class="collision" pos="-0.126 0.094 -0.02925" quat="0.707107 -0.707107 6.66134e-16 -6.3509e-16" mesh="kd_d_203_l_thigh_yaw_hard_stopper" material="kd_d_203_l_thigh_yaw_hard_stopper_material"/>
+          <body name="kd_d_301_l_femur_lower_drive" pos="4.60743e-15 -0.142 -0.02525" quat="0.707107 -0.707107 1.11022e-16 -7.08075e-16">
+            <joint axis="0 0 1" name="left_hip_yaw_RS03" type="hinge" range="-1.535889741755009 1.5358897417550108"/>
+            <inertial pos="0.00180935 0.0137013 -0.174286" mass="0.043909" fullinertia="0.0156455 0.0141616 0.004118 -0.000194026 0.00114396 0.00152214"/>
+            <geom type="mesh" class="visual" pos="-0.126 0.004 0.236" quat="1 0 0 0" mesh="kd_d_301_l_femur_lower_drive" material="kd_d_301_l_femur_lower_drive_material"/>
+            <geom type="mesh" class="collision" pos="-0.126 0.004 0.236" quat="1 0 0 0" mesh="kd_d_301_l_femur_lower_drive" material="kd_d_301_l_femur_lower_drive_material"/>
+            <geom type="mesh" class="visual" pos="-0.126 0.004 0.236" quat="1 -5.55112e-17 0 6.93889e-17" mesh="kd_d_403_l_shin_cover" material="kd_d_403_l_shin_cover_material"/>
+            <geom type="mesh" class="collision" pos="-0.126 0.004 0.236" quat="1 -5.55112e-17 0 6.93889e-17" mesh="kd_d_403_l_shin_cover" material="kd_d_403_l_shin_cover_material"/>
+            <geom type="mesh" class="visual" pos="-0.126 0.004 0.236" quat="1 -0 -0 1.38778e-17" mesh="l_knee_pitch_rs04" material="l_knee_pitch_rs04_material"/>
+            <geom type="mesh" class="collision" pos="-0.126 0.004 0.236" quat="1 -0 -0 1.38778e-17" mesh="l_knee_pitch_rs04" material="l_knee_pitch_rs04_material"/>
+            <geom type="mesh" class="visual" pos="-0.126 0.004 0.236" quat="1 -2.22045e-16 2.22045e-16 1.38778e-17" mesh="kd_d_302_l_femur_lower_idle" material="kd_d_302_l_femur_lower_idle_material"/>
+            <geom type="mesh" class="collision" pos="-0.126 0.004 0.236" quat="1 -2.22045e-16 2.22045e-16 1.38778e-17" mesh="kd_d_302_l_femur_lower_idle" material="kd_d_302_l_femur_lower_idle_material"/>
+            <geom type="mesh" class="visual" pos="0.03745 0.021 -0.212" quat="1 0 -0 6.93889e-17" mesh="bearing_skf_61805_knee_pitch_idle" material="bearing_skf_61805_knee_pitch_idle_material"/>
+            <geom type="mesh" class="collision" pos="0.03745 0.021 -0.212" quat="1 0 -0 6.93889e-17" mesh="bearing_skf_61805_knee_pitch_idle" material="bearing_skf_61805_knee_pitch_idle_material"/>
+            <body name="kd_d_402_l_shin_idle" pos="-0.02 0.021 -0.212" quat="0.5 0.5 0.5 0.5">
+              <joint axis="0 0 1" name="left_knee_pitch_RS04" type="hinge" range="0.0 2.705260340591211"/>
+              <inertial pos="-0.0237083 -0.104664 0.0185257" mass="0.0168258" fullinertia="0.0148016 0.00304452 0.0147421 1.81753e-05 3.99221e-05 0.000493349"/>
+              <geom type="mesh" class="visual" pos="0.0339216 -0.279534 0.002" quat="5.06347e-15 -0.642788 -0.766044 -4.0518e-15" mesh="bushing_mzdf_8_8_bushing_on_ankle_pitch_shaft_and_foot_structure" material="bushing_mzdf_8_8_bushing_on_ankle_pitch_shaft_and_foot_structure_material"/>
+              <geom type="mesh" class="collision" pos="0.0339216 -0.279534 0.002" quat="5.06347e-15 -0.642788 -0.766044 -4.0518e-15" mesh="bushing_mzdf_8_8_bushing_on_ankle_pitch_shaft_and_foot_structure" material="bushing_mzdf_8_8_bushing_on_ankle_pitch_shaft_and_foot_structure_material"/>
+              <geom type="mesh" class="visual" pos="0.00781275 -0.0937595 0.002" quat="1.89855e-16 -0.642788 -0.766044 9.13919e-16" mesh="bushing_mzdf_8_8_bushing_on_ankle_pitch_shaft_and_foot_structure" material="bushing_mzdf_8_8_bushing_on_ankle_pitch_shaft_and_foot_structure_material"/>
+              <geom type="mesh" class="collision" pos="0.00781275 -0.0937595 0.002" quat="1.89855e-16 -0.642788 -0.766044 9.13919e-16" mesh="bushing_mzdf_8_8_bushing_on_ankle_pitch_shaft_and_foot_structure" material="bushing_mzdf_8_8_bushing_on_ankle_pitch_shaft_and_foot_structure_material"/>
+              <geom type="mesh" class="visual" pos="-0.021 -1.0305 0.14225" quat="0.5 0.5 0.5 -0.5" mesh="kd_d_504x_ankleshoulderbolt" material="kd_d_504x_ankleshoulderbolt_material"/>
+              <geom type="mesh" class="collision" pos="-0.021 -1.0305 0.14225" quat="0.5 0.5 0.5 -0.5" mesh="kd_d_504x_ankleshoulderbolt" material="kd_d_504x_ankleshoulderbolt_material"/>
+              <geom type="mesh" class="visual" pos="-0.110702 0.435463 -0.107" quat="0.541675 -0.454519 -0.541675 -0.454519" mesh="kd_d_503x_l_ankle_link_s" material="kd_d_503x_l_ankle_link_s_material"/>
+              <geom type="mesh" class="collision" pos="-0.110702 0.435463 -0.107" quat="0.541675 -0.454519 -0.541675 -0.454519" mesh="kd_d_503x_l_ankle_link_s" material="kd_d_503x_l_ankle_link_s_material"/>
+              <geom type="mesh" class="visual" pos="-0.0170028 0.448002 -0.106" quat="0.5 -0.5 -0.5 -0.5" mesh="kd_d_506_l_ankle_pitch_shaft_endstop_80deg" material="kd_d_506_l_ankle_pitch_shaft_endstop_80deg_material"/>
+              <geom type="mesh" class="collision" pos="-0.0170028 0.448002 -0.106" quat="0.5 -0.5 -0.5 -0.5" mesh="kd_d_506_l_ankle_pitch_shaft_endstop_80deg" material="kd_d_506_l_ankle_pitch_shaft_endstop_80deg_material"/>
+              <geom type="mesh" class="visual" pos="-0.0170028 0.448002 -0.106" quat="0.5 -0.5 -0.5 -0.5" mesh="kd_d_502_l_ankle_shaft" material="kd_d_502_l_ankle_shaft_material"/>
+              <geom type="mesh" class="collision" pos="-0.0170028 0.448002 -0.106" quat="0.5 -0.5 -0.5 -0.5" mesh="kd_d_502_l_ankle_shaft" material="kd_d_502_l_ankle_shaft_material"/>
+              <geom type="mesh" class="visual" pos="0.00781275 -0.0937595 0.0095" quat="0.5 -0.5 0.5 -0.5" mesh="linkage_pin_on_ankle_pitch_linkage_both_ends" material="linkage_pin_on_ankle_pitch_linkage_both_ends_material"/>
+              <geom type="mesh" class="collision" pos="0.00781275 -0.0937595 0.0095" quat="0.5 -0.5 0.5 -0.5" mesh="linkage_pin_on_ankle_pitch_linkage_both_ends" material="linkage_pin_on_ankle_pitch_linkage_both_ends_material"/>
+              <geom type="mesh" class="visual" pos="-0.017 0.448 -0.106" quat="0.5 -0.5 -0.5 -0.5" mesh="kd_d_402_l_shin_idle" material="kd_d_402_l_shin_idle_material"/>
+              <geom type="mesh" class="collision" pos="-0.017 0.448 -0.106" quat="0.5 -0.5 -0.5 -0.5" mesh="kd_d_402_l_shin_idle" material="kd_d_402_l_shin_idle_material"/>
+              <geom type="mesh" class="visual" pos="-0.0170028 0.448002 -0.106" quat="0.5 -0.5 -0.5 -0.5" mesh="l_ankle_pitch_rs02" material="l_ankle_pitch_rs02_material"/>
+              <geom type="mesh" class="collision" pos="-0.0170028 0.448002 -0.106" quat="0.5 -0.5 -0.5 -0.5" mesh="l_ankle_pitch_rs02" material="l_ankle_pitch_rs02_material"/>
+              <geom type="mesh" class="visual" pos="-0.017 0.448 -0.106" quat="0.5 -0.5 -0.5 -0.5" mesh="kd_d_401_l_shin_drive" material="kd_d_401_l_shin_drive_material"/>
+              <geom type="mesh" class="collision" pos="-0.017 0.448 -0.106" quat="0.5 -0.5 -0.5 -0.5" mesh="kd_d_401_l_shin_drive" material="kd_d_401_l_shin_drive_material"/>
+              <body name="kd_d_501_l_foot_structure" pos="-0.03 -0.29 0.00195" quat="0.707107 -2.63959e-16 -1.11022e-16 0.707107">
+                <joint axis="0 0 1" name="left_ankle_pitch_passive_on_foot_structure_RS02" type="hinge" range="-1.1344640137963036 0.26179938779916007"/>
+                <inertial pos="-0.0314359 0.0169525 0.0130346" mass="0.0610672" fullinertia="0.00193721 0.000368567 0.00188526 0.00011674 2.46236e-05 -2.17471e-05"/>
+                <geom type="mesh" class="visual" pos="1.11022e-16 0 0.001" quat="0 1 0 0" mesh="bushing_mzdf_15_12_bushing_for_ankle_pitch_dof_at_foot_structure" material="bushing_mzdf_15_12_bushing_for_ankle_pitch_dof_at_foot_structure_material"/>
+                <geom type="mesh" class="collision" pos="1.11022e-16 0 0.001" quat="0 1 0 0" mesh="bushing_mzdf_15_12_bushing_for_ankle_pitch_dof_at_foot_structure" material="bushing_mzdf_15_12_bushing_for_ankle_pitch_dof_at_foot_structure_material"/>
+                <geom type="mesh" class="visual" pos="0.738 0.0151908 -0.108" quat="8.7962e-15 -0.707107 9.99201e-16 -0.707107" mesh="kd_d_501_l_foot_structure" material="kd_d_501_l_foot_structure_material"/>
+                <geom type="mesh" class="collision" pos="0.738 0.0151908 -0.108" quat="8.7962e-15 -0.707107 9.99201e-16 -0.707107" mesh="kd_d_501_l_foot_structure" material="kd_d_501_l_foot_structure_material"/>
+                <geom type="mesh" class="visual" pos="0.0102606 -0.0281908 0.00775" quat="2.66586e-16 -3.92523e-17 -0.707107 0.707107" mesh="linkage_pin_on_ankle_pitch_linkage_both_ends" material="linkage_pin_on_ankle_pitch_linkage_both_ends_material"/>
+                <geom type="mesh" class="collision" pos="0.0102606 -0.0281908 0.00775" quat="2.66586e-16 -3.92523e-17 -0.707107 0.707107" mesh="linkage_pin_on_ankle_pitch_linkage_both_ends" material="linkage_pin_on_ankle_pitch_linkage_both_ends_material"/>
+                <geom type="mesh" class="visual" pos="0.738 0.0151908 -0.108" quat="8.29573e-15 -0.707107 1.55431e-15 -0.707107" mesh="kd_d_601_l_foot_pad" material="kd_d_601_l_foot_pad_material"/>
+                <geom type="mesh" class="collision" pos="0.738 0.0151908 -0.108" quat="8.29573e-15 -0.707107 1.55431e-15 -0.707107" mesh="kd_d_601_l_foot_pad" material="kd_d_601_l_foot_pad_material"/>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+
+  </worldbody>
+  <asset>
+    <mesh file="bushing_mzdf_8_8_bushing_on_ankle_pitch_shaft_and_foot_structure.stl"/>
+    <mesh file="kd_d_201_l_upper_thigh_drive.stl"/>
+    <mesh file="bearing_skf_61805_knee_pitch_idle.stl"/>
+    <mesh file="kd_d_601_l_foot_pad.stl"/>
+    <mesh file="kd_d_101_l_hip_static.stl"/>
+    <mesh file="kd_d_504x_ankleshoulderbolt.stl"/>
+    <mesh file="kd_d_104_l_hip_yoke_hardstop.stl"/>
+    <mesh file="kd_d_506_l_ankle_pitch_shaft_endstop_80deg.stl"/>
+    <mesh file="kd_d_502_l_ankle_shaft.stl"/>
+    <mesh file="l_hip_yaw_rs03.stl"/>
+    <mesh file="linkage_pin_on_ankle_pitch_linkage_both_ends.stl"/>
+    <mesh file="kd_d_202_l_upper_thigh_idle.stl"/>
+    <mesh file="l_hip_pitch_rs04.stl"/>
+    <mesh file="kd_d_105_l_hipyokehardstoptooth.stl"/>
+    <mesh file="kd_d_203_l_thigh_yaw_hard_stopper.stl"/>
+    <mesh file="kd_d_401_l_shin_drive.stl"/>
+    <mesh file="bearing_skf_61805_hip_roll_idle.stl"/>
+    <mesh file="kd_d_503x_l_ankle_link_s.stl"/>
+    <mesh file="bushing_mzdf_15_12_bushing_for_ankle_pitch_dof_at_foot_structure.stl"/>
+    <mesh file="l_hip_roll_rs03.stl"/>
+    <mesh file="kd_d_301_l_femur_lower_drive.stl"/>
+    <mesh file="l_knee_pitch_rs04.stl"/>
+    <mesh file="kd_d_402_l_shin_idle.stl"/>
+    <mesh file="kc_d_107_l_cover.stl"/>
+    <mesh file="l_ankle_pitch_rs02.stl"/>
+    <mesh file="kd_d_302_l_femur_lower_idle.stl"/>
+    <mesh file="kd_d_102_l_hip_yoke_drive.stl"/>
+    <mesh file="kd_d_501_l_foot_structure.stl"/>
+    <mesh file="kd_d_103_l_hip_yoke_idle.stl"/>
+    <mesh file="kd_d_403_l_shin_cover.stl"/>
+    <material name="kd_d_104_l_hip_yoke_hardstop_material" rgba="0.647059 0.647059 0.647059 1"/>
+    <material name="kc_d_107_l_cover_material" rgba="0.768627 0.886275 0.952941 1"/>
+    <material name="l_hip_pitch_rs04_material" rgba="0.917647 0.917647 0.917647 1"/>
+    <material name="kd_d_101_l_hip_static_material" rgba="0.972549 0.529412 0.00392157 1"/>
+    <material name="kd_d_105_l_hipyokehardstoptooth_material" rgba="0.231373 0.380392 0.705882 1"/>
+    <material name="kd_d_103_l_hip_yoke_idle_material" rgba="0.615686 0.811765 0.929412 1"/>
+    <material name="bearing_skf_61805_hip_roll_idle_material" rgba="0.498039 0.498039 0.498039 1"/>
+    <material name="kd_d_102_l_hip_yoke_drive_material" rgba="0.615686 0.811765 0.929412 1"/>
+    <material name="kd_d_201_l_upper_thigh_drive_material" rgba="0.917647 0.917647 0.917647 1"/>
+    <material name="l_hip_roll_rs03_material" rgba="0.980392 0.713725 0.00392157 1"/>
+    <material name="kd_d_202_l_upper_thigh_idle_material" rgba="0.768627 0.886275 0.952941 1"/>
+    <material name="l_hip_yaw_rs03_material" rgba="0.972549 0.529412 0.00392157 1"/>
+    <material name="kd_d_203_l_thigh_yaw_hard_stopper_material" rgba="0.768627 0.886275 0.952941 1"/>
+    <material name="kd_d_301_l_femur_lower_drive_material" rgba="0.972549 0.529412 0.00392157 1"/>
+    <material name="kd_d_403_l_shin_cover_material" rgba="0.498039 0.498039 0.498039 1"/>
+    <material name="l_knee_pitch_rs04_material" rgba="0.768627 0.886275 0.952941 1"/>
+    <material name="kd_d_302_l_femur_lower_idle_material" rgba="0.647059 0.647059 0.647059 1"/>
+    <material name="bearing_skf_61805_knee_pitch_idle_material" rgba="0.917647 0.917647 0.917647 1"/>
+    <material name="bushing_mzdf_8_8_bushing_on_ankle_pitch_shaft_and_foot_structure_material" rgba="0.917647 0.917647 0.917647 1"/>
+    <material name="kd_d_504x_ankleshoulderbolt_material" rgba="0.647059 0.647059 0.647059 1"/>
+    <material name="kd_d_503x_l_ankle_link_s_material" rgba="0.498039 0.498039 0.498039 1"/>
+    <material name="kd_d_506_l_ankle_pitch_shaft_endstop_80deg_material" rgba="0.615686 0.811765 0.929412 1"/>
+    <material name="kd_d_502_l_ankle_shaft_material" rgba="0.972549 0.529412 0.00392157 1"/>
+    <material name="linkage_pin_on_ankle_pitch_linkage_both_ends_material" rgba="0.917647 0.917647 0.917647 1"/>
+    <material name="kd_d_402_l_shin_idle_material" rgba="0.615686 0.811765 0.929412 1"/>
+    <material name="l_ankle_pitch_rs02_material" rgba="0.972549 0.529412 0.00392157 1"/>
+    <material name="kd_d_401_l_shin_drive_material" rgba="0.498039 0.498039 0.498039 1"/>
+    <material name="bushing_mzdf_15_12_bushing_for_ankle_pitch_dof_at_foot_structure_material" rgba="0.231373 0.380392 0.705882 1"/>
+    <material name="kd_d_501_l_foot_structure_material" rgba="0.917647 0.917647 0.917647 1"/>
+    <material name="kd_d_601_l_foot_pad_material" rgba="0.615686 0.811765 0.929412 1"/>
+  </asset>
+  <actuator>
+    <position class="kbot_both_leg" name="left_hip_pitch_RS04" joint="left_hip_pitch_RS04" inheritrange="1"/>
+    <position class="kbot_both_leg" name="left_hip_roll_RS03" joint="left_hip_roll_RS03" inheritrange="1"/>
+    <position class="kbot_both_leg" name="left_hip_yaw_RS03" joint="left_hip_yaw_RS03" inheritrange="1"/>
+    <position class="kbot_both_leg" name="left_knee_pitch_RS04" joint="left_knee_pitch_RS04" inheritrange="1"/>
+    <position class="kbot_both_leg" name="left_ankle_pitch_passive_on_foot_structure_RS02" joint="left_ankle_pitch_passive_on_foot_structure_RS02" inheritrange="1"/>
+  </actuator>
+  <equality/>
+</mujoco>

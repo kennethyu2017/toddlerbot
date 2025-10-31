@@ -1,0 +1,101 @@
+<mujoco model="scene">
+  <compiler angle="radian" meshdir="assets/"/>
+
+  <visual>
+    <global azimuth="160" elevation="-20"/>
+    <headlight ambient="0.3 0.3 0.3" diffuse="0.6 0.6 0.6" specular="0 0 0"/>
+    <rgba haze="0.15 0.25 0.35 1"/>
+  </visual>
+
+  <default>
+    <default class="leg_L_subassembly">
+      <joint armature="0.005" frictionloss="0.1"/>
+      <general biastype="affine" gainprm="50" biasprm="0 -50 1"/>
+      <default class="visual">
+        <geom type="mesh" contype="0" conaffinity="0" group="2"/>
+      </default>
+      <default class="collision">
+        <geom group="3"/>
+      </default>
+    </default>
+  </default>
+
+  <asset>
+    <texture type="skybox" colorspace="auto" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512" height="3072"/>
+    <texture type="2d" colorspace="auto" name="groundplane" builtin="checker" mark="edge" rgb1="0.2 0.3 0.4" rgb2="0.1 0.2 0.3" markrgb="0.8 0.8 0.8" width="300" height="300"/>
+    <material name="kd_d_101_l_hip_static_visual_material" rgba="0.921807 0.821941 0.70179 1"/>
+    <material name="kd_d_101_l_hip_static_collision_material" rgba="0.921807 0.821941 0.70179 1"/>
+    <material name="kd_d_102_l_hip_yoke_drive_visual_material" rgba="0.607099 0.792079 0.904347 1"/>
+    <material name="kd_d_102_l_hip_yoke_drive_collision_material" rgba="0.607099 0.792079 0.904347 1"/>
+    <material name="kd_d_201_l_upper_thigh_drive_visual_material" rgba="0.948689 0.696334 0.245656 1"/>
+    <material name="kd_d_201_l_upper_thigh_drive_collision_material" rgba="0.948689 0.696334 0.245656 1"/>
+    <material name="kd_d_301_l_femur_lower_drive_visual_material" rgba="0.800017 0.761733 0.671536 1"/>
+    <material name="kd_d_301_l_femur_lower_drive_collision_material" rgba="0.800017 0.761733 0.671536 1"/>
+    <material name="kd_d_402_l_shin_idle_visual_material" rgba="0.675538 0.620677 0.515576 1"/>
+    <material name="kd_d_402_l_shin_idle_collision_material" rgba="0.675538 0.620677 0.515576 1"/>
+    <material name="kd_d_501_l_foot_structure_visual_material" rgba="0.791655 0.87043 0.920113 1"/>
+    <material name="kd_d_501_l_foot_structure_collision_material" rgba="0.791655 0.87043 0.920113 1"/>
+    <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="5 5" reflectance="0.2"/>
+    <mesh name="kd_d_301_l_femur_lower_drive_collision" content_type="model/stl" file="merged/kd_d_301_l_femur_lower_drive_collision.stl"/>
+    <mesh name="kd_d_501_l_foot_structure_collision" content_type="model/stl" file="merged/kd_d_501_l_foot_structure_collision.stl"/>
+    <mesh name="kd_d_102_l_hip_yoke_drive_collision" content_type="model/stl" file="merged/kd_d_102_l_hip_yoke_drive_collision.stl"/>
+    <mesh name="kd_d_201_l_upper_thigh_drive_collision" content_type="model/stl" file="merged/kd_d_201_l_upper_thigh_drive_collision.stl"/>
+    <mesh name="kd_d_402_l_shin_idle_collision" content_type="model/stl" file="merged/kd_d_402_l_shin_idle_collision.stl"/>
+    <mesh name="kd_d_501_l_foot_structure_visual" content_type="model/stl" file="merged/kd_d_501_l_foot_structure_visual.stl"/>
+    <mesh name="kd_d_101_l_hip_static_collision" content_type="model/stl" file="merged/kd_d_101_l_hip_static_collision.stl"/>
+    <mesh name="kd_d_101_l_hip_static_visual" content_type="model/stl" file="merged/kd_d_101_l_hip_static_visual.stl"/>
+    <mesh name="kd_d_201_l_upper_thigh_drive_visual" content_type="model/stl" file="merged/kd_d_201_l_upper_thigh_drive_visual.stl"/>
+    <mesh name="kd_d_402_l_shin_idle_visual" content_type="model/stl" file="merged/kd_d_402_l_shin_idle_visual.stl"/>
+    <mesh name="kd_d_102_l_hip_yoke_drive_visual" content_type="model/stl" file="merged/kd_d_102_l_hip_yoke_drive_visual.stl"/>
+    <mesh name="kd_d_301_l_femur_lower_drive_visual" content_type="model/stl" file="merged/kd_d_301_l_femur_lower_drive_visual.stl"/>
+  </asset>
+
+  <worldbody>
+    <geom name="floor" size="0 0 0.05" type="plane" material="groundplane"/>
+    <light pos="0 0 3.5" dir="0 0 -1" type="directional"/>
+    <body name="kd_d_101_l_hip_static" childclass="leg_L_subassembly">
+      <inertial pos="0.0300979 0.000647175 -0.0590774" quat="0.450737 0.892352 -0.0012332 -0.0232922" mass="2.06588" diaginertia="0.0048612 0.00296214 0.00292147"/>
+      <geom class="visual" pos="0.0300979 0.000647175 -0.0590774" quat="1 0 0 0" material="kd_d_101_l_hip_static_visual_material" mesh="kd_d_101_l_hip_static_visual"/>
+      <geom class="collision" pos="0.0300979 0.000647175 -0.0590774" quat="1 0 0 0" type="mesh" material="kd_d_101_l_hip_static_collision_material" mesh="kd_d_101_l_hip_static_collision"/>
+      <site name="imu_on_pelvis" pos="0.0330531 0 0" group="3"/>
+      <body name="kd_d_102_l_hip_yoke_drive" pos="0.055 0 -0.064" quat="0.5 -0.5 -0.5 0.5">
+        <inertial pos="-0.00301868 0.006173 -0.0412792" quat="0.338722 0.621928 0.127587 0.694402" mass="0.554486" diaginertia="0.0014902 0.00112718 0.000918635"/>
+        <joint name="left_hip_pitch_RS04" pos="0 0 0" axis="0 0 1" range="-1.0472 2.21657"/>
+        <geom class="visual" pos="-0.00301868 0.006173 -0.0412792" quat="0.5 0.5 0.5 -0.5" material="kd_d_102_l_hip_yoke_drive_visual_material" mesh="kd_d_102_l_hip_yoke_drive_visual"/>
+        <geom class="collision" pos="-0.00301868 0.006173 -0.0412792" quat="0.5 0.5 0.5 -0.5" type="mesh" material="kd_d_102_l_hip_yoke_drive_collision_material" mesh="kd_d_102_l_hip_yoke_drive_collision"/>
+        <body name="kd_d_201_l_upper_thigh_drive" pos="-0.02925 0.03 -0.071" quat="0 -0.707107 0 0.707107">
+          <inertial pos="0.000136582 -0.0593371 -0.0260728" quat="0.515702 0.495516 -0.484396 0.503861" mass="2.43686" diaginertia="0.0109301 0.0105098 0.00324524"/>
+          <joint name="left_hip_roll_RS03" pos="0 0 0" axis="0 0 1" range="-0.20944 2.26893"/>
+          <geom class="visual" pos="0.000136582 -0.0593371 -0.0260728" quat="0.707107 -0.707107 0 0" material="kd_d_201_l_upper_thigh_drive_visual_material" mesh="kd_d_201_l_upper_thigh_drive_visual"/>
+          <geom class="collision" pos="0.000136582 -0.0593371 -0.0260728" quat="0.707107 -0.707107 0 0" type="mesh" material="kd_d_201_l_upper_thigh_drive_collision_material" mesh="kd_d_201_l_upper_thigh_drive_collision"/>
+          <body name="kd_d_301_l_femur_lower_drive" pos="0 -0.142 -0.02525" quat="0.707107 -0.707107 0 0">
+            <inertial pos="0.00180935 0.0137013 -0.174286" quat="0.996033 0.0739564 -0.0479265 -0.0123162" mass="2.43909" diaginertia="0.0157593 0.0143868 0.00377898"/>
+            <joint name="left_hip_yaw_RS03" pos="0 0 0" axis="0 0 1" range="-1.53589 1.53589"/>
+            <geom class="visual" pos="0.00180935 0.0137013 -0.174286" quat="1 0 0 0" material="kd_d_301_l_femur_lower_drive_visual_material" mesh="kd_d_301_l_femur_lower_drive_visual"/>
+            <geom class="collision" pos="0.00180935 0.0137013 -0.174286" quat="1 0 0 0" type="mesh" material="kd_d_301_l_femur_lower_drive_collision_material" mesh="kd_d_301_l_femur_lower_drive_collision"/>
+            <body name="kd_d_402_l_shin_idle" pos="-0.02 0.021 -0.212" quat="0.5 0.5 0.5 0.5">
+              <inertial pos="-0.0237083 -0.104664 0.0185257" quat="0.693278 0.664977 -0.191772 0.200986" mass="1.68258" diaginertia="0.0148273 0.0147372 0.00302373"/>
+              <joint name="left_knee_pitch_RS04" pos="0 0 0" axis="0 0 1" range="0 2.70526"/>
+              <geom class="visual" pos="-0.0237083 -0.104664 0.0185257" quat="0.5 -0.5 -0.5 -0.5" material="kd_d_402_l_shin_idle_visual_material" mesh="kd_d_402_l_shin_idle_visual"/>
+              <geom class="collision" pos="-0.0237083 -0.104664 0.0185257" quat="0.5 -0.5 -0.5 -0.5" type="mesh" material="kd_d_402_l_shin_idle_collision_material" mesh="kd_d_402_l_shin_idle_collision"/>
+              <body name="kd_d_501_l_foot_structure" pos="-0.03 -0.29 0.00195" quat="0 -1 0 0">
+                <inertial pos="-0.0169525 0.0314359 -0.0130346" quat="0.436672 0.58475 0.387768 0.563047" mass="0.610672" diaginertia="0.0019536 0.00187787 0.000359564"/>
+                <joint name="left_ankle_pitch_passive_on_foot_structure_RS02" pos="0 0 0" axis="0 0 1" range="-0.261799 1.13446"/>
+                <geom class="visual" pos="-0.0169525 0.0314359 -0.0130346" quat="0.5 0.5 0.5 -0.5" material="kd_d_501_l_foot_structure_visual_material" mesh="kd_d_501_l_foot_structure_visual"/>
+                <geom class="collision" pos="-0.0169525 0.0314359 -0.0130346" quat="0.5 0.5 0.5 -0.5" type="mesh" material="kd_d_501_l_foot_structure_collision_material" mesh="kd_d_501_l_foot_structure_collision"/>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+
+  <actuator>
+    <general name="left_hip_pitch_RS04" class="leg_L_subassembly" joint="left_hip_pitch_RS04" ctrlrange="-1.0472 2.21657" biasprm="0 -50 -14.6126"/>
+    <general name="left_hip_roll_RS03" class="leg_L_subassembly" joint="left_hip_roll_RS03" ctrlrange="-0.20944 2.26893" biasprm="0 -50 -13.6413"/>
+    <general name="left_hip_yaw_RS03" class="leg_L_subassembly" joint="left_hip_yaw_RS03" ctrlrange="-1.53589 1.53589" biasprm="0 -50 -1.73253"/>
+    <general name="left_knee_pitch_RS04" class="leg_L_subassembly" joint="left_knee_pitch_RS04" ctrlrange="0 2.70526" biasprm="0 -50 -4.59231"/>
+    <general name="left_ankle_pitch_passive_on_foot_structure_RS02" class="leg_L_subassembly" joint="left_ankle_pitch_passive_on_foot_structure_RS02" ctrlrange="-0.261799 1.13446" biasprm="0 -50 -1.23808"/>
+  </actuator>
+</mujoco>

@@ -1,0 +1,13 @@
+{
+    "document_id": "ca7a3603bbd16cac2fa84c66",
+    "workspace_id": "16aeac7c0dcd110d2c86c4a7",
+    "output_format": "mujoco",
+    "output_filename": "RS02_mount_box_with_long_arm_main_assembly",
+    "robot_name": "sysID_device_RS02",
+    "assembly_name": "RS02_mount_box_with_long_arm_main_assembly",
+    "include_configuration_suffix": false,
+    "draw_frames": true,
+    "merge_stls": false,
+    "simplify_stls": false,
+    "maxSTLSize": 10
+}

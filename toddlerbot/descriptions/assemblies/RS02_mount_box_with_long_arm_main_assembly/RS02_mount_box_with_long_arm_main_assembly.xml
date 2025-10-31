@@ -1,0 +1,64 @@
+<?xml version="1.0" ?>
+<mujoco model="sysID_device_RS02">
+  <compiler angle="radian" meshdir="assets" autolimits="true"/>
+  <default>
+    <default class="sysID_device_RS02">
+      <joint frictionloss="0.1" armature="0.005"/>
+      <position kp="50" dampratio="1"/>
+      <default class="visual">
+        <geom type="mesh" contype="0" conaffinity="0" group="2"/>
+      </default>
+      <default class="collision">
+        <geom group="3"/>
+      </default>
+    </default>
+  </default>
+  <worldbody>
+    <body name="1_1_02_eb671_502_1_stp" pos="0 0 0" quat="1 0 0 0" childclass="sysID_device_RS02">
+      <inertial pos="-0.006 0.0622841 0.239608" mass="0.00743362" fullinertia="4.9742e-07 9.57178e-07 4.9742e-07 0 0 0"/>
+      <geom type="mesh" class="visual" pos="-0.006 0.0595 0.239608" quat="1 0 0 0" mesh="1_1_02_eb671_502_1_stp" material="1_1_02_eb671_502_1_stp_material"/>
+      <geom type="mesh" class="collision" pos="-0.006 0.0595 0.239608" quat="1 0 0 0" mesh="1_1_02_eb671_502_1_stp" material="1_1_02_eb671_502_1_stp_material"/>
+      <body name="long_arm" pos="0.0043923 0.0595 0.233608" quat="0.707107 -0.707107 0 -4.35788e-33">
+        <joint axis="0 0 1" name="dummy_root" type="hinge" range="-1.7453292519943295 1.7453292519943295"/>
+        <inertial pos="-0.00584332 0.111369 -0.0157619" mass="0.284112" fullinertia="0.00295861 9.75531e-05 0.00296402 -5.26033e-06 1.827e-06 0.000221914"/>
+        <geom type="mesh" class="visual" pos="-0.006 -0.0103923 6.93889e-18" quat="0.707107 0.707107 -0 4.35788e-33" mesh="long_arm" material="long_arm_material"/>
+        <geom type="mesh" class="collision" pos="-0.006 -0.0103923 6.93889e-18" quat="0.707107 0.707107 -0 4.35788e-33" mesh="long_arm" material="long_arm_material"/>
+        <geom type="mesh" class="visual" pos="-2.76168e-15 0.229215 -0.0595" quat="0.707107 0.707107 -0 4.35788e-33" mesh="1_1_02_eb671_502_1_stp__2" material="1_1_02_eb671_502_1_stp__2_material"/>
+        <geom type="mesh" class="collision" pos="-2.76168e-15 0.229215 -0.0595" quat="0.707107 0.707107 -0 4.35788e-33" mesh="1_1_02_eb671_502_1_stp__2" material="1_1_02_eb671_502_1_stp__2_material"/>
+        <body name="long_arm_2" pos="-2.76168e-15 0.229215 -0.0595" quat="1 -0 4.57967e-16 2.49603e-17">
+          <joint axis="0 0 1" name="long_arm_roll_RS02" type="hinge" range="-1.7453292519943295 1.7453292519943295"/>
+          <inertial pos="-3.0799e-07 0.122033 -0.0157619" mass="0.284112" fullinertia="0.0029776 9.72925e-05 0.00298275 -4.19816e-09 3.76092e-10 0.000225078"/>
+          <geom type="mesh" class="visual" pos="3.01842e-16 0.25 -0.0595" quat="0.707107 0.707107 -0 4.35788e-33" mesh="1_1_02_eb671_502_1_stp" material="1_1_02_eb671_502_1_stp_material"/>
+          <geom type="mesh" class="collision" pos="3.01842e-16 0.25 -0.0595" quat="0.707107 0.707107 -0 4.35788e-33" mesh="1_1_02_eb671_502_1_stp" material="1_1_02_eb671_502_1_stp_material"/>
+          <geom type="mesh" class="visual" pos="-1.38778e-17 3.46945e-18 2.00881e-15" quat="0.707107 0.707107 -0 4.35788e-33" mesh="long_arm" material="long_arm_material"/>
+          <geom type="mesh" class="collision" pos="-1.38778e-17 3.46945e-18 2.00881e-15" quat="0.707107 0.707107 -0 4.35788e-33" mesh="long_arm" material="long_arm_material"/>
+          <body name="long_arm_3" pos="3.01842e-16 0.25 -0.0595" quat="1 -0 -0 -0">
+            <joint axis="0 0 1" name="child_long_arm" type="hinge" range="-1.7453292519943295 1.7453292519943295"/>
+            <inertial pos="-3.16265e-07 0.118595 -0.0146615" mass="0.276678"
+                      fullinertia="0.0028393 8.39922e-05 0.0028568 -3.89731e-09 2.7981e-10 0.000185074"/>
+            <geom type="mesh" class="visual" pos="-1.38778e-17 0 2.00534e-15" quat="0.707107 0.707107 -0 4.35788e-33" mesh="long_arm" material="long_arm_material"/>
+            <geom type="mesh" class="collision" pos="-1.38778e-17 0 2.00534e-15" quat="0.707107 0.707107 -0 4.35788e-33" mesh="long_arm" material="long_arm_material"/>
+          </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+  <asset>
+    <mesh file="1_1_02_eb671_502_1_stp.stl"/>
+    <mesh file="long_arm.stl"/>
+    <mesh file="1_1_02_eb671_502_1_stp__2.stl"/>
+    <material name="1_1_02_eb671_502_1_stp_material" rgba="0.972549 0.529412 0.00392157 1"/>
+    <material name="long_arm_material" rgba="0.972549 0.529412 0.00392157 1"/>
+    <material name="1_1_02_eb671_502_1_stp__2_material" rgba="0.972549 0.529412 0.00392157 1"/>
+  </asset>
+  <actuator>
+    <position class="sysID_device_RS02" name="dummy_root" joint="dummy_root" />
+    <position class="sysID_device_RS02" name="long_arm_roll_RS02" joint="long_arm_roll_RS02" />
+    <position class="sysID_device_RS02" name="child_long_arm" joint="child_long_arm" />
+  </actuator>
+
+  <contact>
+    <exclude name="dummy_root_joint" body1="1_1_02_eb671_502_1_stp" body2="long_arm" />
+  </contact>
+  <equality/>
+</mujoco>
