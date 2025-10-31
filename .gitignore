@@ -1,18 +1,11 @@
 #Pycharm project
 .idea/
 
-#Clion project.
-
 #robot assets
 *.STL
 *.stl
 *.pdf
-
-#robot assets
-*.STL
-*.stl
 *.part
-
 
 #dataset
 *.hdf5
@@ -25,11 +18,6 @@ data/
 *.png
 *.pkl
 
-#log
-*.png
-*.svg
-*.pkl
-
 ### Project ###
 .vscode/
 datasets/
@@ -37,13 +25,11 @@ toddlerbot/manipulation/datasets
 run_policy_log/
 plots/
 results/
-run_sysID/
 scripts/run_*_remote.sh
 scripts/run_*_remote.py
 wandb/
 tests/images/
 toddlerbot/policies/checkpoints/*dp.pth
-.idea/
 
 ### Python ###
 

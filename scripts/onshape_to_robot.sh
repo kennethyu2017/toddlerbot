@@ -103,16 +103,6 @@ while [[ $# -gt 0 ]]; do
 #           ASSEMBLY_LIST='使用长U支架_SM40BL_sysID_assembly'
             ASSEMBLY_LIST="使用长U支架_No_BATTERY_NO_CAP_SM40BL_sysID_assembly"
             ;;
-            # -------- k-bot-stripped left leg test
-            kbot_stripped_left_leg)
-            DOC_ID_LIST='891d707cca93b7ec8873214f'
-            WORKSPACE_ID_LIST='20b5fad0e0ad719be2b07681'
-            # BODY_NAME should be the assembly dir name under descriptions.
-            BODY_NAME="URDF-RS-01-ROBOT-LEG-LEFT-ASM"
-            #  TODO: make use of element_id.
-            #ELEMENT_ID_LIST=...
-            ASSEMBLY_LIST="URDF-RS-01-ROBOT-LEG-LEFT-ASM"
-            ;;
             # -------- k-bot both legs
             kbot_both_leg)
             DOC_ID_LIST='f113281372e4169121004b65'
