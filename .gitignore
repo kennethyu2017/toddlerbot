@@ -215,4 +215,4 @@ datasets/*.lz4
 toddlerbot/policies/checkpoints/teleop_model*
 
 # mujoco
-
+*.mjb
