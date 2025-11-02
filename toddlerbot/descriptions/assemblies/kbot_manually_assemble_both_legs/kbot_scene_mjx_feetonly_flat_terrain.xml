@@ -10,11 +10,12 @@
   <visual>
     <headlight diffuse=".8 .8 .8" ambient=".2 .2 .2" specular="1 1 1"/>
 <!--    <rgba force="1 0 0 1" />-->
-        <rgba force="1 0 0 1"  haze=".15 .25 .35 0" />
+        <rgba force="1 0 0 1"  haze=".15 .25 .35 0"
+        contactforce=".7 .9 0 .7" contactfriction="0 .8 0 .7"/>
 <!--    <global azimuth="140" elevation="-20"/>-->
     <global azimuth="120" elevation="-20"/>
     <map force=".01"/>
-    <scale forcewidth=".3" contactwidth=".5" contactheight=".2" framewidth=".03" framelength=".4"/>
+    <scale forcewidth=".1" contactwidth=".5" contactheight=".2" framewidth=".03" framelength=".4"/>
     <quality shadowsize="8192"/>
   </visual>
 
@@ -38,10 +39,12 @@
   <worldbody>
 <!--    <light type="spot" pos="0 0 6.5" dir="0 0 -1" />-->
 <!--    <light mode="targetbody" target="virtual_floating_base" type="spot" name="target_to_robot" pos="0 0 4.5" dir="0 0 -1"  />-->
-    <geom name="floor" size="0 0 .01" type="plane" material="groundplane" group="0"/>
+<!--    <geom name="floor" size="0 0 .01" type="plane" material="groundplane" group="0"/>-->
+    <geom name="floor" size="0 0 .01" type="plane" material="groundplane"
+          contype="1" conaffinity="1" condim="3" group="0" />
   </worldbody>
 
-<!--  <include file="sensors.xml"/>-->
+  <include file="sensors.xml"/>
 
 <!--  <keyframe>-->
 <!--    <key name="home"-->

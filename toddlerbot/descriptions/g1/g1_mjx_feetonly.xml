@@ -74,7 +74,7 @@
       </default>
 
       <default class="visual">
-        <geom group="2" type="mesh" density="0" material="silver"/>
+        <geom group="2" type="mesh" density="0" material="silver" rgba=".2 .3 .4 .5"/>
       </default>
       <default class="collision">
         <geom group="3" rgba=".2 .81 .2 .41"/>

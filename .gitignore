@@ -202,3 +202,7 @@ toddlerbot/policies/checkpoints/teleop_model*
 
 # mujoco
 *.mjb
+MJMODEL.TXT
+MUJOCO_LOG.TXT
+mjmodel.xml
+MJDATA.TXT
