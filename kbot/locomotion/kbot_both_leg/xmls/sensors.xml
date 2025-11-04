@@ -2,17 +2,18 @@
   <sensor>
 <!--    frame virtual sensors-->
 <!-- NOTE:  frame sensors are in Global coordinates, i.e., world. -->
+<!--     name format: sensor_type + frame. -->
     <framezaxis objtype="site" objname="imu_in_pelvis" name="upvector_pelvis"/>
     <framexaxis objtype="site" objname="imu_in_pelvis" name="forwardvector_pelvis"/>
     <framequat objtype="site" objname="imu_in_pelvis" name="orientation_pelvis"/>
     <framelinvel objtype="site" objname="imu_in_pelvis" name="global_linvel_pelvis"/>
     <frameangvel objtype="site" objname="imu_in_pelvis" name="global_angvel_pelvis"/>
 
-    <framelinvel objtype="site" objname="left_foot_ankle" name="left_foot_global_linvel"/>
-    <framelinvel objtype="site" objname="right_foot_ankle" name="right_foot_global_linvel"/>
+    <framelinvel objtype="site" objname="left_foot_ankle" name="global_linvel_left_foot_ankle"/>
+    <framelinvel objtype="site" objname="right_foot_ankle" name="global_linvel_right_foot_ankle"/>
 
-    <framezaxis objtype="site" objname="left_foot_ankle" name="left_foot_upvector"/>
-    <framezaxis objtype="site" objname="right_foot_ankle" name="right_foot_upvector"/>
+    <framezaxis objtype="site" objname="left_foot_ankle" name="upvector_left_foot_ankle"/>
+    <framezaxis objtype="site" objname="right_foot_ankle" name="upvector_right_foot_ankle"/>
 
 <!--    IMU. of the site in local coordinates. -->
     <velocimeter site="imu_in_pelvis" name="local_linvel_pelvis"/>
