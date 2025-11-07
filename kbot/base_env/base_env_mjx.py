@@ -26,6 +26,7 @@ import mujoco
 from mujoco import mjx
 import numpy as np
 import tqdm
+from functools import partial
 
 Observation = Union[jax.Array, Mapping[str, jax.Array]]
 ObservationSize = Union[int, Mapping[str, Union[Tuple[int, ...], int]]]
@@ -77,7 +78,10 @@ def make_mjx_data(
   return data
 
 
-@struct.dataclass(kw_only=True)
+# kenneth: flax.struct.dataclass is a 'frozen' dataclass, so must use .replace() to modify member.
+# note: .replace() do shallow copy on other non_replaced data members, so it is efficient to do .replace() multiple times.
+# especially used in jit.
+@partial(struct.dataclass, kw_only=True)
 class State:
   """Environment state for training and inference."""
 
@@ -96,6 +100,7 @@ class State:
       new = _tree_replace(new, k.split("."), v)
     return new
 
+# State = struct.dataclass(__State, kw_only=True)
 
 def _tree_replace(
     base: Any,
@@ -246,19 +251,19 @@ class MjxEnv(abc.ABC):
   def get_gravity(self, data: mjx.Data, frame: str) -> jax.Array:
     """Return the gravity vector in the world frame."""
     return get_sensor_data(
-      self.mj_model, data, f"{self._config.model.robot.gravity_sensor}_{frame}"
+      self.mj_model, data, f"{self._config.robot.gravity_sensor}_{frame}"
     )
 
   def get_global_linvel(self, data: mjx.Data, frame: str) -> jax.Array:
     """Return the linear velocity of the robot in the world frame."""
     return get_sensor_data(
-      self.mj_model, data, f"{self._config.model.robot.global_linvel_sensor}_{frame}"
+      self.mj_model, data, f"{self._config.robot.global_linvel_sensor}_{frame}"
     )
 
   def get_global_angvel(self, data: mjx.Data, frame: str) -> jax.Array:
     """Return the angular velocity of the robot in the world frame."""
     return get_sensor_data(
-      self.mj_model, data, f"{self._config.model.robot.global_angvel_sensor}_{frame}"
+      self.mj_model, data, f"{self._config.robot.global_angvel_sensor}_{frame}"
     )
 
   def get_local_linvel(self, data: mjx.Data, frame: str) -> jax.Array:

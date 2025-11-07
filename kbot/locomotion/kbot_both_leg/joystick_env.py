@@ -5,6 +5,7 @@ from typing import Any, Dict, Optional, Union, Tuple
 
 import jax
 import jax.numpy as jp
+from jax._src.lib import pytree
 from ml_collections import config_dict
 from mujoco import mjx
 from mujoco.mjx._src import math
@@ -131,6 +132,9 @@ class Joystick(MjxEnv):
           # assert np.all([len(_a) == len(adr_list[0]) for _a in adr_list])
           return np.array(adr_list)
 
+      self._pelvis_upvector_sensor_adr = _get_sensor_adr(self._config.robot.sensors.upvector_pelvis)
+      print(f'{self._pelvis_upvector_sensor_adr=:}')
+
       # self._foot_linvel_sensor_adr = jp.array(foot_linvel_sensor_adr)
       self._feet_linvel_sensor_adr = _get_sensor_adr(self._config.robot.sensors.global_linvel_feet_ankle)
       print(f'{self._feet_linvel_sensor_adr=:}')
@@ -181,13 +185,13 @@ class Joystick(MjxEnv):
                                                    soft_uppers=self._soft_jnt_uppers,
                                                    rng=key_data)
 
-      cmd = self.sample_command(key_cmd)
-      info = JoystickResetHelper.gen_info(rng=key_info,
-                                          ctrl_dt=self.ctrl_dt,
-                                          push_interval_lower=self._config.push.interval_range[0],
-                                          push_interval_upper=self._config.push.interval_range[1],
-                                          cmd=cmd,
-                                          nu=self._mj_model.nu)
+      # cmd = self.sample_command(key_cmd)
+      # info = JoystickResetHelper.gen_info(rng=key_info,
+      #                                     ctrl_dt=self.ctrl_dt,
+      #                                     push_interval_lower=self._config.push.interval_range[0],
+      #                                     push_interval_upper=self._config.push.interval_range[1],
+      #                                     cmd=cmd,
+      #                                     nu=self._mj_model.nu)
 
       metrics = JoystickResetHelper.gen_metrics(self._config.reward.scales.keys())
 
@@ -202,10 +206,22 @@ class Joystick(MjxEnv):
           assert floor_feet_contact.shape == (2,)
           return self._get_obs(data, info, floor_feet_contact)
 
+      obs = _gen_obs()
+      cmd = self.sample_command(key_cmd)
+      info = JoystickResetHelper.gen_info(rng=key_info,
+                                          ctrl_dt=self.ctrl_dt,
+                                          push_interval_lower=self._config.push.interval_range[0],
+                                          push_interval_upper=self._config.push.interval_range[1],
+                                          cmd=cmd,
+                                          nu=self._mj_model.nu,
+                                          # record the data/obs after reset, then used when step() `done` through soft-reset mechanism.
+                                          first_data=data,
+                                          first_obs=obs )
+
       # note: State must be PyTree with jp.array leaf nodes to be able to cross the jit boundary.
       return State(
           data=data,
-          obs=_gen_obs(),
+          obs=obs,
           reward=reward,
           done=done,
           metrics=metrics,
@@ -233,9 +249,9 @@ class Joystick(MjxEnv):
       push_xy *= self._config.push.enable
       return push_xy, push_magnitude
 
-  def _apply_push(self, state:State)-> Tuple[State, jax.Array]:
-      state.info["rng"], key_push = jax.random.split(state.info["rng"])
-      push_xy, push_magnitude = self._sample_push(rng=key_push,
+  def _apply_push(self, state:State, rng:jax.Array)-> Tuple[State, jax.Array]:
+      # state.info["rng"], key_push = jax.random.split(state.info["rng"])
+      push_xy, push_magnitude = self._sample_push(rng=rng,
                                                   push_step=state.info["push_step"],
                                                   push_interval_steps=state.info["push_interval_steps"])
 
@@ -248,9 +264,14 @@ class Joystick(MjxEnv):
       qvel = qvel.at[:2].set(push_xy * push_magnitude + qvel[:2])
       data = state.data.replace(qvel=qvel)
       state = state.replace(data=data)
-      return state, push_xy
 
-  def _handle_contact(self, state:State)->Tuple[State, jax.Array, jax.Array]:
+      # record.
+      state.info["push_xy"] = push_xy
+      state.info["push_step"] += 1
+
+      return state
+
+  def _handle_contact(self, state:State)->Tuple[State, jax.Array, jax.Array, jax.Array]:
       # contact = jp.array([
       #     state.data.sensordata[self._mj_model.sensor_adr[sensorid]] > 0
       #     for sensorid in self._feet_floor_found_sensor
@@ -258,192 +279,417 @@ class Joystick(MjxEnv):
 
       floor_feet_contact = state.data.sensordata[self._floor_feet_found_sensor_adr] > 0
 
-      contact_filt = floor_feet_contact | state.info["last_contact"]
+      # TODO: feet_air_time accumulate the air-time from prev un-contact step un-till curr step of individual foot.
+      # add ctrl_dt if not consecutive contact, and will clear feet_air_time if curr step no foot contact with floor, before exit from step().
+      # case 4:
+      consecutive_contact = (state.info["last_contact"] * floor_feet_contact)
+
+      # add ctrl_dt when not case 4.
+      state.info["feet_air_time"] += (self.ctrl_dt * ~consecutive_contact)
+
+      # contact_filt = floor_feet_contact | state.info["last_contact"]
 
       # state.info["feet_air_time"] is 0 if prev step the corresponding foot not contact with floor.
       # state.info["feet_air_time"] > 0 only if prev step the corresponding foot have contact with floor.
-      first_contact = (state.info["feet_air_time"] > 0.0) * contact_filt
+      # first_contact = (state.info["feet_air_time"] > 0.0) * contact_filt
 
-      # TODO: feet_air_time record the air-time from last step to curr step of individual foot.
-      # we add ctrl_dt here to record for next step, and will clear feet_air_time if curr step no foot contact with floor,
-      # at following.
-      state.info["feet_air_time"] += self.ctrl_dt
-      return state, floor_feet_contact, first_contact
+      # kenneth:last step no contact and curr step has contact, then it is `first contact` .
+      # even this is the first step after reset, state.info["last_contact"] is True, so first_contact is False here.
+      # case 2.
+      first_contact = ~state.info["last_contact"] * floor_feet_contact
 
-  def _update_swing_peak(self, state:State)->State:
+      # # TODO: feet_air_time accumulate the air-time from prev un-contact step un-till curr step of individual foot.
+      # # will clear feet_air_time if curr step no foot contact with floor, at following.
+      # state.info["feet_air_time"] += self.ctrl_dt
+
+      accumulate_air_time = state.info["feet_air_time"]
+
+      # clear running accumulated info['feet_air_time'] if contact with floor.
+      state.info["feet_air_time"] *= ~floor_feet_contact
+      state.info["last_contact"] = floor_feet_contact
+
+      return state, floor_feet_contact, first_contact, accumulate_air_time
+
+  # kenneth: collect swing peak only when foot in the air.
+  def _update_swing_peak(self, state:State, floor_feet_contact: jax.Array)->Tuple[State, jax.Array]:
       # xpos in world coordinate.
       p_f = state.data.site_xpos[self._feet_site_id]
       p_fz = p_f[..., -1]
       state.info["swing_peak"] = jp.maximum(state.info["swing_peak"], p_fz)
-      return state
+      swing_peak_in_air = state.info["swing_peak"]
 
-  def _apply_jax_step(self, state:State, action:jax.Array)->Tuple[mjx.Data, jax.Array]:
+      # clear running statistics.
+      state.info["swing_peak"] *= ~floor_feet_contact
+
+      return state, swing_peak_in_air
+
+  def _apply_jax_step(self, state:State, action:jax.Array)->Tuple[mjx.Data, jax.Array, jax.Array]:
       # TODO: clip motor targets according to soft_lower/upper ? or normalize the motor_target into [lower, upper] ?
       # NOTE: action is relative to default_pose which is from keyframe `knees_bent`.
       # i.e. normalize default_pose as 0. mean of action is output of tanh, should be in [-1, 1].
       motor_targets = self._default_pose + action * self._config.model.action_scale  # *0.5
-      state = self.jax_step(
+      new_data = self.jax_step(
           self.mjx_model, state.data, motor_targets, self.n_substeps
       )
-      return state, motor_targets
+      state=state.replace(data=new_data)
+
+      last_last_act = state.info["last_last_act"]
+      last_act = state.info["last_act"]
+
+      # update
+      state.info["motor_targets"] = motor_targets
+      state.info["last_last_act"] = state.info["last_act"]
+      state.info["last_act"] = action
+
+      return state, last_last_act, last_act
+
+  @staticmethod
+  def _update_phase(state:State)->Tuple[State, jax.Array, jax.Array]:
+      phase_tp1 = state.info["phase"] + state.info["phase_dt"]
+
+      # kenneth: obs will use updated phase, reward use last phase.
+      last_phase = state.info["phase"]
+
+      # kenneth: map phase from [ 0, 2pi] -> [-pi, pi].
+      state.info["phase"] = jp.fmod(phase_tp1 + jp.pi, 2 * jp.pi) - jp.pi
+
+      # NOTE(kevin): Enable this to make the policy stand still at 0 command.
+      # state.info["phase"] = jp.where(
+      #     jp.linalg.norm(state.info["command"]) > 0.01,
+      #     state.info["phase"],
+      #     jp.ones(2) * jp.pi,
+      # )
+      new_phase = state.info["phase"]
+
+      return state, last_phase, new_phase
 
 
-      # --- jit boundary ---
+  def _update_cmd(self, state:State,
+                  rng:jax.Array,
+                  curr_step:jax.Array)->Tuple[State, jax.Array,jax.Array]:
+      last_cmd = state.info["command"]
+
+      # state.info["command"] = jp.where(
+      #     state.info["step"] > 500,
+      #     self.sample_command(rng),
+      #     state.info["command"],
+      # )
+      # kenneth: we re-sample command after done, cause in AutoResetWrapper, will not re-sample
+      # command after `done`.
+      # TODO: after done, even we re-sample command here,  AutoResetWrapper will not use
+      # the obs we returned, instead, it will use the reset_obs which include the command
+      # from env first reset.
+      # BUG: so, the obs and info["command"] is not aligned....
+      #
+      state.info["command"] = jp.where(
+              # done | state.info["step"] > 500,
+              state.done | curr_step > 500,
+              self.sample_command(rng),
+              state.info["command"],
+          )
+      new_cmd = state.info["command"]
+      return state, last_cmd, new_cmd
+
+  @staticmethod
+  def _update_step_count(state:State)->Tuple[State, jax.Array]:
+      state.info["step"] += 1
+      curr_step = state.info["step"]
+
+      # kenneth: in AutoResetWrapper, will also reset `step` to 0 after `done`.
+      state.info["step"] = jp.where(
+          state.done | (state.info["step"] > 500),
+          0,
+          state.info["step"],
+      )
+      return state, curr_step
+
+
+  # update new_cmd into first_obs.
+  def _gen_soft_reset_obs(self, state:State, new_cmd:jax.Array, cmd_idx:Dict[str,slice])->Observation:
+      assert new_cmd.shape == (3,)
+      # first obs after reset.
+      first_obs:Observation = state.info["first_obs"]
+
+      def _replace_cmd(path:Tuple[pytree.DictKey], x:jax.Array) -> jax.Array:
+          # key is 'state', 'privileged_state'.
+          key = path[0].key
+          idx:slice = cmd_idx[key]
+          return x.at[idx].set(new_cmd)
+
+      reset_obs = jax.tree.map_with_path(_replace_cmd, first_obs)
+
+      # update cmd to curr command which maybe re-sampled every 500-step.
+      # NOTE: the cmd index must be 0:3
+      # reset_obs = first_obs['state'].at[cmd_idx_slice].set(new_cmd)
+
+      return reset_obs
+
+  def _update_metrics(self, state:State, rewards: Dict[str, jax.Array], swing_peak_in_air:jax.Array)->State:
+      for k, v in rewards.items():
+          state.metrics[f"reward/{k}"] = v
+
+      # kenneth
+      # state.metrics["swing_peak"] = jp.mean(state.info["swing_peak"])
+      state.metrics["swing_peak"] = jp.mean(swing_peak_in_air)
+      return state
+
+
+  # --- jit boundary ---
   def step(self, state: State, action: jax.Array) -> State:
+    state.info["rng"], key_push, key_obs, key_cmd = jax.random.split(state.info["rng"], 4)
+
+    # kenneth: flax.struct.dataclass is a 'frozen' dataclass, so must use .replace() to modify member.
+    # note: .replace() do shallow copy on other non_replaced data members, so it is efficient
+    # to do .replace() multiple times in each child functions here, especially used in jit.
+
     #   add push to qvel.
-    state, push_xy = self._apply_push(state)
+    state = self._apply_push(state, key_push)
 
-    state, motor_targets = self._apply_jax_step(state, action)
+    state, last_last_act, last_act= self._apply_jax_step(state, action)
 
-    state, floor_feet_contact, first_contact = self._handle_contact(state)
-    state = self._update_swing_peak(state)
+    state, floor_feet_contact, first_contact, feet_air_time = self._handle_contact(state)
+    state, swing_peak_in_air = self._update_swing_peak(state, floor_feet_contact)
+    state, last_phase, new_phase = self._update_phase(state)
 
-    obs = self._get_obs(state.data, state.info, floor_feet_contact)
-    done = self._get_termination(state.data)
+    # kenneth: the BraxAutoResetWrapper will make use of done to reset env.
+    state = self._get_termination(state)
+    # done = done.astype(reward.dtype)
+    # state = state.replace(done=done)
 
+    state, curr_step = self._update_step_count(state)
+    # will re-sample cmd if `done` or >500 steps.
+    state, last_cmd, new_cmd = self._update_cmd(state, key_cmd, curr_step)
+
+    # kenneth: obs is for next step, so we should use some updated data.
+    state, curr_obs, soft_reset_obs = self._get_obs(
+        rng=key_obs,
+        state=state,
+        floor_feet_contact=floor_feet_contact,
+        feet_air_time=feet_air_time,
+        # kenneth: use updated phase and cmd in obs for next step.
+        phase=new_phase,
+
+        # kenneth: we should use record curr_act and last_act in obs for next step.
+        # last_act= info["last_act"] )
+        curr_act=action,
+        last_act=last_act,
+
+        # TODO: after done, even we re-sample command here,  AutoResetWrapper will not use
+        # the obs we returned, instead, it will use the reset_obs which include the command
+        # from env first reset.
+        # BUG: so, the obs and info["command"] is not aligned....
+        cmd=new_cmd,
+    )
+
+
+    # TODO: maybe we can use last obs (in state arg) to get some info to be used in rwd calc, instead
+    # recording so much stuff in state.info[].
+    # kenneth: rwd will compare some info of last step with result(in state.data) of curr step.
     rewards = self._get_reward(
         data=state.data,
-        action=action,
-        info=state.info,
-        metrics=state.metrics,
-        done=done,
+        curr_act=action,
+        last_act=last_act,
+        last_last_act=last_last_act,
+        done=state.done,
         first_contact=first_contact,
-        floor_feet_contact=floor_feet_contact
+        floor_feet_contact=floor_feet_contact,
+        feet_air_time=feet_air_time,
+        swing_peak_in_air=swing_peak_in_air,
+        last_cmd=last_cmd,
+        last_phase=last_phase,
     )
     rewards = {
         k: v * self._config.reward.scales[k] for k, v in rewards.items()
     }
     reward = sum(rewards.values()) * self.ctrl_dt
+    state = state.replace(reward=reward)
 
-    state.info["push_xy"] = push_xy
-    state.info["step"] += 1
-    state.info["push_step"] += 1
-    state.info["motor_targets"] = motor_targets
-    phase_tp1 = state.info["phase"] + state.info["phase_dt"]
-    state.info["phase"] = jp.fmod(phase_tp1 + jp.pi, 2 * jp.pi) - jp.pi
-    # NOTE(kevin): Enable this to make the policy stand still at 0 command.
-    # state.info["phase"] = jp.where(
-    #     jp.linalg.norm(state.info["command"]) > 0.01,
-    #     state.info["phase"],
-    #     jp.ones(2) * jp.pi,
+    state = self._update_metrics(state, rewards, swing_peak_in_air)
+
+    # Finally, we do the soft-reset like in BraxAutoResetWrapper to replace data/obs only instead of
+    # calling the env.reset().
+    output_obs = jp.where(state.done, soft_reset_obs, curr_obs)
+    state = state.replace(obs=output_obs)
+    output_data = jp.where(state.done, state.info["first_data"], state.data)
+    state = state.replace(data=output_data)
+
+    # state.info["step"] += 1
+    # state.info["push_xy"] = push_xy
+    # state.info["push_step"] += 1
+    # state.info["motor_targets"] = motor_targets
+
+    # phase_tp1 = state.info["phase"] + state.info["phase_dt"]
+    #
+    # # kenneth: map phase from [ 0, 2pi] -> [-pi, pi].
+    # state.info["phase"] = jp.fmod(phase_tp1 + jp.pi, 2 * jp.pi) - jp.pi
+    # # NOTE(kevin): Enable this to make the policy stand still at 0 command.
+    # # state.info["phase"] = jp.where(
+    # #     jp.linalg.norm(state.info["command"]) > 0.01,
+    # #     state.info["phase"],
+    # #     jp.ones(2) * jp.pi,
+    # # )
+
+    # state.info["last_last_act"] = state.info["last_act"]
+    # state.info["last_act"] = action
+
+    # state.info["rng"], cmd_rng = jax.random.split(state.info["rng"])
+    # state.info["command"] = jp.where(
+    #     state.info["step"] > 500,
+    #     self.sample_command(cmd_rng),
+    #     state.info["command"],
     # )
-    state.info["last_last_act"] = state.info["last_act"]
-    state.info["last_act"] = action
-    state.info["rng"], cmd_rng = jax.random.split(state.info["rng"])
-    state.info["command"] = jp.where(
-        state.info["step"] > 500,
-        self.sample_command(cmd_rng),
-        state.info["command"],
-    )
-    state.info["step"] = jp.where(
-        done | (state.info["step"] > 500),
-        0,
-        state.info["step"],
-    )
+    # state.info["step"] = jp.where(
+    #     done | (state.info["step"] > 500),
+    #     0,
+    #     state.info["step"],
+    # )
 
     # TODO:   merge with state.info["feet_air_time"] += self.ctrl_dt....
     # e.g. state.info["feet_air_time"] =+  self.ctrl_dt * ~contact..
     #  no, must set state.info["feet_air_time"] to zero as sentinal for next step...
-    state.info["feet_air_time"] *= ~contact
+    # state.info["feet_air_time"] *= ~contact
+    # state.info["last_contact"] = contact
+    # state.info["swing_peak"] *= ~contact
 
-    state.info["last_contact"] = contact
-    state.info["swing_peak"] *= ~contact
-    for k, v in rewards.items():
-      state.metrics[f"reward/{k}"] = v
-    state.metrics["swing_peak"] = jp.mean(state.info["swing_peak"])
+    # for k, v in rewards.items():
+    #   state.metrics[f"reward/{k}"] = v
+    #
+    # # kenneth
+    # # state.metrics["swing_peak"] = jp.mean(state.info["swing_peak"])
+    # state.metrics["swing_peak"] = jp.mean(swing_peak_in_air)
 
-    done = done.astype(reward.dtype)
-    state = state.replace(data=data, obs=obs, reward=reward, done=done)
+    # done = done.astype(reward.dtype)
+    # state = state.replace(data=data, obs=obs, reward=reward, done=done)
+    # state = state.replace(obs=obs, reward=reward, done=done)
     return state
 
-  def _get_termination(self, data: mjx.Data) -> jax.Array:
-    fall_termination = self.get_gravity(data, "torso")[-1] < 0.0
-    contact_termination = data.sensordata[
-        self._mj_model.sensor_adr[self._right_foot_left_foot_found_sensor]
-    ] > 0
-    contact_termination |= data.sensordata[
-        self._mj_model.sensor_adr[self._left_foot_right_shin_found_sensor]
-    ] > 0
-    contact_termination |= data.sensordata[
-        self._mj_model.sensor_adr[self._right_foot_left_shin_found_sensor]
-    ] > 0
-    return (
-        fall_termination
-        | contact_termination
-        | jp.isnan(data.qpos).any()
-        | jp.isnan(data.qvel).any()
+
+  def _get_termination(self, state: State) -> State:
+    # z axis should be along world coordinate.
+    fall_termination = state.data.sensordata[self._pelvis_upvector_sensor_adr][-1] < 0.0
+
+    contact_termination = jp.any(state.data.sensordata[ self._left_leg_right_leg_found_sensor_adr] > 0)
+
+    done = (
+            fall_termination
+            | contact_termination
+            | jp.isnan(state.data.qpos).any()
+            | jp.isnan(state.data.qvel).any()
     )
+    # done=done.astype(reward.dtype)
+    state = state.replace(done=done)
+    return state
+
+
+
+  # def _get_termination(self, data: mjx.Data) -> jax.Array:
+  #   fall_termination = self.get_gravity(data, "torso")[-1] < 0.0
+  #
+  #   contact_termination = data.sensordata[
+  #       self._mj_model.sensor_adr[self._right_foot_left_foot_found_sensor]
+  #   ] > 0
+  #   contact_termination |= data.sensordata[
+  #       self._mj_model.sensor_adr[self._left_foot_right_shin_found_sensor]
+  #   ] > 0
+  #   contact_termination |= data.sensordata[
+  #       self._mj_model.sensor_adr[self._right_foot_left_shin_found_sensor]
+  #   ] > 0
+  #   return (
+  #       fall_termination
+  #       | contact_termination
+  #       | jp.isnan(data.qpos).any()
+  #       | jp.isnan(data.qvel).any()
+  #   )
 
   def _get_obs(
-      self, data: mjx.Data, info: dict[str, Any], contact: jax.Array
-  ) -> Observation:
-    gyro = self.get_gyro(data, "pelvis")
-    info["rng"], noise_rng = jax.random.split(info["rng"])
+      self,*,
+          rng: jax.Array,
+          state: State,
+          # info: dict[str, Any],
+          floor_feet_contact: jax.Array,
+          feet_air_time: jax.Array,
+          phase: jax.Array,
+          curr_act: jax.Array,
+          last_act: jax.Array,
+          cmd: jax.Array,
+  ) -> Tuple[State, Observation, Observation]:
+    gyro = self.get_gyro(state.data, "pelvis")
+    # info["rng"], noise_rng = jax.random.split(info["rng"])
+    rng, key_gyro, key_gravity, key_qpos, key_qvel, key_linvel = jax.random.split(rng, 6)
+
     noisy_gyro = (
         gyro
-        + (2 * jax.random.uniform(noise_rng, shape=gyro.shape) - 1)
+        + (2 * jax.random.uniform(key_gyro, shape=gyro.shape) - 1)
         * self._config.noise_config.level
         * self._config.noise_config.scales.gyro
     )
 
-    gravity = data.site_xmat[self._pelvis_imu_site_id].T @ jp.array([0, 0, -1])
-    info["rng"], noise_rng = jax.random.split(info["rng"])
+    gravity = state.data.site_xmat[self._pelvis_imu_site_id].T @ jp.array([0, 0, -1])
+    # info["rng"], noise_rng = jax.random.split(info["rng"])
     noisy_gravity = (
         gravity
-        + (2 * jax.random.uniform(noise_rng, shape=gravity.shape) - 1)
+        + (2 * jax.random.uniform(key_gravity, shape=gravity.shape) - 1)
         * self._config.noise_config.level
         * self._config.noise_config.scales.gravity
     )
 
-    joint_angles = data.qpos[7:]
-    info["rng"], noise_rng = jax.random.split(info["rng"])
+    joint_angles = state.data.qpos[7:]
+    # info["rng"], noise_rng = jax.random.split(info["rng"])
     noisy_joint_angles = (
         joint_angles
-        + (2 * jax.random.uniform(noise_rng, shape=joint_angles.shape) - 1)
+        + (2 * jax.random.uniform(key_qpos, shape=joint_angles.shape) - 1)
         * self._config.noise_config.level
         * self._config.noise_config.scales.joint_pos
     )
 
-    joint_vel = data.qvel[6:]
-    info["rng"], noise_rng = jax.random.split(info["rng"])
+    joint_vel = state.data.qvel[6:]
+    # info["rng"], noise_rng = jax.random.split(info["rng"])
     noisy_joint_vel = (
         joint_vel
-        + (2 * jax.random.uniform(noise_rng, shape=joint_vel.shape) - 1)
+        + (2 * jax.random.uniform(key_qvel, shape=joint_vel.shape) - 1)
         * self._config.noise_config.level
         * self._config.noise_config.scales.joint_vel
     )
 
-    cos = jp.cos(info["phase"])
-    sin = jp.sin(info["phase"])
+    # cos = jp.cos(info["phase"])
+    # sin = jp.sin(info["phase"])
+    cos = jp.cos(phase)
+    sin = jp.sin(phase)
     phase = jp.concatenate([cos, sin])
 
-    linvel = self.get_local_linvel(data, "pelvis")
-    info["rng"], noise_rng = jax.random.split(info["rng"])
+    linvel = self.get_local_linvel(state.data, "pelvis")
+    # info["rng"], noise_rng = jax.random.split(info["rng"])
     noisy_linvel = (
         linvel
-        + (2 * jax.random.uniform(noise_rng, shape=linvel.shape) - 1)
+        + (2 * jax.random.uniform(key_linvel, shape=linvel.shape) - 1)
         * self._config.noise_config.level
         * self._config.noise_config.scales.linvel
     )
 
-    state = jp.hstack([
+    policy_state = jp.hstack([
+        # # info["command"], # 3
+        cmd,  # 3
         noisy_linvel,  # 3
         noisy_gyro,  # 3
         noisy_gravity,  # 3
-        info["command"],  # 3
+        # # # info["command"], # 3
+        # cmd,               # 3
         noisy_joint_angles - self._default_pose,  # 29
         noisy_joint_vel,  # 29
-        info["last_act"],  # 29
+        # kenneth: we should record curr_act and last_act in obs for next step.
+        # info["last_act"],  # 29
+        curr_act,            # 29
+        last_act,            # 29
         phase,
     ])
 
-    accelerometer = self.get_accelerometer(data, "pelvis")
-    global_angvel = self.get_global_angvel(data, "pelvis")
-    feet_vel = data.sensordata[self._foot_linvel_sensor_adr].ravel()
-    root_height = data.qpos[2]
+    accelerometer = self.get_accelerometer(state.data, "pelvis")
+    global_angvel = self.get_global_angvel(state.data, "pelvis")
+    feet_vel = state.data.sensordata[self._foot_linvel_sensor_adr].ravel()
+    root_height = state.data.qpos[2]
 
     privileged_state = jp.hstack([
-        state,
+        policy_state,
         gyro,  # 3
         accelerometer,  # 3
         gravity,  # 3
@@ -452,35 +698,55 @@ class Joystick(MjxEnv):
         joint_angles - self._default_pose,
         joint_vel,
         root_height,  # 1
-        data.actuator_force,  # 29
-        contact,  # 2
+        state.data.actuator_force,  # 29
+        floor_feet_contact,  # 2
         feet_vel,  # 4*3
-        info["feet_air_time"],  # 2
+        # info["feet_air_time"],  # 2
+        feet_air_time,          # 2
     ])
 
-    return {
-        "state": state,
+    curr_obs={
+        # input for policy network.
+        "state": policy_state,
+        # input for value network.
         "privileged_state": privileged_state,
     }
+
+    # we do the soft-reset like in BraxAutoResetWrapper to replace data/obs only instead of
+    # calling the env.reset(), with update new_cmd into first_obs.
+    soft_reset_obs = self._gen_soft_reset_obs(
+        state=state,
+        new_cmd=cmd,
+        # idx of `cmd` in policy_state and privileged_state:
+        cmd_idx={'state': slice(0, 3), 'privileged_state':slice(0, 3)}
+      )
+
+    return state, curr_obs, soft_reset_obs
 
   def _get_reward(
       self, *,
       data: mjx.Data,
-      action: jax.Array,
-      info: dict[str, Any],
-      metrics: dict[str, Any],
+      curr_act: jax.Array,
+      last_act: jax.Array,
+      last_last_act: jax.Array,
       done: jax.Array,
       first_contact: jax.Array,
       floor_feet_contact: jax.Array,
-  ) -> dict[str, jax.Array]:
-    del metrics  # Unused.
+      feet_air_time: jax.Array,
+      swing_peak_in_air: jax.Array,
+      last_cmd: jax.Array,
+      last_phase: jax.Array
+  ) -> Dict[str, jax.Array]:
+    # del metrics  # Unused.
     return {
         # Tracking rewards.
         "tracking_lin_vel": self._reward_tracking_lin_vel(
-            info["command"], self.get_local_linvel(data, "pelvis")
+            # info["command"], self.get_local_linvel(data, "pelvis")
+            last_cmd, self.get_local_linvel(data, "pelvis")
         ),
         "tracking_ang_vel": self._reward_tracking_ang_vel(
-            info["command"], self.get_gyro(data, "pelvis")
+            # info["command"], self.get_gyro(data, "pelvis")
+            last_cmd, self.get_gyro(data, "pelvis")
         ),
         # Base-related rewards.
         "lin_vel_z": self._cost_lin_vel_z(
@@ -495,34 +761,43 @@ class Joystick(MjxEnv):
         # Energy related rewards.
         "torques": self._cost_torques(data.actuator_force),
         "action_rate": self._cost_action_rate(
-            action, info["last_act"], info["last_last_act"]
+            # action, info["last_act"], info["last_last_act"]
+            curr_act, last_act, last_last_act
         ),
         "energy": self._cost_energy(data.qvel[6:], data.actuator_force),
         "dof_acc": self._cost_dof_acc(data.qacc[6:]),
         # Feet related rewards.
-        "feet_slip": self._cost_feet_slip(data, contact, info),
-        "feet_clearance": self._cost_feet_clearance(data, info),
+        "feet_slip": self._cost_feet_slip(data, floor_feet_contact),
+        "feet_clearance": self._cost_feet_clearance(data),
         "feet_height": self._cost_feet_height(
-            info["swing_peak"], first_contact, info
+            # info["swing_peak"], first_contact, info
+            swing_peak_in_air, first_contact
         ),
         "feet_air_time": self._reward_feet_air_time(
-            info["feet_air_time"], first_contact, info["command"]
+            # info["feet_air_time"], first_contact, info["command"]
+            # kenneth: use the air time output from _handle_contact, cause we will clear
+            # info["feet_air_time"] in handle_contact.
+            # feet_air_time, first_contact, info["command"]
+            feet_air_time, first_contact, last_cmd
         ),
         "feet_phase": self._reward_feet_phase(
-            data,
-            info["phase"],
-            self._config.reward_config.max_foot_height,
-            info["command"],
+            # data,
+            # info["phase"],
+            # self._config.reward.max_foot_height,
+            # info["command"],
+            data, last_phase, self._config.reward.max_foot_height, last_cmd
         ),
         # Other rewards.
         "alive": self._reward_alive(),
         "termination": self._cost_termination(done),
-        "stand_still": self._cost_stand_still(info["command"], data.qpos[7:]),
+        # "stand_still": self._cost_stand_still(info["command"], data.qpos[7:]),
+        "stand_still": self._cost_stand_still(last_cmd, data.qpos[7:]),
         "collision": self._cost_collision(data),
         "contact_force": self._cost_contact_force(data),
         # Pose related rewards.
         "joint_deviation_hip": self._cost_joint_deviation_hip(
-            data.qpos[7:], info["command"]
+            # data.qpos[7:], info["command"]
+            data.qpos[7:], last_cmd
         ),
         "joint_deviation_knee": self._cost_joint_deviation_knee(data.qpos[7:]),
         "dof_pos_limits": self._cost_joint_pos_limits(data.qpos[7:]),
@@ -667,17 +942,15 @@ class Joystick(MjxEnv):
   # Feet related rewards.
 
   def _cost_feet_slip(
-      self, data: mjx.Data, contact: jax.Array, info: dict[str, Any]
+      self, data: mjx.Data, floor_feet_contact: jax.Array
   ) -> jax.Array:
-    del info  # Unused.
     body_vel = self.get_global_linvel(data, "pelvis")[:2]
-    reward = jp.sum(jp.linalg.norm(body_vel, axis=-1) * contact)
+    reward = jp.sum(jp.linalg.norm(body_vel, axis=-1) * floor_feet_contact)
     return reward
 
   def _cost_feet_clearance(
-      self, data: mjx.Data, info: dict[str, Any]
+      self, data: mjx.Data
   ) -> jax.Array:
-    del info  # Unused.
     feet_vel = data.sensordata[self._foot_linvel_sensor_adr]
     vel_xy = feet_vel[..., :2]
     vel_norm = jp.sqrt(jp.linalg.norm(vel_xy, axis=-1))
@@ -690,9 +963,7 @@ class Joystick(MjxEnv):
       self,
       swing_peak: jax.Array,
       first_contact: jax.Array,
-      info: dict[str, Any],
   ) -> jax.Array:
-    del info  # Unused.
     error = swing_peak / self._config.reward.max_foot_height - 1.0
     return jp.sum(jp.square(error) * first_contact)
 

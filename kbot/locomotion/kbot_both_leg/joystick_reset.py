@@ -6,7 +6,7 @@ import mujoco
 from mujoco import mjx
 from mujoco.mjx._src import math
 
-from kbot.base_env.base_env_mjx import make_mjx_data
+from kbot.base_env.base_env_mjx import make_mjx_data, Observation
 
 class JoystickResetHelper:
 
@@ -107,11 +107,16 @@ class JoystickResetHelper:
 			# nconmax=self._config.nconmax,
 			# njmax=self._config.njmax,
 		)
+		# kenneth: important to do FK to make mjc stable.
 		data = mjx.forward(mjx_model, data)
 		return data
 
 	@staticmethod
-	def gen_info(*, rng:jax.Array,
+	def gen_info(*,
+				  # record the data/obs after reset, then used when step() `done` through soft-reset mechanism.
+				  first_data: mjx.Data,
+				  first_obs: Observation,
+				  rng:jax.Array,
 				  ctrl_dt:float,
 				  push_interval_lower:ArrayLike,
 				  push_interval_upper:ArrayLike,
@@ -137,15 +142,28 @@ class JoystickResetHelper:
 			"last_last_act": jp.zeros(nu),
 			"motor_targets": jp.zeros(nu),
 			"feet_air_time": jp.zeros(2),  # air time of individual left/right feet.
-			"last_contact": jp.zeros(2, dtype=bool),
+
+			# kenneth: after reset the feet of robot should be on floor, causing we
+			# do FK through mjx.forward() in gen_data.
+			# "last_contact": jp.zeros(2, dtype=bool),
+			"last_contact": jp.ones(2, dtype=bool),
+
 			"swing_peak": jp.zeros(2),  # left/right feet
+
 			# Phase related.
 			"phase_dt": phase_dt,
-			"phase": phase,
+			"phase": phase,   # [0, pi]
+
 			# Push related.
 			"push_xy": jp.array([0.0, 0.0]),
 			"push_step": 0,
 			"push_interval_steps": push_interval_steps,
+
+			# record the data/obs after reset, then used when step() `done` through soft-reset mechanism.
+			'first_data': first_data,
+			# NOTE: in first_obs, the  "command" maybe different as step() used when `done`, cause the
+			# command will be re-sampled every 500-steps in step().
+			'first_obs': first_obs,
 		}
 		return info
 
