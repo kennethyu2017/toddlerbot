@@ -149,7 +149,7 @@ def _rwd_config() -> config_dict.ConfigDict:
             alive=0.0,
             stand_still=-1.0,
             termination=-100.0,
-            collision=-0.1,
+            hand_collision=-0.1,
             contact_force=-0.01,
             # Pose related rewards.
             joint_deviation_knee=-0.1,
@@ -174,6 +174,8 @@ def _push_config() -> config_dict.ConfigDict:
 
 def _cmd_config() -> config_dict.ConfigDict:
     return config_dict.create(
+          # every 500 steps, resample cmd in step().
+          resample_length=500,
           # cmd range
           lin_vel_x=[-1.0, 1.0],
           lin_vel_y=[-0.5, 0.5],

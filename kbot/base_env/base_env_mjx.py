@@ -91,6 +91,12 @@ class State:
   done: jax.Array
   metrics: Dict[str, jax.Array]
   info: Dict[str, Any]
+  # kenneth: recorded for AutoSoftReset.
+  reset_data: mjx.Data
+  reset_obs: Observation
+  # NOTE: above `info` has more key/value pairs than reset_info, including key/value pairs
+  # inserted byt the outter wrapper like AutoResetWrapper/EpisodeWrapper...
+  reset_info: Dict[str, jax.Array]
 
   def tree_replace(
       self, params: Dict[str, Optional[jax.typing.ArrayLike]]
@@ -248,41 +254,41 @@ class MjxEnv(abc.ABC):
   """
   Sensor readings.
   """
-  def get_gravity(self, data: mjx.Data, frame: str) -> jax.Array:
-    """Return the gravity vector in the world frame."""
-    return get_sensor_data(
-      self.mj_model, data, f"{self._config.robot.gravity_sensor}_{frame}"
-    )
-
-  def get_global_linvel(self, data: mjx.Data, frame: str) -> jax.Array:
-    """Return the linear velocity of the robot in the world frame."""
-    return get_sensor_data(
-      self.mj_model, data, f"{self._config.robot.global_linvel_sensor}_{frame}"
-    )
-
-  def get_global_angvel(self, data: mjx.Data, frame: str) -> jax.Array:
-    """Return the angular velocity of the robot in the world frame."""
-    return get_sensor_data(
-      self.mj_model, data, f"{self._config.robot.global_angvel_sensor}_{frame}"
-    )
-
-  def get_local_linvel(self, data: mjx.Data, frame: str) -> jax.Array:
-    """Return the linear velocity of the robot in the local frame."""
-    return get_sensor_data(
-      self.mj_model, data, f"{self._config.model.robot.local_linvel_sensor}_{frame}"
-    )
-
-  def get_accelerometer(self, data: mjx.Data, frame: str) -> jax.Array:
-    """Return the accelerometer readings in the local frame."""
-    return get_sensor_data(
-      self.mj_model, data, f"{self._config.model.robot.accelerometer_sensor}_{frame}"
-    )
-
-  def get_gyro(self, data: mjx.Data, frame: str) -> jax.Array:
-    """Return the gyroscope readings in the local frame."""
-    return get_sensor_data(
-      self.mj_model, data, f"{self._config.model.robot.gyro_sensor}_{frame}"
-    )
+  # def get_gravity(self, data: mjx.Data, frame: str) -> jax.Array:
+  #   """Return the gravity vector in the world frame."""
+  #   return get_sensor_data(
+  #     self.mj_model, data, f"{self._config.robot.gravity_sensor}_{frame}"
+  #   )
+  #
+  # def get_global_linvel(self, data: mjx.Data, frame: str) -> jax.Array:
+  #   """Return the linear velocity of the robot in the world frame."""
+  #   return get_sensor_data(
+  #     self.mj_model, data, f"{self._config.robot.global_linvel_sensor}_{frame}"
+  #   )
+  #
+  # def get_global_angvel(self, data: mjx.Data, frame: str) -> jax.Array:
+  #   """Return the angular velocity of the robot in the world frame."""
+  #   return get_sensor_data(
+  #     self.mj_model, data, f"{self._config.robot.global_angvel_sensor}_{frame}"
+  #   )
+  #
+  # def get_local_linvel(self, data: mjx.Data, frame: str) -> jax.Array:
+  #   """Return the linear velocity of the robot in the local frame."""
+  #   return get_sensor_data(
+  #     self.mj_model, data, f"{self._config.model.robot.local_linvel_sensor}_{frame}"
+  #   )
+  #
+  # def get_accelerometer(self, data: mjx.Data, frame: str) -> jax.Array:
+  #   """Return the accelerometer readings in the local frame."""
+  #   return get_sensor_data(
+  #     self.mj_model, data, f"{self._config.model.robot.accelerometer_sensor}_{frame}"
+  #   )
+  #
+  # def get_gyro(self, data: mjx.Data, frame: str) -> jax.Array:
+  #   """Return the gyroscope readings in the local frame."""
+  #   return get_sensor_data(
+  #     self.mj_model, data, f"{self._config.model.robot.gyro_sensor}_{frame}"
+  #   )
 
   def render(
       self,

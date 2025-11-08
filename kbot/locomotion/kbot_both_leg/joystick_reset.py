@@ -6,7 +6,7 @@ import mujoco
 from mujoco import mjx
 from mujoco.mjx._src import math
 
-from kbot.base_env.base_env_mjx import make_mjx_data, Observation
+from kbot.base_env.base_env_mjx import make_mjx_data
 
 class JoystickResetHelper:
 
@@ -53,7 +53,7 @@ class JoystickResetHelper:
 		return qvel
 
 	@staticmethod
-	def _rand_phase(rng: jax.Array, ctrl_dt:float) -> Tuple[jax.Array, jax.Array]:
+	def _rand_phase_dt(rng: jax.Array, ctrl_dt:float) -> Tuple[jax.Array, jax.Array]:
 		# Phase, freq=U(1.0, 1.5)
 		# finish gait_freq*2pi per second.
 		rng, key_phase = jax.random.split(rng)
@@ -114,8 +114,8 @@ class JoystickResetHelper:
 	@staticmethod
 	def gen_info(*,
 				  # record the data/obs after reset, then used when step() `done` through soft-reset mechanism.
-				  first_data: mjx.Data,
-				  first_obs: Observation,
+				  # first_data: mjx.Data,
+				  # first_obs: Observation,
 				  rng:jax.Array,
 				  ctrl_dt:float,
 				  push_interval_lower:ArrayLike,
@@ -124,7 +124,7 @@ class JoystickResetHelper:
 				  nu:int)->Dict[str, jax.Array]:
 		rng, key_phase, key_push, key_info = jax.random.split(rng, 4)
 
-		phase_dt, phase = JoystickResetHelper._rand_phase(key_phase, ctrl_dt)
+		phase_dt, phase = JoystickResetHelper._rand_phase_dt(key_phase, ctrl_dt)
 		print(f'phase_dt after randomization: {phase_dt=:} {phase=:}')
 
 		push_interval_steps = JoystickResetHelper._rand_push(key_push,
@@ -133,10 +133,10 @@ class JoystickResetHelper:
 															 push_interval_upper)
 		print(f'push_interval_steps after randomization: {push_interval_steps=:}')
 
-		# note: all leaf nodes must be jp.array to be able to cross jit boundary.
+		# note: all leaf nodes must be jax.Array type to be able to cross jit boundary.
 		info = {
 			"rng": key_info,  # rng,
-			"step": 0,
+			"resample_cmd_steps": 0,
 			"command": cmd,
 			"last_act": jp.zeros(nu),
 			"last_last_act": jp.zeros(nu),
@@ -160,10 +160,10 @@ class JoystickResetHelper:
 			"push_interval_steps": push_interval_steps,
 
 			# record the data/obs after reset, then used when step() `done` through soft-reset mechanism.
-			'first_data': first_data,
+			# 'first_data': first_data,
 			# NOTE: in first_obs, the  "command" maybe different as step() used when `done`, cause the
 			# command will be re-sampled every 500-steps in step().
-			'first_obs': first_obs,
+			# 'first_obs': first_obs,
 		}
 		return info
 
