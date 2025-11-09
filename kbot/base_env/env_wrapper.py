@@ -1,13 +1,55 @@
-
 """Wrappers for MuJoCo Playground environments."""
-
-
-from typing import Any, Tuple
+from typing import Any, Tuple, Optional,Callable
 import jax
 from jax import numpy as jp
 from jax._src.lib import pytree
+import mujoco.mjx as mjx
 from mujoco_playground._src import wrapper
-from base_env_mjx import State
+from brax.envs.wrappers import training as brax_training
+from base_env_mjx import State, MjxEnv
+
+def wrap_for_locomotion_training(
+	env: MjxEnv,
+	episode_length: int = 1000,
+	action_repeat: int = 1,
+	randomization_fn: Optional[
+		Callable[[mjx.Model], Tuple[mjx.Model, mjx.Model]]
+	] = None,
+	full_reset: bool = False,
+) -> wrapper.Wrapper:
+	"""Common wrapper pattern for all brax training agents.
+
+	Args:
+	env: environment to be wrapped
+	episode_length: length of episode
+	action_repeat: how many repeated actions to take per step
+	randomization_fn: randomization function that produces a vectorized model
+	  and in_axes to vmap over
+	full_reset: whether to call `env.reset` during `env.step` on done rather
+	  than resetting to a cached first state. Setting full_reset=True may
+	  increase wallclock time because it forces full resets to random states.
+
+	Returns:
+	An environment that is wrapped with Episode and AutoReset wrappers.  If the
+	environment did not already have batch dimensions, it is additional Vmap
+	wrapped.
+	"""
+	del full_reset
+	if randomization_fn is None:
+		# env = brax_training.VmapWrapper(env)  # pytype: disable=wrong-arg-types
+		raise NotImplementedError('Randomization function must be provided.')
+
+	#kenneth: vectorize multiple envs.
+	env = wrapper.BraxDomainRandomizationVmapWrapper(env, randomization_fn)
+
+	# kenneth: increment info['steps'], and set state.done if 'steps' > episode_length.
+	env = brax_training.EpisodeWrapper(env, episode_length, action_repeat)
+
+	# kenneth: AutoResetWrapper is the handler of `done`, also be responsible to clear `done` after process.
+	# env = BraxAutoResetWrapper(env, full_reset=full_reset)
+	env = SoftResetWrapper(env)
+	return env
+
 
 class SoftResetWrapper(wrapper.Wrapper):
 	"""Automatically soft resets Brax envs that are done.
@@ -17,14 +59,14 @@ class SoftResetWrapper(wrapper.Wrapper):
 	  * only data is reset, not the environment info and obs.
 	  * env info is inherited from inner_env.
 	  * obs is get from inner_env for special case of  "command" which is re-sampled in MjxEnv every 500-steps, and different as
-	    first state obs.
+		first state obs.
 
 	Attributes:
 	  env: The wrapped environment.
 
 	"""
 
-	def __init__(self, env: Any ):
+	def __init__(self, env: Any):
 		super().__init__(env)
 		self._info_key = 'SoftResetWrapper'
 

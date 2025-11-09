@@ -15,7 +15,6 @@
 """Core classes for MuJoCo Playground."""
 
 import abc
-import unittest
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
 from etils import epath
@@ -427,5 +426,5 @@ if __name__ == '__main__':
   test_env = TestEnv(test_cfg)
   print(f'{test_env.n_substeps=:}')
   test_mjx_data=mjx.make_data(test_env.mjx_model)
-  print('pelvis accelerometer sensor data:', test_env.get_accelerometer(test_mjx_data,'pelvis'))
-  print('pelvis gyro sensor data:', test_env.get_gyro(test_mjx_data, 'pelvis'))
+  # print('pelvis accelerometer sensor data:', test_env.get_accelerometer(test_mjx_data,'pelvis'))
+  # print('pelvis gyro sensor data:', test_env.get_gyro(test_mjx_data, 'pelvis'))

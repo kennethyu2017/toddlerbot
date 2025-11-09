@@ -757,6 +757,7 @@ class Joystick(MjxEnv):
               * self._config.noise.scales.linvel
       )
 
+      # TODO: check all obs values can be got on real robot through sensors.
       policy_state = jp.hstack([
           # # info["command"], # 3
           cmd,  # 3

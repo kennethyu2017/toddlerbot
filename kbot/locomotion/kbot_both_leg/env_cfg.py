@@ -4,10 +4,15 @@ follow the mujoco_playground.
 from ml_collections import config_dict
 
 def _task_to_xml(task_name: str) -> str:
-  return {
+    xml_dict = {
       "flat_terrain": 'scene_feetonly_flat_terrain_mjx.xml',
       "rough_terrain": 'scene_feetonly_rought_terrain_mjx.xml',
-  }[task_name]
+    }
+    if task_name not in xml_dict:
+        raise ValueError(f'not a valid task name: {task_name}, must be in {xml_dict.keys()}' )
+
+    return xml_dict[task_name]
+
 
 #nconmax,njmax are deprecated only use for mujoco prior to 2.3.0.,
 # and only used for `warp` backend.
