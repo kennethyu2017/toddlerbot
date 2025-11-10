@@ -107,10 +107,14 @@ class SoftResetWrapper(wrapper.Wrapper):
 		if 'steps' in state.info:
 			# reset steps to 0 if done.
 			steps = state.info['steps']
+			# clear info['steps'] if last step() got done.
 			steps = jp.where(state.done, jp.zeros_like(steps), steps)
 			state.info.update(steps=steps)
 
 		# kenneth: AutoResetWrapper is handler of `done`, so be responsible to clear `done`.
+		# kenneth: NOTE, we clear state.done here, just before 1st step() after reset, not in the
+		# step() which causing `done`, because after exit from SoftResetWrapper.step(), outer_wrapper,
+		# e.g. EvalWrapper will make use of state.done.
 		state = state.replace(done=jp.zeros_like(state.done))
 
 		state = self.env.step(state, action)
@@ -168,4 +172,6 @@ class SoftResetWrapper(wrapper.Wrapper):
 		outer_info[done_count_key] += state.done.astype(int)
 		# outer_info[f'{self._info_key}_rng'] = reset_rng
 
+		# kenneth: NOTE, we can not clear state.done immediately after soft_reset,
+		# cause outer_wrapper, e.g. EvalWrapper will make use of state.done.
 		return state.replace(data=data, obs=obs, info=outer_info)

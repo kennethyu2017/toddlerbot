@@ -12,7 +12,12 @@ def brax_ppo_config(
 
   rl_config = config_dict.create(
       num_timesteps=100_000_000,
+
+      # total validation(eval) during entire training.so we got running progress_fn 10 times.
       num_evals=10,
+      # for validation(eval) during training epoch. default 128 in ppo.train().
+      num_eval_envs=32,
+
       reward_scaling=1.0,
       # episode_length=env_config.episode_length,
       normalize_observations=True,
@@ -33,14 +38,23 @@ def brax_ppo_config(
           policy_obs_key="state",
           value_obs_key="state",
       ),
+      # full reset per training validation(eval).
       num_resets_per_eval=10,
   )
 
   if env_name in ("kbot_both_leg_flat_terrain", "kbot_both_leg_rough_terrain"):
     rl_config.num_timesteps = 200_000_000
-    rl_config.num_evals = 20
+
+    # total validation(eval) during entire training.so we got running progress_fn 20 times.
+    rl_config.num_evals = 40 #20
+    # for validation(eval) during training epoch.
+    rl_config.num_eval_envs = 64,
+
     rl_config.clipping_epsilon = 0.2
+
+    # full reset per training validation(eval).
     rl_config.num_resets_per_eval = 1
+
     rl_config.entropy_cost = 0.005
     # argument for ppo_networks.make_ppo_networks()
     rl_config.network_factory_kwargs=config_dict.create(
@@ -55,6 +69,25 @@ def brax_ppo_config(
     raise ValueError(f"Unsupported env: {env_name}")
 
   return rl_config
+
+
+
+# for debug only.
+def toy_brax_ppo_config(env_name: str) -> config_dict.ConfigDict:
+    rl_config = brax_ppo_config(env_name)
+
+    if env_name in ("kbot_both_leg_flat_terrain", "kbot_both_leg_rough_terrain"):
+        rl_config.update(
+            num_timesteps=1024,
+            num_envs=16,
+            num_evals=10,
+            num_eval_envs=8,
+            batch_size=16,
+            num_minibatches=8,
+            num_resets_per_eval=1
+        )
+
+    return rl_config
 
 
 if __name__ == "__main__":

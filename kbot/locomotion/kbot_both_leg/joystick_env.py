@@ -510,6 +510,9 @@ class Joystick(MjxEnv):
       return state
 
 
+  # metrics can be used by EvalWrapper, during the validation(eval) per training epoch.
+  # and progress_fn can write interested metrics to TensorboardX for plotting.
+  # TODO : add more metrics data for plotting in TensorBoardX.
   @staticmethod
   def _update_metrics(state:State, rewards: Dict[str, jax.Array], swing_peak_in_air:jax.Array)->State:
       for k, v in rewards.items():
@@ -518,6 +521,7 @@ class Joystick(MjxEnv):
       # kenneth
       # state.metrics["swing_peak"] = jp.mean(state.info["swing_peak"])
       state.metrics["swing_peak"] = jp.mean(swing_peak_in_air)
+
       return state
 
 

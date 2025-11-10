@@ -41,7 +41,10 @@ def _default_training_config() -> config_dict.ConfigDict:
         display_swing_peak=False,
         display_vel=False,
 
-        env_name='kbot_both_leg_flat_terrain',
+        # TODO: temply debug.
+        # env_name='kbot_both_leg_flat_terrain',
+        env_name='toy_kbot_both_leg_flat_terrain',
+
         main_seed=423,
         train_seed = 982,
         model_dir = 'models',
@@ -126,6 +129,9 @@ def evaluate(*,
     eval_env = eval_env_fn()
     print(f"eval env: {env_name}, env_cfg: {eval_env._config}")
 
+
+    TODO: single instance of eavl_env, no need to use JIT and GPU. use mujoco CPU will be faster.
+
     jit_reset = jax.jit(eval_env.reset)
     jit_step = jax.jit(eval_env.step)
     # jit_inference_fn = jax.jit(policy_fn)
@@ -172,13 +178,29 @@ def evaluate(*,
 #     orbax_checkpointer.save(ckpt_file.resolve(), params, force=True, save_args=save_args)
 
 #  progress_fn not called inside jit-boundary.
+# TODO : we can add more 'training/xxx', 'eval/xxx' for interested values.
 def _train_progress_fn(writer:SummaryWriter,
-                 times: List[datetime],
-                 num_steps: int,
-                 metrics: Dict[str, Any]):
-    times.append(datetime.now())
-    writer.add_
+                       times: List[datetime],
+                       num_steps: int,
+                       metrics: Dict[str, Any]):
 
+    """
+    :param writer:
+    :param times:
+    :param num_steps:
+    :param metrics:  keys: 'training/xxx', 'eval/xxx'.
+
+    """
+    times.append(datetime.now())
+
+    # TODO: we can add rendered video.
+    for k,v in metrics.items():
+        writer.add_scalar(
+            tag=k,
+            scalar_value=v,
+            global_step=num_steps,
+            display_name = k
+        )
 
 
 def train_policy(*,
@@ -190,7 +212,7 @@ def train_policy(*,
                  ckpt_root_dir:str,
                  restore_ckpt_dir:str = None,
                  model_dir: str,
-                 train_seed:int
+                 train_seed:int,
                  )->None:
     print(f'{ppo_params=:}')
 
@@ -232,6 +254,7 @@ def train_policy(*,
         # **dict(ppo_params),
         # use to_dict to resolve recursively with valid references. no use **ppo_params directly?
         **ppo_params.to_dict(),
+        environment=train_env,
         network_factory=network_factory,
         randomization_fn=randomization_fn,
         episode_length=train_env._config.model.episode_length,
@@ -243,8 +266,12 @@ def train_policy(*,
         save_checkpoint_path=ckpt_dir,
         restore_checkpoint_path=latest_ckpt,  # restore from the checkpoint!
         seed=train_seed,
-        run_evals=True,  # for progress plot.
-        environment=train_env,
+        run_evals=True,  # will call progress_fn to plot.
+
+        # env for validation. use same as train_env.
+        eval_env=train_env,
+        # num of eval_envs to use for validation(eval) during training epoch.
+        # num_eval_envs=num_valid_envs,
         # eval_env=registry.load(env_name, config=env_cfg),
         # eval_env=valid_env,
         # wrapping domain randomization, vmap, auto-reset, etc.

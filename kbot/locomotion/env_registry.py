@@ -6,7 +6,7 @@ import mujoco.mjx as mjx
 import jax
 
 from kbot.base_env.base_env_mjx import MjxEnv
-from kbot.locomotion.training_params.brax_ppo_params import brax_ppo_config
+from kbot.locomotion.training_params.brax_ppo_params import brax_ppo_config, toy_brax_ppo_config
 import kbot.locomotion.kbot_both_leg.training_helper as kbot_both_leg
 from kbot.locomotion.kbot_both_leg.randomize import domain_randomize
 
@@ -34,6 +34,15 @@ def get_env_registry(env_name: str) -> EnvRegistry:
 	# no need to use global value.
 	EnvRegistry(env_name='kbot_both_leg_flat_terrain',
 				ppo_param_fn=partial(brax_ppo_config, env_name='kbot_both_leg_flat_terrain'),
+				train_env_fn=partial(kbot_both_leg.train_env, task_name='flat_terrain'),
+				eval_env_fn=partial(kbot_both_leg.eval_env, task_name='flat_terrain'),
+				rollout_fn=kbot_both_leg.rollout,
+				render_fn=kbot_both_leg.render_to_video,
+				randomization_fn=domain_randomize,
+				).register_to(registries)
+
+	EnvRegistry(env_name='toy_kbot_both_leg_flat_terrain',
+				ppo_param_fn=partial(toy_brax_ppo_config, env_name='kbot_both_leg_flat_terrain'),
 				train_env_fn=partial(kbot_both_leg.train_env, task_name='flat_terrain'),
 				eval_env_fn=partial(kbot_both_leg.eval_env, task_name='flat_terrain'),
 				rollout_fn=kbot_both_leg.rollout,
