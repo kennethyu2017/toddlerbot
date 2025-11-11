@@ -207,4 +207,10 @@ def default_config(task_name:str) -> config_dict.ConfigDict:
 
 
 if __name__ == '__main__':
-    print(default_config('flat_terrain'))
+
+    cfg =  default_config('flat_terrain')
+    print(f'{cfg.robot.joints=:}\n')
+    cfg.update_from_flattened_dict(
+        {'robot.joints.free_joint':'__updated_free_joint__',}
+    )
+    print(f'updated {cfg.robot.joints=:}\n')

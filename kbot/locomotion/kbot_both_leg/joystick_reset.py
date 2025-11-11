@@ -91,10 +91,10 @@ class JoystickResetHelper:
 
 		print(f'reset() ---> init qpos before randomization: {qpos=:} init qvel: {qvel=:}')
 		qpos= JoystickResetHelper._rand_qpos(qpos, key_qpos, soft_lowers, soft_uppers)
-		print(f'qpos after randomization: {qpos=:}')
+		# print(f'qpos after randomization: {qpos=:}')
 
 		qvel = JoystickResetHelper._rand_qvel(qvel, key_qvel)
-		print(f'qvel after randomization: {qvel=:}')
+		# print(f'qvel after randomization: {qvel=:}')
 
 		data = make_mjx_data(
 			mj_model,
@@ -125,13 +125,13 @@ class JoystickResetHelper:
 		rng, key_phase, key_push, key_info = jax.random.split(rng, 4)
 
 		phase_dt, phase = JoystickResetHelper._rand_phase_dt(key_phase, ctrl_dt)
-		print(f'phase_dt after randomization: {phase_dt=:} {phase=:}')
+		# print(f'phase_dt after randomization: {phase_dt=:} {phase=:}')
 
 		push_interval_steps = JoystickResetHelper._rand_push(key_push,
 															 ctrl_dt,
 															 push_interval_lower,
 															 push_interval_upper)
-		print(f'push_interval_steps after randomization: {push_interval_steps=:}')
+		# print(f'push_interval_steps after randomization: {push_interval_steps=:}')
 
 		# note: all leaf nodes must be jax.Array type to be able to cross jit boundary.
 		info = {

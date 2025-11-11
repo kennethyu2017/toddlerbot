@@ -175,3 +175,98 @@ class SoftResetWrapper(wrapper.Wrapper):
 		# kenneth: NOTE, we can not clear state.done immediately after soft_reset,
 		# cause outer_wrapper, e.g. EvalWrapper will make use of state.done.
 		return state.replace(data=data, obs=obs, info=outer_info)
+
+
+if __name__ == '__main__':
+	import os
+	# Tell XLA to use Triton GEMM, this improves steps/sec by ~30% on some GPUs
+	xla_flags = os.environ.get('XLA_FLAGS', '')
+	xla_flags += ' --xla_gpu_triton_gemm_any=True'
+	os.environ['XLA_FLAGS'] = xla_flags
+
+	# Enable jax persistent compilation cache.
+	# jax.config.update("jax_compilation_cache_dir", "/tmp/jax_cache")
+	# jax.config.update("jax_persistent_cache_min_entry_size_bytes", -1)
+	# jax.config.update("jax_persistent_cache_min_compile_time_secs", 0)
+	jax.config.update("jax_compilation_cache_dir", "./jax_cache")
+	jax.config.update("jax_persistent_cache_min_entry_size_bytes", -1)
+	jax.config.update("jax_persistent_cache_min_compile_time_secs", 0)
+	# More legible printing from numpy.
+	import numpy as np
+	np.set_printoptions(precision=3, suppress=True, linewidth=100)
+
+	from kbot.locomotion.kbot_both_leg.env_cfg import default_config
+	from kbot.locomotion.kbot_both_leg.joystick_env import Joystick
+	from kbot.locomotion.kbot_both_leg.randomize import domain_randomize
+	from functools import partial
+
+	task_name = 'flat_terrain'
+	num_envs = 3
+
+	toy_cfg = default_config(task_name)
+	# in-place
+	toy_cfg.update_from_flattened_dict({
+		'command.resample_length':1,
+		'model.episode_length':10,
+	})
+	print(f'{toy_cfg=:}')
+	mjx_env=Joystick('flat_terrain', config=toy_cfg)
+
+	def _print_state_of_env_0(state_env_0:State):
+		print(f' state of env 0 ---> ')
+		print(f' qacc: {state_env_0.data.qacc}')
+		print(f' qvel: {state_env_0.data.qvel}')
+		print(f' sensordata: {state_env_0.data.sensordata}')
+
+		print(f'info ----> ', state_env_0.info)
+		print(f'reset info ----> ', state_env_0.reset_info)
+		print('obs["state"]:', state_env_0.obs['state'])
+		print('done:', state_env_0.done)
+		print('rwd ', state_env_0.reward)
+
+
+	rng = jax.random.key(0)
+	# rng, key = jax.random.split(rng)
+	# _print_state_of_env_0(mjx_env.reset(key))
+	# exit(0)
+
+	rng = jax.random.split(rng, num_envs)
+	rng_key = jax.vmap(partial(jax.random.split, num=3) )(rng)
+	rng, key_domain_random, key_reset = rng_key.T[0], rng_key.T[1], rng_key.T[3]
+
+	wrapped_env = wrap_for_locomotion_training(env=mjx_env,
+											   episode_length=toy_cfg.model.episode_length,
+											   action_repeat=1,
+											   randomization_fn=partial(domain_randomize, rng=key_domain_random, env=mjx_env),
+											   )
+	# print(f'{wrapped_env._info_key=:}')
+	# print(f'{wrapped_env._mjx_model_v.qpos0.shape=:}')
+
+	reset_state = wrapped_env.reset(key_reset)
+
+	# # print(jax.tree_util.tree_structure(reset_state))
+	# print(f'{reset_state.data.qpos.shape=:}')
+	# print(f'{reset_state.obs["state"].shape=:}')
+	# print(f'{reset_state.info.keys()=:}')
+	# print(f'{reset_state.metrics.keys()=:}')
+
+	print('=== reset state ===')
+	_print_state_of_env_0(jax.tree.map(lambda x: x[0], reset_state))
+
+
+	# for _cnt in range(20):
+	# 	dummy_action=jp.zeros_like(reset_state.data.ctrl)
+	# 	step_state = wrapped_env.step(reset_state, dummy_action)
+	# 	if _cnt % 10 == 0:
+	# 		print(f'=== step {_cnt} state ===')
+	# 		_print_state_of_env_0(step_state)
+
+
+
+
+
+
+
+
+
+

@@ -10,10 +10,10 @@ from ml_collections import config_dict
 from mujoco import mjx
 import numpy as np
 import numpy.typing as npt
-from collections.abc import Iterable
 
 from mujoco_playground._src import gait
 from kbot.base_env.base_env_mjx import MjxEnv, State, Observation
+from kbot.locomotion.kbot_both_leg.env_cfg import default_config
 from kbot.locomotion.kbot_both_leg.joystick_reset import JoystickResetHelper
 
 class Joystick(MjxEnv):
@@ -36,11 +36,13 @@ class Joystick(MjxEnv):
 
   def _load_keyframe(self):
       keyframe = self._mj_model.keyframe(self._config.robot.keyframes.default_pose_keyframe)
+      print(f'load keyframe: {keyframe}')
       assert keyframe.qpos.shape == (self._mj_model.nq,)
       self._init_q = jp.array(keyframe.qpos)
       self._default_pose = jp.array(
           keyframe.qpos[7:]
       )
+      print(f'set default pose to: {self._default_pose}')
 
   # exclude the freejoint
   def _gen_soft_jnt_limit(self):
@@ -58,7 +60,7 @@ class Joystick(MjxEnv):
       def _get_jnt_adr(names)->npt.NDArray[np.int32]:
           adr_list=[]
 
-          if not isinstance(names, Iterable):
+          if not isinstance(names, list or tuple):
               names=[names]
 
           dim_of_first = -1
@@ -77,7 +79,7 @@ class Joystick(MjxEnv):
           return np.array(adr_list)
 
       free_jnt_adr = _get_jnt_adr(self._config.robot.joints.free_joint)
-      assert free_jnt_adr == list(range(0,7))
+      assert np.all(free_jnt_adr == list(range(0,7)) )
       print(f'{free_jnt_adr=:}')
 
       # only need roll and yaw for cost_deviation till now.
@@ -116,7 +118,7 @@ class Joystick(MjxEnv):
 
       def _get_sensor_adr(names)->npt.NDArray[np.int32]:
           adr_list=[]
-          if not isinstance(names, Iterable):
+          if not isinstance(names, list or tuple):
               names=[names]
 
           dim_of_first=-1
@@ -248,7 +250,8 @@ class Joystick(MjxEnv):
       obs = _gen_obs()
 
       metrics = JoystickResetHelper.gen_metrics(self._config.reward.scales.keys())
-      reward, done = jp.zeros(2)
+      reward = jp.zeros((), dtype=float)
+      done = jp.zeros((), dtype=bool)
 
       # note: State must be PyTree with jp.array leaf nodes to be able to cross the jit boundary.
       return State(
@@ -291,7 +294,7 @@ class Joystick(MjxEnv):
                                                   push_step=state.info["push_step"],
                                                   push_interval_steps=state.info["push_interval_steps"])
 
-      print(f'step() ---> sampled push_xy: {push_xy}, push_magnitude: {push_magnitude}')
+      # print(f'step() ---> sampled push_xy: {push_xy}, push_magnitude: {push_magnitude}')
       # TODO: add push to xfrc_applied : user-defined forces in joint or Cartesian coordinates
       #  (which are stored in mjData.qfrc_applied and mjData.xfrc_applied respectively).
       # mjData.xfrc_applied are Cartesian wrenches applied to the CoM of individual bodies.
@@ -762,11 +765,12 @@ class Joystick(MjxEnv):
       noisy_linvel = (
               linvel
               + (2 * jax.random.uniform(key_linvel, shape=linvel.shape) - 1)
-              * self._config.noise.level
-              * self._config.noise.scales.linvel
+              * self._config.model.noise.level
+              * self._config.model.noise.scales.linvel
       )
 
       # TODO: check all obs values can be got on real robot through sensors.
+      # shape: (56,)
       policy_state = jp.hstack([
           # # info["command"], # 3
           cmd,  # 3
@@ -793,6 +797,7 @@ class Joystick(MjxEnv):
       feet_vel = data.sensordata[self._feet_linvel_sensor_adr].ravel()
       root_height = data.qpos[2]
 
+      # shape: (112,)
       privileged_state = jp.hstack([
           policy_state,
           gyro,  # 3
@@ -1211,12 +1216,12 @@ class Joystick(MjxEnv):
         rng1, minval=self._config.command.lin_vel_x[0], maxval=self._config.command.lin_vel_x[1]
     )
     lin_vel_y = jax.random.uniform(
-        rng2, minval=self._config.lin_vel_y[0], maxval=self._config.lin_vel_y[1]
+        rng2, minval=self._config.command.lin_vel_y[0], maxval=self._config.command.lin_vel_y[1]
     )
     ang_vel_yaw = jax.random.uniform(
         rng3,
-        minval=self._config.ang_vel_yaw[0],
-        maxval=self._config.ang_vel_yaw[1],
+        minval=self._config.command.ang_vel_yaw[0],
+        maxval=self._config.command.ang_vel_yaw[1],
     )
 
     # With 10% chance, set everything to zero.
@@ -1227,7 +1232,23 @@ class Joystick(MjxEnv):
     )
 
 if __name__ == "__main__":
-    from kbot.locomotion.kbot_both_leg.env_cfg import default_config
     test_task = 'flat_terrain'
-    test_env = Joystick(task=test_task, config=default_config(test_task))
+    test_env = Joystick(task=test_task)
+    rng=jax.random.key(0)
+    reset_state = test_env.reset(rng)
+    # print(f'{reset_state.data.qpos=:}')
+
+    assert reset_state.data == reset_state.reset_data
+    assert reset_state.info == reset_state.reset_info
+
+    def _check_nan(x:jax.Array):
+        has_nan = jp.any(jp.isnan(x))
+        assert not has_nan
+        return has_nan
+
+    print(jax.tree.map(_check_nan, reset_state))
+
+
+
+
 

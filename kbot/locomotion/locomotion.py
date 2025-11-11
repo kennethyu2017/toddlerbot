@@ -32,11 +32,11 @@ os.environ['XLA_FLAGS'] = xla_flags
 
 # Enable jax persistent compilation cache.
 # jax.config.update("jax_compilation_cache_dir", "/tmp/jax_cache")
-# jax.config.update("jax_persistent_cache_min_entry_size_bytes", -1)
-# jax.config.update("jax_persistent_cache_min_compile_time_secs", 0)
+# jax.config.update("jax_persistent_cache_min_entry_size_bytes", 128)
+# jax.config.update("jax_persistent_cache_min_compile_time_secs", 4)
 jax.config.update("jax_compilation_cache_dir", "./jax_cache")
-jax.config.update("jax_persistent_cache_min_entry_size_bytes", 128)
-jax.config.update("jax_persistent_cache_min_compile_time_secs", 4)
+jax.config.update("jax_persistent_cache_min_entry_size_bytes", -1)
+jax.config.update("jax_persistent_cache_min_compile_time_secs", 0)
 
 # More legible printing from numpy.
 np.set_printoptions(precision=3, suppress=True, linewidth=100)

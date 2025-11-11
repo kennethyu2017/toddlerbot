@@ -54,3 +54,7 @@ def get_env_registry(env_name: str) -> EnvRegistry:
 		raise ValueError(f"Unknown env registry of name: {env_name}")
 
 	return registries[env_name]
+
+if __name__ == '__main__':
+	env_registry = get_env_registry('kbot_both_leg_flat_terrain')
+	print(env_registry)

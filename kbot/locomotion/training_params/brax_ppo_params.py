@@ -48,7 +48,7 @@ def brax_ppo_config(
     # total validation(eval) during entire training.so we got running progress_fn 20 times.
     rl_config.num_evals = 40 #20
     # for validation(eval) during training epoch.
-    rl_config.num_eval_envs = 64,
+    rl_config.num_eval_envs = 64
 
     rl_config.clipping_epsilon = 0.2
 
@@ -84,7 +84,13 @@ def toy_brax_ppo_config(env_name: str) -> config_dict.ConfigDict:
             num_eval_envs=8,
             batch_size=16,
             num_minibatches=8,
-            num_resets_per_eval=1
+            num_resets_per_eval=1,
+            network_factory_kwargs = config_dict.create(
+                policy_hidden_layer_sizes=(32, 32, 16),
+                value_hidden_layer_sizes=(32, 32, 16),
+                # must be same as in Observation from MjxEnv.
+                policy_obs_key="state",
+                value_obs_key="privileged_state")
         )
 
     return rl_config
@@ -93,9 +99,13 @@ def toy_brax_ppo_config(env_name: str) -> config_dict.ConfigDict:
 if __name__ == "__main__":
     ppo_params = brax_ppo_config('kbot_both_leg_flat_terrain')
     # print(f'{ppo_params=:}')
-    print(ppo_params.to_dict())
-    network_factory_args_dict = {}
-    network_factory_args_dict.update(**ppo_params.network_factory_args)
+    print(f'{ppo_params.to_dict()=:}')
+
+    toy_params = toy_brax_ppo_config('kbot_both_leg_rough_terrain')
+    print(f'{toy_params.to_dict()=:}')
+
+    # network_factory_args_dict = {}
+    # network_factory_args_dict.update(**ppo_params.network_factory_kwargs)
     # print(f'{network_factory_args_dict=:}')
     # print(f'{ppo_params.keys()=:}')
     # print('entropy_cost' in ppo_params )

@@ -25,14 +25,15 @@ def domain_randomize(model: mjx.Model, rng: jax.Array, env:MjxEnv)->Tuple[mjx.Mo
         # Scale static friction: *U(0.9, 1.1).
         rng, key = jax.random.split(rng)
         frictionloss = model.dof_frictionloss[6:] * jax.random.uniform(
-            key, shape=(29,), minval=0.5, maxval=2.0
+            # key, shape=(29,), minval=0.5, maxval=2.0
+            key, shape=(model.nu,), minval=0.5, maxval=2.0
         )
         dof_frictionloss = model.dof_frictionloss.at[6:].set(frictionloss)
 
         # Scale armature: *U(1.0, 1.05).
         rng, key = jax.random.split(rng)
         armature = model.dof_armature[6:] * jax.random.uniform(
-            key, shape=(29,), minval=1.0, maxval=1.05
+            key, shape=(model.nu,), minval=1.0, maxval=1.05
         )
         dof_armature = model.dof_armature.at[6:].set(armature)
 
@@ -50,6 +51,8 @@ def domain_randomize(model: mjx.Model, rng: jax.Array, env:MjxEnv)->Tuple[mjx.Mo
         #     body_mass[TORSO_BODY_ID] + dmass
         # )
 
+        TODO: add mass to floating body cause qacc to be nan...
+
         # kenneth: Add mass to pelvis: +U(-1.0, 1.0).
         rng, key = jax.random.split(rng)
         dmass = jax.random.uniform(key, minval=-1.0, maxval=1.0)
@@ -64,7 +67,7 @@ def domain_randomize(model: mjx.Model, rng: jax.Array, env:MjxEnv)->Tuple[mjx.Mo
         qpos0 = model.qpos0
         qpos0 = qpos0.at[7:].set(
             qpos0[7:]
-            + jax.random.uniform(key, shape=(29,), minval=-0.05, maxval=0.05)
+            + jax.random.uniform(key, shape=(model.nu,), minval=-0.05, maxval=0.05)
         )
 
         return (
@@ -101,3 +104,39 @@ def domain_randomize(model: mjx.Model, rng: jax.Array, env:MjxEnv)->Tuple[mjx.Mo
     })
 
     return model, in_axes
+
+
+if __name__ == '__main__':
+    import jax.numpy as jp
+
+    num_envs = 1024
+
+    from kbot.locomotion.kbot_both_leg.joystick_env import Joystick
+    env = Joystick('flat_terrain')
+    rng = jax.random.key(0)
+    rng, *random_keys = jax.random.split(rng, 1024 + 1)
+    random_keys = jax.numpy.array(random_keys)
+    # print(env._mjx_model.nu,env._mjx_model.njnt)
+
+    model_v, model_in_axis = domain_randomize(env._mjx_model, random_keys, env)
+    print(f'{model_v.qpos0.shape=:} {model_v.dof_frictionloss.shape=:}' )
+    print(f'{model_v.jnt_actfrcrange.shape=:}')
+    print(f'{model_in_axis.qpos0=:} {model_in_axis.dof_frictionloss=:}')
+    print(f'{model_in_axis.jnt_actfrcrange=:}')
+
+
+    def _check_nan(x: jax.Array):
+        has_nan = jp.any(jp.isnan(x))
+        assert not has_nan
+        return has_nan
+
+    def _check_shape_and_dtype(x: jax.Array):
+        return jax.eval_shape(lambda: x)
+
+
+    def _check_shape(x: jax.Array):
+        return x.shape
+
+    # print(jax.tree.map(_check_shape, model_v))
+    # print(f'{model_in_axis=:}')
+
