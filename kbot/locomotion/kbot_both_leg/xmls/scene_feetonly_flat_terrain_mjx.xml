@@ -46,7 +46,19 @@
 
   <include file="sensors.xml"/>
 
-<!--  <keyframe>-->
+  <keyframe>
+      <key name="knees_bent"
+            qpos="0 0 0.777
+                  1 0 0 0
+                  0.30756 0 0 0.662725 0.358
+                  0.30756 0 0 0.662725 0.358"
+
+            ctrl="0.30756 0 0 0.662725 0.358
+                  0.30756 0 0 0.662725 0.358"
+      />
+  </keyframe>
+
+<!--  <keyframe> g1:  -->
 <!--    <key name="home"-->
 <!--      qpos="-->
 <!--      0 0 .785-->

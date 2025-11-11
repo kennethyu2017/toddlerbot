@@ -60,6 +60,10 @@ def _model_config(task_name:str) -> config_dict.ConfigDict:
 
 def _robot_config() -> config_dict.ConfigDict:
     return config_dict.create(
+        # body
+        bodies=config_dict.create(
+            virtual_floating_base='virtual_floating_base',
+        ),
         # joint
         joints=config_dict.create(
             free_joint='floating_base_joint',
@@ -108,7 +112,7 @@ def _robot_config() -> config_dict.ConfigDict:
         ),
         # keyframe
         keyframes=config_dict.create(
-            default_pose_keyframe='knee_bent',
+            default_pose_keyframe='knees_bent',
         ),
         # restricted_joint_range = (
         #     # Left leg.

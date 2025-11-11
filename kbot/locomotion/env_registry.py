@@ -10,7 +10,6 @@ from kbot.locomotion.training_params.brax_ppo_params import brax_ppo_config, toy
 import kbot.locomotion.kbot_both_leg.training_helper as kbot_both_leg
 from kbot.locomotion.kbot_both_leg.randomize import domain_randomize
 
-
 @dataclass(kw_only=True)
 class EnvRegistry:
 	env_name: str
@@ -19,7 +18,7 @@ class EnvRegistry:
 	eval_env_fn: Callable[[], MjxEnv]
 	rollout_fn: Callable
 	render_fn: Callable
-	randomization_fn: Callable[[mjx.Model, jax.Array],Tuple[mjx.Model, Any] ]
+	randomization_fn: Callable[[mjx.Model, jax.Array, MjxEnv],Tuple[mjx.Model, Any] ]
 
 	def register_to(self, reg_table:Dict[str,"EnvRegistry"]) -> None:
 		if self.env_name in reg_table:

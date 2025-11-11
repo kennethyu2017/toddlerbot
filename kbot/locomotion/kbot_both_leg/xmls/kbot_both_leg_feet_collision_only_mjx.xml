@@ -127,7 +127,7 @@
   <worldbody>
 <!--    <light mode="targetbody"  type="spot" pos="0 0 4.5" dir="0 0 -1"  />-->
     <light name="target_spotlight" mode="targetbodycom" target="virtual_floating_base" pos="0 -2 4" exponent="20"/>
-    <body name="virtual_floating_base" pos="0 0 .794" childclass="both_leg">
+    <body name="virtual_floating_base" pos="0 0 .798" childclass="both_leg">
       <camera name="track" pos="1.734 -1.135 .17" xyaxes=".552 .834 -.000 -.170 .112 .979" mode="trackcom"/>
       <freejoint name="floating_base_joint"/>
       <body name="kd_d_101_l_hip_static" >
@@ -164,12 +164,10 @@
                     <!-- used for mounting force sensor to measure interaction force between left foot struct
                       and its parent link: kd_d_402_l_shin_idle  -->
                   <site name="left_foot_ankle" pos="0 0 -.015"  euler="1.5707963 0 3.1415926" />
-
                   <geom class="visual" pos="-.0169525 .0314359 -.0130346" quat=".5 .5 .5 -.5" type="mesh" material="kd_d_501_l_foot_structure_visual_material" mesh="kd_d_501_l_foot_structure_visual"/>
-
-                  <geom name="left_foot_collision" class="foot" pos="-.029 .040 -.015" size=".110 .019 .039" type="box"/>
-
-
+                  <geom name="left_foot_collision" class="foot" pos="-.029 .040 -.015"
+                        size=".110 .019 .039" type="box"/>
+                  <site name="left_foot_bottom_center" pos="-.029 .057 -.015"  euler="1.5707963 0 3.1415926" />
                 </body>
               </body>
             </body>
@@ -209,9 +207,8 @@
                       and its parent link: kd_d_401_r_shin_drive  -->
                   <site name="right_foot_ankle" pos="0 0 .015 " euler="1.5707963 0 3.1415926" />
                   <geom class="visual" pos="-.0169525 .0314359 .0130345" quat=".5 .5 .5 -.5" type="mesh" material="kd_d_501_r_foot_structure_visual_material" mesh="kd_d_501_r_foot_structure_visual"/>
-
                   <geom name="right_foot_collision" class="foot" pos="-.029 .040 .015" size=".110 .019 .039" type="box"/>
-
+                  <site name="right_foot_bottom_center" pos="-.029 .057 .015"  euler="1.5707963 0 3.1415926" />
                 </body>
               </body>
             </body>

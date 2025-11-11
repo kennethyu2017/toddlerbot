@@ -167,6 +167,8 @@ class Joystick(MjxEnv):
       print(f'{self._feet_force_sensor_adr=:}')
 
 
+  def _find_body(self)->None:
+      self._virtual_floating_base_body_id = self._mj_model.body(self._config.robot.bodies.virtual_floating_base).id
 
 
   def _post_init(self) -> None:
@@ -184,6 +186,7 @@ class Joystick(MjxEnv):
         1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,  # right arm.
     ])
 
+    self._find_body()
     self._find_site()
     self._find_geom()
     self._find_sensor()
@@ -537,6 +540,8 @@ class Joystick(MjxEnv):
 
     # add push to qvel.
      state = self._apply_push(state, key_push)
+
+     # TODO: for evaluate, use mujoco on CPU can be faster than mjx which is suitable for multiple-env-instances.
      state, last_last_act, last_act= self._apply_jax_step(state, action)
 
      state, floor_feet_contact, first_contact, feet_air_time = self._handle_contact(state)
@@ -1075,9 +1080,17 @@ class Joystick(MjxEnv):
                         # torso_zaxis: jax.Array
                         pelvis_zaxis: jax.Array
                         ) -> jax.Array:
+    # TODO: g1 use jp.array([0.073, 0.0, 1.0]), read from sensordata: framezaxis "upvector_torso"
+    # after load keyframe 'knees_bent'.
     # return jp.sum(jp.square(torso_zaxis - jp.array([0.073, 0.0, 1.0])))
-    # TODO:  jp.array([0.073, 0.0, 1.0]) is read from sensordata after set to default_pose?
-    return jp.sum(jp.square(pelvis_zaxis - jp.array([0.073, 0.0, 1.0])))
+
+    # framezaxis returns the 3D unit vector corresponding to the Z-axis of
+    # the spatial frame of the object, in global coordinates, so
+    # we can subtract the two unit-vector to get the orientation error.
+    # jp.array([0., 0., 1.0]) is read from sensordata: framezaxis "upvector_torso"
+    # after load keyframe 'knees_bent', the default pose.
+    return jp.sum(jp.square(pelvis_zaxis - jp.array([0., 0., 1.0])))
+
 
   def _cost_base_height(self, data:mjx.Data) -> jax.Array:
     return jp.square(

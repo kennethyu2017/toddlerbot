@@ -206,3 +206,7 @@ MJMODEL.TXT
 MUJOCO_LOG.TXT
 mjmodel.xml
 MJDATA.TXT
+
+
+# jax
+jax_cache/

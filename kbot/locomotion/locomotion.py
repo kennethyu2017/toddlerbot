@@ -1,4 +1,4 @@
-from typing import Callable, List, Dict, Any
+from typing import Callable, List, Dict, Any, Tuple
 import time
 from datetime import datetime
 import functools
@@ -15,6 +15,7 @@ from brax.training.agents.ppo import train as ppo
 import jax
 import numpy as np
 import atexit
+import mujoco.mjx as mjx
 
 from tensorboardX import SummaryWriter
 
@@ -28,6 +29,14 @@ from kbot.locomotion.env_registry import get_env_registry
 xla_flags = os.environ.get('XLA_FLAGS', '')
 xla_flags += ' --xla_gpu_triton_gemm_any=True'
 os.environ['XLA_FLAGS'] = xla_flags
+
+# Enable jax persistent compilation cache.
+# jax.config.update("jax_compilation_cache_dir", "/tmp/jax_cache")
+# jax.config.update("jax_persistent_cache_min_entry_size_bytes", -1)
+# jax.config.update("jax_persistent_cache_min_compile_time_secs", 0)
+jax.config.update("jax_compilation_cache_dir", "./jax_cache")
+jax.config.update("jax_persistent_cache_min_entry_size_bytes", 128)
+jax.config.update("jax_persistent_cache_min_compile_time_secs", 4)
 
 # More legible printing from numpy.
 np.set_printoptions(precision=3, suppress=True, linewidth=100)
@@ -130,18 +139,18 @@ def evaluate(*,
     print(f"eval env: {env_name}, env_cfg: {eval_env._config}")
 
 
-    TODO: single instance of eavl_env, no need to use JIT and GPU. use mujoco CPU will be faster.
-
-    jit_reset = jax.jit(eval_env.reset)
-    jit_step = jax.jit(eval_env.step)
+    # TODO: single instance of eavl_env, no need to use JIT and GPU. use mujoco CPU will be faster.
+    # jit_reset = jax.jit(eval_env.reset)
+    # jit_step = jax.jit(eval_env.step)
     # jit_inference_fn = jax.jit(policy_fn)
-    jit_inference_fn = policy_fn
+    # jit_inference_fn = policy_fn
 
     ro_data=rollout_fn(
         env=eval_env,
-        jit_reset=jit_reset,
-        jit_step=jit_step,
-        jit_infer_fn=jit_inference_fn,
+        # TODO: for evaluate, use mujoco on CPU can be faster than mjx which is suitable for multiple-env-instances.
+        jit_reset=eval_env.reset,  #jit_reset,
+        jit_step=eval_env.step,  #jit_step,
+        jit_infer_fn=policy_fn,  #jit_inference_fn,
         rng=rng,
         record_step_state= render_rollout,
     )
@@ -208,7 +217,7 @@ def train_policy(*,
                  ppo_params:config_dict.ConfigDict,
                  network_factory:Callable,
                  train_env_fn:Callable,
-                 randomization_fn:Callable,
+                 randomization_fn: Callable[[mjx.Model, jax.Array, MjxEnv], Tuple[mjx.Model, Any]],
                  ckpt_root_dir:str,
                  restore_ckpt_dir:str = None,
                  model_dir: str,
@@ -256,7 +265,7 @@ def train_policy(*,
         **ppo_params.to_dict(),
         environment=train_env,
         network_factory=network_factory,
-        randomization_fn=randomization_fn,
+        randomization_fn=partial(randomization_fn, env=train_env),
         episode_length=train_env._config.model.episode_length,
 
         # progress_fn not called inside jit-boundary.
