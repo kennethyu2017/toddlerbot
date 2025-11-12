@@ -210,3 +210,7 @@ MJDATA.TXT
 
 # jax
 jax_cache/
+
+checkpoints/
+runs/
+videos/

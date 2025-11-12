@@ -43,16 +43,19 @@ np.set_printoptions(precision=3, suppress=True, linewidth=100)
 
 def _default_training_config() -> config_dict.ConfigDict:
     return config_dict.create(
-        req_train=True,
+        req_train=False,
         req_eval=True,
+
         render_rollout=True,
         save_rollout_data=False,
+
         display_swing_peak=False,
         display_vel=False,
 
+        env_name='kbot_both_leg_flat_terrain',
+
         # TODO: temply debug.
-        # env_name='kbot_both_leg_flat_terrain',
-        env_name='toy_kbot_both_leg_flat_terrain',
+        # env_name='toy_kbot_both_leg_flat_terrain',
 
         main_seed=423,
         train_seed = 982,
@@ -140,17 +143,16 @@ def evaluate(*,
 
 
     # TODO: single instance of eavl_env, no need to use JIT and GPU. use mujoco CPU will be faster.
-    # jit_reset = jax.jit(eval_env.reset)
-    # jit_step = jax.jit(eval_env.step)
-    # jit_inference_fn = jax.jit(policy_fn)
-    # jit_inference_fn = policy_fn
+    jit_reset = jax.jit(eval_env.reset)
+    jit_step = jax.jit(eval_env.step)
+    jit_inference_fn = jax.jit(policy_fn)
 
     ro_data=rollout_fn(
         env=eval_env,
         # TODO: for evaluate, use mujoco on CPU can be faster than mjx which is suitable for multiple-env-instances.
-        jit_reset=eval_env.reset,  #jit_reset,
-        jit_step=eval_env.step,  #jit_step,
-        jit_infer_fn=policy_fn,  #jit_inference_fn,
+        jit_reset=jit_reset,
+        jit_step=jit_step,
+        jit_infer_fn=jit_inference_fn,
         rng=rng,
         record_step_state= render_rollout,
     )
@@ -174,8 +176,8 @@ def evaluate(*,
         print(f"video_file: {video_file}")
         # no need to change env_cfg. just for render.
         dummy_env: MjxEnv = eval_env_fn()
-        render_fn = render_fn
-        render_fn(dummy_env, ro_data=ro_data, video_file_path=video_file)
+        # render_fn = render_fn
+        render_fn(env=dummy_env, ro_data=ro_data, video_file_path=video_file)
 
 
 # save ckpt
@@ -188,10 +190,11 @@ def evaluate(*,
 
 #  progress_fn not called inside jit-boundary.
 # TODO : we can add more 'training/xxx', 'eval/xxx' for interested values.
-def _train_progress_fn(writer:SummaryWriter,
+def _train_progress_fn(num_steps: int,
+                       metrics: Dict[str, Any],
+                       writer: SummaryWriter,
                        times: List[datetime],
-                       num_steps: int,
-                       metrics: Dict[str, Any]):
+                       ):
 
     """
     :param writer:
@@ -369,8 +372,10 @@ def _main(argv):
             ppo_networks.make_ppo_networks,
             **ppo_params.network_factory_kwargs
         )
+        # ppo.train() does not need network_factory_kwargs.
+        del ppo_params.network_factory_kwargs
     else:
-        raise ValueError("network_factory_args is not defined, do not use the default args of ppo_networks.make_ppo_networks")
+        raise ValueError("network_factory_kwargs is not defined, do not use the default args of ppo_networks.make_ppo_networks")
 
     if training_cfg.req_train:
         print('=== start train ===')
@@ -379,7 +384,7 @@ def _main(argv):
                      network_factory=network_factory,
                      # ckpt_dir=restore_ckpt_dir if RESTORE_CKPT else None,
                      train_env_fn=env_registry.train_env_fn,
-                     train_seed=training_cfg.seed,
+                     train_seed=training_cfg.train_seed,
                      randomization_fn=env_registry.randomization_fn,
                      restore_ckpt_dir=training_cfg.restore_ckpt_dir,
                      ckpt_root_dir=training_cfg.ckpt_root_dir,
@@ -415,7 +420,7 @@ def _main(argv):
             save_rollout_data=training_cfg.save_rollout_data,
             render_rollout=training_cfg.render_rollout,
             render_fn=env_registry.render_fn,
-            ro_data_dir=training_cfg.ro_data_dir,
+            ro_data_dir=training_cfg.rollout_data_dir,
             video_dir=training_cfg.video_dir,
         )
 

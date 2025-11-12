@@ -2,11 +2,10 @@
 from typing import Any, Tuple, Optional,Callable
 import jax
 from jax import numpy as jp
-from jax._src.lib import pytree
 import mujoco.mjx as mjx
 from mujoco_playground._src import wrapper
 from brax.envs.wrappers import training as brax_training
-from base_env_mjx import State, MjxEnv
+from kbot.base_env.base_env_mjx import State, MjxEnv
 
 def wrap_for_locomotion_training(
 	env: MjxEnv,
@@ -93,14 +92,6 @@ class SoftResetWrapper(wrapper.Wrapper):
 		return state
 
 	def step(self, state: State, action: jax.Array)->State:
-		# reset_xxx is updated by inner-most MjxEnv.step()
-		# reset_data, reset_obs, reset_info only updated by the inner-most MjxEnv.
-		inner_reset_data=state.reset_data
-		inner_reset_obs=state.reset_obs
-		# TODO: state.info include the outter-wrapper specific key/values, more than state.reset_info which
-		# only include the inner-most MjxEnv's info.
-		inner_reset_info=state.reset_info
-
 		# kenneth:  EpisodeWrapper and AutoResetWrapper use 'steps',while MjxEnv use 'step'.
 		# set 'steps' to zero for EpisodeWrapper. not for MjxEnv.
 		# kenneth: we clear 'steps' here instead in EpisodeWrapper.
@@ -132,35 +123,53 @@ class SoftResetWrapper(wrapper.Wrapper):
 
 		# reset_data , reset_obs is same shape as state.data, state.obs, so we can use jp.where
 		# to select directly.
-		data = jax.tree.map(_where_done, inner_reset_data, state.data)
-		obs = jax.tree.map(_where_done, inner_reset_obs, state.obs)
+		# reset_xxx is updated by inner-most MjxEnv.step()
+		# reset_data, reset_obs, reset_mjxenv_info only updated by the inner-most MjxEnv.
+		reset_data = state.reset_data
+		reset_obs = state.reset_obs
+		# only include the inner-most MjxEnv's info.
+		reset_mjxenv_info = state.reset_mjxenv_info
 
-		def _where_done_select_info(path: Tuple[pytree.DictKey], outer_node: jax.Array) -> jax.Array:
-			done=state.done
-			# key is "SoftResetWrapper_done_count", "rng", "steps", "last_contact"...
-			key:str = path[0].key
+		data = jax.tree.map(_where_done, reset_data, state.data)
+		obs = jax.tree.map(_where_done, reset_obs, state.obs)
 
-			# note: jit sensitive.
-			if key not in inner_reset_info:
-				# for key belong to outer wrapper, like "SoftResetWrapper_done_count", "episode_metrics",
-				# we just return the leaf node of outer info.
-				return outer_node
+		# def _where_done_select_info(path: Tuple[pytree.DictKey], outer_node: jax.Array) -> jax.Array:
+		# 	done=state.done
+		# 	# key is "SoftResetWrapper_done_count", "rng", "steps", "last_contact"...
+		# 	key:str = path[0].key
+		#
+		# 	# TODO: this function is compiled only once, so can not use if ... statements?????
+		# 	# the `if` condition result of compilation will be same for all path[0].key ????
+		# 	# note: jit sensitive.
+		# 	if key not in inner_reset_info:
+		# 		# for key belong to outer wrapper, like "SoftResetWrapper_done_count", "episode_metrics",
+		# 		# we just return the leaf node of outer info.
+		# 		return outer_node
+		#
+		# 	reset_node = inner_reset_info[key]
+		# 	assert reset_node.shape == outer_node.shape
+		#
+		# 	if done.shape:
+		# 		done = jp.reshape(done, [outer_node.shape[0]] + [1] * (len(outer_node.shape) - 1))
+		#
+		# 	return jp.where(done, reset_node, outer_node)
 
-			reset_node = inner_reset_info[key]
-			assert reset_node.shape == outer_node.shape
 
-			if done.shape:
-				done = jp.reshape(done, [outer_node.shape[0]] + [1] * (len(outer_node.shape) - 1))
+		# outer_info contains more key/value pairs than inner_reset_info.
+		# inner_reset_info.keys() is a subset of outer_info.keys().
+		# outer_info = state.info
+		# outer_info = jax.tree.map_with_path(_where_done_select_info, outer_info)
 
-			return jp.where(done, reset_node, outer_node)
+		assert state.mjxenv_info.keys() == reset_mjxenv_info.keys()
+		assert (
+				jax.tree.map(lambda x: jax.eval_shape(lambda: x), state.mjxenv_info) ==
+				jax.tree.map(lambda x: jax.eval_shape(lambda: x), reset_mjxenv_info)
+		)
 
-		# outer_info contains more key/value pairs than inner_reset_info, so we need to select according to info dict key.
-		outer_info = state.info
-		outer_info = jax.tree.map_with_path(_where_done_select_info, outer_info)
-
+		mjxenv_info = jax.tree.map(_where_done, reset_mjxenv_info, state.mjxenv_info)
 		done_count_key = f'{self._info_key}_done_count'
-		# outer_info[done_count_key] = state.info[done_count_key]
 
+		# outer_info[done_count_key] = state.info[done_count_key]
 		# kenneth: keep 'steps' which used by EpisodeWrapper.
 		# TODO: maybe only keep state.info['steps'] for not-done env.
 		# if 'steps' in outer_info:
@@ -169,12 +178,16 @@ class SoftResetWrapper(wrapper.Wrapper):
 		# if preserve_info_key in next_info:
 		# 	next_info[preserve_info_key] = state.info[preserve_info_key]
 
-		outer_info[done_count_key] += state.done.astype(int)
+		# in place update info.
+		state.info[done_count_key] += state.done.astype(int)
 		# outer_info[f'{self._info_key}_rng'] = reset_rng
 
 		# kenneth: NOTE, we can not clear state.done immediately after soft_reset,
 		# cause outer_wrapper, e.g. EvalWrapper will make use of state.done.
-		return state.replace(data=data, obs=obs, info=outer_info)
+		# return state.replace(data=data, obs=obs, info=outer_info)
+
+		return state.replace(data=data, obs=obs, mjxenv_info=mjxenv_info)
+
 
 
 if __name__ == '__main__':
@@ -206,20 +219,29 @@ if __name__ == '__main__':
 	toy_cfg = default_config(task_name)
 	# in-place
 	toy_cfg.update_from_flattened_dict({
-		'command.resample_length':1,
-		'model.episode_length':10,
+
+		'command.resample_length':3,
+		'model.episode_length':5,
+		# 'model.ctrl_dt': 0.002,
+		'push.interval_range':[0.06, 0.07],
+
 	})
 	print(f'{toy_cfg=:}')
 	mjx_env=Joystick('flat_terrain', config=toy_cfg)
 
-	def _print_state_of_env_0(state_env_0:State):
+	def _print_state_of_env_0(_state: State):
+		state_env_0 = jax.tree.map(lambda x: x[0], _state)
 		print(f' state of env 0 ---> ')
-		print(f' qacc: {state_env_0.data.qacc}')
+		print(f' qpos: {state_env_0.data.qpos}')
+		# print(f' qacc: {state_env_0.data.qacc}')
 		print(f' qvel: {state_env_0.data.qvel}')
 		print(f' sensordata: {state_env_0.data.sensordata}')
+		print(f'{state_env_0.data.sensordata[mjx_env._floor_feet_found_sensor_adr]=:}')
 
-		print(f'info ----> ', state_env_0.info)
-		print(f'reset info ----> ', state_env_0.reset_info)
+		pr_info = {k:v for k,v in state_env_0.info.items() if k not in ('episode_metrics',) }
+		print(f'part of info : ', pr_info)
+		print(f'mjxenv info:  ', state_env_0.mjxenv_info)
+		print(f'reset mjxenv info:  ', state_env_0.reset_mjxenv_info)
 		print('obs["state"]:', state_env_0.obs['state'])
 		print('done:', state_env_0.done)
 		print('rwd ', state_env_0.reward)
@@ -250,23 +272,15 @@ if __name__ == '__main__':
 	# print(f'{reset_state.info.keys()=:}')
 	# print(f'{reset_state.metrics.keys()=:}')
 
-	print('=== reset state ===')
-	_print_state_of_env_0(jax.tree.map(lambda x: x[0], reset_state))
+	print('\n\n=== reset state ===')
+	_print_state_of_env_0(reset_state)
 
+	dummy_action = jp.zeros_like(reset_state.data.ctrl)
+	step_state = reset_state
+	jit_step=jax.jit(wrapped_env.step)
 
-	# for _cnt in range(20):
-	# 	dummy_action=jp.zeros_like(reset_state.data.ctrl)
-	# 	step_state = wrapped_env.step(reset_state, dummy_action)
-	# 	if _cnt % 10 == 0:
-	# 		print(f'=== step {_cnt} state ===')
-	# 		_print_state_of_env_0(step_state)
-
-
-
-
-
-
-
-
-
-
+	for _cnt in range(11):
+		step_state = jit_step(step_state, dummy_action)
+		jax.tree.map(lambda x: x.block_until_ready(), step_state)
+		print(f'\n\n=== step {_cnt} state ===')
+		_print_state_of_env_0(step_state)

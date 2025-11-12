@@ -172,6 +172,10 @@ class Joystick(MjxEnv):
   def _find_body(self)->None:
       self._virtual_floating_base_body_id = self._mj_model.body(self._config.robot.bodies.virtual_floating_base).id
 
+      # left, right.
+      self._pelvis_body_id = np.array(
+          [self._mj_model.body(name).id for name in self._config.robot.bodies.pelvis]
+      )
 
   def _post_init(self) -> None:
     # todo: temply comment. kenneth.
@@ -219,7 +223,7 @@ class Joystick(MjxEnv):
       #                                     nu=self._mj_model.nu)
 
       cmd = self.sample_command(key_cmd)
-      info = JoystickResetHelper.gen_info(rng=key_info,
+      mjxenv_info = JoystickResetHelper.gen_info(rng=key_info,
                                           ctrl_dt=self.ctrl_dt,
                                           push_interval_lower=self._config.push.interval_range[0],
                                           push_interval_upper=self._config.push.interval_range[1],
@@ -241,10 +245,10 @@ class Joystick(MjxEnv):
               rng=key_obs,
               data=data,
               floor_feet_contact=floor_feet_contact,
-              feet_air_time=info['feet_air_time'],
-              phase=info['phase'],
-              curr_act=info['last_act'],
-              last_act=info['last_last_act'],
+              feet_air_time=mjxenv_info['feet_air_time'],
+              phase=mjxenv_info['phase'],
+              curr_act=mjxenv_info['last_act'],
+              last_act=mjxenv_info['last_last_act'],
               cmd=cmd)
 
       obs = _gen_obs()
@@ -260,16 +264,21 @@ class Joystick(MjxEnv):
           reward=reward,
           done=done,
           metrics=metrics,
-          info=info,
+
+          # kenneth: used by outer wrapper: EpisodeWrapper, AutoResetWrapper, EvalWrapper, etc.
+          info={},
+
+          mjxenv_info=mjxenv_info,
           # kenneth: record for soft reset.
           reset_data=data,
           reset_obs=obs,
-          reset_info=info
+          reset_mjxenv_info=mjxenv_info
       )
 
   def _sample_push(self, rng:jax.Array,
-                   push_step:jax.Array,
-                   push_interval_steps:jax.Array)->Tuple[jax.Array,jax.Array]:
+                   # push_step:jax.Array,
+                   # push_interval_steps:jax.Array
+                   )->Tuple[jax.Array,jax.Array]:
       rng, key_theta, key_mag = jax.random.split(
           rng, 3
       )
@@ -280,19 +289,50 @@ class Joystick(MjxEnv):
           maxval=self._config.push.magnitude_range[1],
       )
       push_xy = jp.array([jp.cos(push_theta), jp.sin(push_theta)])
-      push_xy *= (
-              jp.mod(push_step + 1, push_interval_steps)
-              == 0
-      )
-      # actually we can use if enable...
-      push_xy *= self._config.push.enable
+
+      # push_xy *= (
+      #         jp.mod(push_step + 1, push_interval_steps)
+      #         == 0
+      # )
+      # push_xy = jp.where(
+      #     push_step > push_interval_steps,
+      #     push_xy,
+      #     0)
+
+      # # actually we can use if enable...
+      # push_xy *= self._config.push.enable
+
       return push_xy, push_magnitude
 
   def _apply_push(self, state:State, rng:jax.Array)-> State:
-      # state.info["rng"], key_push = jax.random.split(state.info["rng"])
+      # state.mjxenv_info["rng"], key_push = jax.random.split(state.mjxenv_info["rng"])
+
+      # let jit compilation select the correct execution path.
+      if not self._config.push.enable:
+        return state
+
+      push_step = state.mjxenv_info["push_step"]
+      push_step += 1
       push_xy, push_magnitude = self._sample_push(rng=rng,
-                                                  push_step=state.info["push_step"],
-                                                  push_interval_steps=state.info["push_interval_steps"])
+                                                  # push_step=push_step,
+                                                  # push_interval_steps=push_interval_steps
+                                                  )
+
+      # actually we can use if enable...
+      # push_xy *= self._config.push.enable
+
+      push_xy = jp.where(
+          push_step >= state.mjxenv_info["push_interval_steps"],
+          push_xy,
+          0)
+      push_step = jp.where(
+          push_step >= state.mjxenv_info["push_interval_steps"],
+          0,
+          push_step
+      )
+      state.mjxenv_info["push_step"] = push_step
+      state.mjxenv_info["push_xy"] = push_xy
+      # state.mjxenv_info["push_step"] += 1
 
       # print(f'step() ---> sampled push_xy: {push_xy}, push_magnitude: {push_magnitude}')
       # TODO: add push to xfrc_applied : user-defined forces in joint or Cartesian coordinates
@@ -303,11 +343,6 @@ class Joystick(MjxEnv):
       qvel = qvel.at[:2].set(push_xy * push_magnitude + qvel[:2])
       data = state.data.replace(qvel=qvel)
       state = state.replace(data=data)
-
-      # record.
-      state.info["push_xy"] = push_xy
-      state.info["push_step"] += 1
-
       return state
 
   def _handle_contact(self, state:State)->Tuple[State, jax.Array, jax.Array, jax.Array]:
@@ -316,36 +351,38 @@ class Joystick(MjxEnv):
       #     for sensorid in self._feet_floor_found_sensor
       # ])
 
+      # kenneth: contact sensor mode: reduce="mindist" num="1" data="found", so read value is number of contacts(points).
+      # can be 0 (no contcat), 1, 2, 3, 4..
       floor_feet_contact = state.data.sensordata[self._floor_feet_found_sensor_adr] > 0
 
       # TODO: feet_air_time accumulate the air-time from prev un-contact step un-till curr step of individual foot.
       # add ctrl_dt if not consecutive contact, and will clear feet_air_time if curr step no foot contact with floor, before exit from step().
       # case 4:
-      consecutive_contact = (state.info["last_contact"] * floor_feet_contact)
+      consecutive_contact = (state.mjxenv_info["last_contact"] * floor_feet_contact)
 
       # add ctrl_dt when not case 4.
-      state.info["feet_air_time"] += (self.ctrl_dt * ~consecutive_contact)
+      state.mjxenv_info["feet_air_time"] += (self.ctrl_dt * ~consecutive_contact)
 
-      # contact_filt = floor_feet_contact | state.info["last_contact"]
+      # contact_filt = floor_feet_contact | state.mjxenv_info["last_contact"]
 
-      # state.info["feet_air_time"] is 0 if prev step the corresponding foot not contact with floor.
-      # state.info["feet_air_time"] > 0 only if prev step the corresponding foot have contact with floor.
-      # first_contact = (state.info["feet_air_time"] > 0.0) * contact_filt
+      # state.mjxenv_info["feet_air_time"] is 0 if prev step the corresponding foot not contact with floor.
+      # state.mjxenv_info["feet_air_time"] > 0 only if prev step the corresponding foot have contact with floor.
+      # first_contact = (state.mjxenv_info["feet_air_time"] > 0.0) * contact_filt
 
       # kenneth:last step no contact and curr step has contact, then it is `first contact` .
-      # even this is the first step after reset, state.info["last_contact"] is True, so first_contact is False here.
+      # even this is the first step after reset, state.mjxenv_info["last_contact"] is True, so first_contact is False here.
       # case 2.
-      first_contact = ~state.info["last_contact"] * floor_feet_contact
+      first_contact = ~state.mjxenv_info["last_contact"] * floor_feet_contact
 
       # # TODO: feet_air_time accumulate the air-time from prev un-contact step un-till curr step of individual foot.
       # # will clear feet_air_time if curr step no foot contact with floor, at following.
-      # state.info["feet_air_time"] += self.ctrl_dt
+      # state.mjxenv_info["feet_air_time"] += self.ctrl_dt
 
-      accumulate_air_time = state.info["feet_air_time"]
+      accumulate_air_time = state.mjxenv_info["feet_air_time"]
 
       # clear running accumulated info['feet_air_time'] if contact with floor.
-      state.info["feet_air_time"] *= ~floor_feet_contact
-      state.info["last_contact"] = floor_feet_contact
+      state.mjxenv_info["feet_air_time"] *= ~floor_feet_contact
+      state.mjxenv_info["last_contact"] = floor_feet_contact
 
       return state, floor_feet_contact, first_contact, accumulate_air_time
 
@@ -354,11 +391,11 @@ class Joystick(MjxEnv):
       # xpos in world coordinate.
       p_f = state.data.site_xpos[self._feet_site_id]
       p_fz = p_f[..., -1]
-      state.info["swing_peak"] = jp.maximum(state.info["swing_peak"], p_fz)
-      swing_peak_in_air = state.info["swing_peak"]
+      state.mjxenv_info["swing_peak"] = jp.maximum(state.mjxenv_info["swing_peak"], p_fz)
+      swing_peak_in_air = state.mjxenv_info["swing_peak"]
 
       # clear running statistics.
-      state.info["swing_peak"] *= ~floor_feet_contact
+      state.mjxenv_info["swing_peak"] *= ~floor_feet_contact
 
       return state, swing_peak_in_air
 
@@ -368,37 +405,38 @@ class Joystick(MjxEnv):
       # i.e. normalize default_pose as 0. mean of action is output of tanh, should be in [-1, 1].
       motor_targets = self._default_pose + action * self._config.model.action_scale  # *0.5
       new_data = self.jax_step(
+          # ctrl_dt=0.02, sim_dt=0.002, so n_substeps is 10.
           self.mjx_model, state.data, motor_targets, self.n_substeps
       )
       state=state.replace(data=new_data)
 
-      last_last_act = state.info["last_last_act"]
-      last_act = state.info["last_act"]
+      last_last_act = state.mjxenv_info["last_last_act"]
+      last_act = state.mjxenv_info["last_act"]
 
       # update
-      state.info["motor_targets"] = motor_targets
-      state.info["last_last_act"] = state.info["last_act"]
-      state.info["last_act"] = action
+      state.mjxenv_info["motor_targets"] = motor_targets
+      state.mjxenv_info["last_last_act"] = state.mjxenv_info["last_act"]
+      state.mjxenv_info["last_act"] = action
 
       return state, last_last_act, last_act
 
   @staticmethod
   def _update_phase(state:State)->Tuple[State, jax.Array, jax.Array]:
-      phase_tp1 = state.info["phase"] + state.info["phase_dt"]
+      phase_tp1 = state.mjxenv_info["phase"] + state.mjxenv_info["phase_dt"]
 
       # kenneth: obs will use updated phase, reward use last phase.
-      last_phase = state.info["phase"]
+      last_phase = state.mjxenv_info["phase"]
 
       # kenneth: map phase from [ 0, 2pi] -> [-pi, pi].
-      state.info["phase"] = jp.fmod(phase_tp1 + jp.pi, 2 * jp.pi) - jp.pi
+      state.mjxenv_info["phase"] = jp.fmod(phase_tp1 + jp.pi, 2 * jp.pi) - jp.pi
 
       # NOTE(kevin): Enable this to make the policy stand still at 0 command.
-      # state.info["phase"] = jp.where(
-      #     jp.linalg.norm(state.info["command"]) > 0.01,
-      #     state.info["phase"],
+      # state.mjxenv_info["phase"] = jp.where(
+      #     jp.linalg.norm(state.mjxenv_info["command"]) > 0.01,
+      #     state.mjxenv_info["phase"],
       #     jp.ones(2) * jp.pi,
       # )
-      new_phase = state.info["phase"]
+      new_phase = state.mjxenv_info["phase"]
 
       return state, last_phase, new_phase
 
@@ -406,12 +444,17 @@ class Joystick(MjxEnv):
   def _update_cmd(self, state:State,
                   rng:jax.Array
                   )->Tuple[State, jax.Array,jax.Array]:
-      last_cmd = state.info["command"]
 
-      # state.info["command"] = jp.where(
-      #     state.info["step"] > 500,
+      # disable resample command, e.g., during evaluation after training finish.
+      if not self._config.command.resample_enable:
+          return state, state.mjxenv_info["command"], state.mjxenv_info["command"]
+
+      last_cmd = state.mjxenv_info["command"]
+
+      # state.mjxenv_info["command"] = jp.where(
+      #     state.mjxenv_info["step"] > 500,
       #     self.sample_command(rng),
-      #     state.info["command"],
+      #     state.mjxenv_info["command"],
       # )
       # kenneth: we re-sample command after done, cause in AutoResetWrapper, will not re-sample
       # command after `done`.
@@ -421,24 +464,24 @@ class Joystick(MjxEnv):
       # BUG: so, the obs and info["command"] is not aligned....
       #
 
-      curr_step = state.info["resample_cmd_steps"]
+      curr_step = state.mjxenv_info["resample_cmd_steps"]
       curr_step += 1
 
-      state.info["command"] = jp.where(
+      state.mjxenv_info["command"] = jp.where(
               # state.done | curr_step > 500,
-              curr_step > self._config.command.resample_length, #500,
+              curr_step >= self._config.command.resample_length, #500,
               self.sample_command(rng),
-              state.info["command"],
-          )
-      new_cmd = state.info["command"]
+              state.mjxenv_info["command"],
+      )
+      new_cmd = state.mjxenv_info["command"]
 
       # reset if beyond 500.
       # TODO: NOTE, we don't clear resample_cmd_steps after done, cause in the beginning
       # of training, a lot of `done` happen, we don't need to do too much re-sample.
       # always re-sample according to simu-steps.
-      state.info["resample_cmd_steps"] = jp.where(
+      state.mjxenv_info["resample_cmd_steps"] = jp.where(
           # state.done | (curr_step > 500)
-          curr_step > self._config.command.resample_length, # 500,
+          curr_step >= self._config.command.resample_length, # 500,
           0,
           curr_step,
       )
@@ -447,14 +490,14 @@ class Joystick(MjxEnv):
 
   # @staticmethod
   # def _update_step_count(state:State)->Tuple[State, jax.Array]:
-  #     state.info["resample_cmd_steps"] += 1
-  #     curr_step = state.info["resample_cmd_steps"]
+  #     state.mjxenv_info["resample_cmd_steps"] += 1
+  #     curr_step = state.mjxenv_info["resample_cmd_steps"]
   #
   #     # kenneth: NOTE: in EpisodeWrapper/AutoResetWrapper, info use `steps`, no same as here "step".
-  #     state.info["resample_cmd_steps"] = jp.where(
-  #         state.done | (state.info["resample_cmd_steps"] > 500),
+  #     state.mjxenv_info["resample_cmd_steps"] = jp.where(
+  #         state.done | (state.mjxenv_info["resample_cmd_steps"] > 500),
   #         0,
-  #         state.info["resample_cmd_steps"],
+  #         state.mjxenv_info["resample_cmd_steps"],
   #     )
   #     return state, curr_step
 
@@ -464,7 +507,7 @@ class Joystick(MjxEnv):
   def _update_reset_obs(state:State, new_cmd:jax.Array, cmd_idx:Dict[str,slice])->State:
       assert new_cmd.shape == (3,)
       # first obs after reset.
-      # first_obs:Observation = state.info["first_obs"]
+      # first_obs:Observation = state.mjxenv_info["first_obs"]
       reset_obs:Observation = state.reset_obs
 
       def _replace_cmd(path:Tuple[pytree.DictKey], x:jax.Array) -> jax.Array:
@@ -488,20 +531,25 @@ class Joystick(MjxEnv):
   @staticmethod
   def _update_reset_info(state:State, new_cmd: jax.Array)->State:
       # in-place update rng, cmd. no need to call state.replace(reset_info=...)
-      state.reset_info.update({
+      state.reset_mjxenv_info.update({
           # always deliver new rng after reset.
-          "rng": state.info["rng"],
+          "rng": state.mjxenv_info["rng"],
           "command": new_cmd,
+          "resample_cmd_steps": state.mjxenv_info["resample_cmd_steps"],
 
           # TODO: re-sample phase_dt?
           # Phase related.
           # "phase_dt": phase_dt,
+          # after done, the data is reset to the beginning status, so phase should be back to [0,pi],
+          # no need to update new_phase to reset_info.
+          # and in reset_obs, the phase is cos/sin of [0,pi].
           # "phase": phase,  # [0, pi]
 
           # TODO: re-sample Push ?
-          # "push_xy": jp.array([0.0, 0.0]),
-          # "push_step": 0,
-          # "push_interval_steps": push_interval_steps,
+          # keep the push_step count, so we can get more random sampling on push_xy.
+          "push_xy": state.mjxenv_info["push_xy"],
+          "push_step": state.mjxenv_info["push_step"],
+          "push_interval_steps": state.mjxenv_info["push_interval_steps"],
 
           # record the data/obs after reset, then used when step() `done` through soft-reset mechanism.
           # 'first_data': first_data,
@@ -525,7 +573,7 @@ class Joystick(MjxEnv):
           state.metrics[f"reward/{k}"] = v
 
       # kenneth
-      # state.metrics["swing_peak"] = jp.mean(state.info["swing_peak"])
+      # state.metrics["swing_peak"] = jp.mean(state.mjxenv_info["swing_peak"])
       state.metrics["swing_peak"] = jp.mean(swing_peak_in_air)
 
       return state
@@ -535,7 +583,7 @@ class Joystick(MjxEnv):
   # TODO:NOTE: we can not replace state.info which also include the outter-wrapper specific key/values.
   def step(self, state: State, action: jax.Array) -> State:
      # after we update rng, we will update new rng into reset_info also.
-     state.info["rng"], key_push, key_obs, key_cmd = jax.random.split(state.info["rng"], 4)
+     state.mjxenv_info["rng"], key_push, key_obs, key_cmd = jax.random.split(state.mjxenv_info["rng"], 4)
 
     # kenneth: flax.struct.dataclass is a 'frozen' dataclass, so must use .replace() to modify member.
     # note: .replace() do shallow copy on other non_replaced data members, so it is efficient
@@ -585,6 +633,7 @@ class Joystick(MjxEnv):
      # TODO: maybe we can use last obs (in state arg) to get some info to be used in rwd calc, instead
      # recording so much stuff in state.info[].
      # kenneth: rwd will compare some info of last step with result(in state.data) of curr step.
+     # TODO: if done is caused by nan, we stop calc rewards...
      rewards = self._get_rewards(
         data=state.data,
         curr_act=action,
@@ -598,6 +647,7 @@ class Joystick(MjxEnv):
         last_cmd=last_cmd,
         last_phase=last_phase,
      )
+     # TODO: kenneth: handle rewards get nan:
      rewards = {
         k: v * self._config.reward.scales[k] for k, v in rewards.items()
      }
@@ -613,52 +663,52 @@ class Joystick(MjxEnv):
      # calling the env.reset().
      # output_obs = jp.where(state.done, soft_reset_obs, curr_obs)
      # state = state.replace(obs=output_obs)
-     # output_data = jp.where(state.done, state.info["first_data"], state.data)
+     # output_data = jp.where(state.done, state.mjxenv_info["first_data"], state.data)
      # state = state.replace(data=output_data)
 
-    # state.info["step"] += 1
-    # state.info["push_xy"] = push_xy
-    # state.info["push_step"] += 1
-    # state.info["motor_targets"] = motor_targets
+    # state.mjxenv_info["step"] += 1
+    # state.mjxenv_info["push_xy"] = push_xy
+    # state.mjxenv_info["push_step"] += 1
+    # state.mjxenv_info["motor_targets"] = motor_targets
 
-    # phase_tp1 = state.info["phase"] + state.info["phase_dt"]
+    # phase_tp1 = state.mjxenv_info["phase"] + state.mjxenv_info["phase_dt"]
     #
     # # kenneth: map phase from [ 0, 2pi] -> [-pi, pi].
-    # state.info["phase"] = jp.fmod(phase_tp1 + jp.pi, 2 * jp.pi) - jp.pi
+    # state.mjxenv_info["phase"] = jp.fmod(phase_tp1 + jp.pi, 2 * jp.pi) - jp.pi
     # # NOTE(kevin): Enable this to make the policy stand still at 0 command.
-    # # state.info["phase"] = jp.where(
-    # #     jp.linalg.norm(state.info["command"]) > 0.01,
-    # #     state.info["phase"],
+    # # state.mjxenv_info["phase"] = jp.where(
+    # #     jp.linalg.norm(state.mjxenv_info["command"]) > 0.01,
+    # #     state.mjxenv_info["phase"],
     # #     jp.ones(2) * jp.pi,
     # # )
 
-    # state.info["last_last_act"] = state.info["last_act"]
-    # state.info["last_act"] = action
+    # state.mjxenv_info["last_last_act"] = state.mjxenv_info["last_act"]
+    # state.mjxenv_info["last_act"] = action
 
-    # state.info["rng"], cmd_rng = jax.random.split(state.info["rng"])
-    # state.info["command"] = jp.where(
-    #     state.info["step"] > 500,
+    # state.mjxenv_info["rng"], cmd_rng = jax.random.split(state.mjxenv_info["rng"])
+    # state.mjxenv_info["command"] = jp.where(
+    #     state.mjxenv_info["step"] > 500,
     #     self.sample_command(cmd_rng),
-    #     state.info["command"],
+    #     state.mjxenv_info["command"],
     # )
-    # state.info["step"] = jp.where(
-    #     done | (state.info["step"] > 500),
+    # state.mjxenv_info["step"] = jp.where(
+    #     done | (state.mjxenv_info["step"] > 500),
     #     0,
-    #     state.info["step"],
+    #     state.mjxenv_info["step"],
     # )
 
-    # TODO:   merge with state.info["feet_air_time"] += self.ctrl_dt....
-    # e.g. state.info["feet_air_time"] =+  self.ctrl_dt * ~contact..
-    #  no, must set state.info["feet_air_time"] to zero as sentinal for next step...
-    # state.info["feet_air_time"] *= ~contact
-    # state.info["last_contact"] = contact
-    # state.info["swing_peak"] *= ~contact
+    # TODO:   merge with state.mjxenv_info["feet_air_time"] += self.ctrl_dt....
+    # e.g. state.mjxenv_info["feet_air_time"] =+  self.ctrl_dt * ~contact..
+    #  no, must set state.mjxenv_info["feet_air_time"] to zero as sentinal for next step...
+    # state.mjxenv_info["feet_air_time"] *= ~contact
+    # state.mjxenv_info["last_contact"] = contact
+    # state.mjxenv_info["swing_peak"] *= ~contact
 
     # for k, v in rewards.items():
     #   state.metrics[f"reward/{k}"] = v
     #
     # # kenneth
-    # # state.metrics["swing_peak"] = jp.mean(state.info["swing_peak"])
+    # # state.metrics["swing_peak"] = jp.mean(state.mjxenv_info["swing_peak"])
     # state.metrics["swing_peak"] = jp.mean(swing_peak_in_air)
 
     # done = done.astype(reward.dtype)
@@ -678,6 +728,9 @@ class Joystick(MjxEnv):
             | contact_termination
             | jp.isnan(state.data.qpos).any()
             | jp.isnan(state.data.qvel).any()
+    #         TODO: kenneth: add more judgement on nan:
+            | jp.isnan(state.data.qacc).any()
+            | jp.isnan(state.data.sensordata).any()
     )
     # done=done.astype(reward.dtype)
     state = state.replace(done=done)
@@ -757,7 +810,7 @@ class Joystick(MjxEnv):
       # sin = jp.sin(info["phase"])
       cos = jp.cos(phase)
       sin = jp.sin(phase)
-      phase = jp.concatenate([cos, sin])
+      phase_cos_sin = jp.concatenate([cos, sin])
 
       # linvel = self.get_local_linvel(data, "pelvis")
       linvel = data.sensordata[self._pelvis_local_linvel_sensor_adr]
@@ -770,6 +823,8 @@ class Joystick(MjxEnv):
       )
 
       # TODO: check all obs values can be got on real robot through sensors.
+      # the obs after soft-reset, must be aligned with the info which also contain
+      # several same elements as obs, e.g., cmd.
       # shape: (56,)
       policy_state = jp.hstack([
           # # info["command"], # 3
@@ -785,7 +840,7 @@ class Joystick(MjxEnv):
           # info["last_act"],  # 29
           curr_act,  # 29
           last_act,  # 29
-          phase,
+          phase_cos_sin, # 4
       ])
 
       # accelerometer = self.get_accelerometer(data, "pelvis")
@@ -1239,7 +1294,8 @@ if __name__ == "__main__":
     # print(f'{reset_state.data.qpos=:}')
 
     assert reset_state.data == reset_state.reset_data
-    assert reset_state.info == reset_state.reset_info
+    assert reset_state.mjxenv_info == reset_state.reset_mjxenv_info
+    assert reset_state.obs == reset_state.reset_obs
 
     def _check_nan(x:jax.Array):
         has_nan = jp.any(jp.isnan(x))

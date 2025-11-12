@@ -128,6 +128,11 @@
 <!--    <light mode="targetbody"  type="spot" pos="0 0 4.5" dir="0 0 -1"  />-->
     <light name="target_spotlight" mode="targetbodycom" target="virtual_floating_base" pos="0 -2 4" exponent="20"/>
     <body name="virtual_floating_base" pos="0 0 .798" childclass="both_leg">
+<!--        TODO: add dummy geom to make mujoco happy. -->
+      <inertial mass="0" pos="0 0 0" diaginertia="0 0 0" />
+      <geom name="virtual_floating_base_geom" group="2" type="capsule"
+            size="0.05 0.1" density="0" rgba=".1 .03 .7 .3" contype="0" conaffinity="0" condim="1"/>
+
       <camera name="track" pos="1.734 -1.135 .17" xyaxes=".552 .834 -.000 -.170 .112 .979" mode="trackcom"/>
       <freejoint name="floating_base_joint"/>
       <body name="kd_d_101_l_hip_static" >

@@ -134,7 +134,7 @@ class JoystickResetHelper:
 		# print(f'push_interval_steps after randomization: {push_interval_steps=:}')
 
 		# note: all leaf nodes must be jax.Array type to be able to cross jit boundary.
-		info = {
+		mjxenv_info = {
 			"rng": key_info,  # rng,
 			"resample_cmd_steps": 0,
 			"command": cmd,
@@ -145,6 +145,8 @@ class JoystickResetHelper:
 
 			# kenneth: after reset the feet of robot should be on floor, causing we
 			# do FK through mjx.forward() in gen_data.
+			# and we use fine-tuned keyframe `knees_bent` to guarantee the
+			# feet on floor after reset (viewed in mujoco.viewer).
 			# "last_contact": jp.zeros(2, dtype=bool),
 			"last_contact": jp.ones(2, dtype=bool),
 
@@ -165,7 +167,7 @@ class JoystickResetHelper:
 			# command will be re-sampled every 500-steps in step().
 			# 'first_obs': first_obs,
 		}
-		return info
+		return mjxenv_info
 
 
 	@staticmethod

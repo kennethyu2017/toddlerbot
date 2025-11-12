@@ -89,13 +89,17 @@ class State:
   reward: jax.Array
   done: jax.Array
   metrics: Dict[str, jax.Array]
+  # kenneth: used by outer wrapper: EpisodeWrapper, AutoResetWrapper, EvalWrapper, etc.
   info: Dict[str, Any]
+
+  # kenneth: used by mjx env only. to separate with outer wrapper, for easy swap with reset_info when AutoSoftReset.
+  mjxenv_info: Dict[str, Any]
   # kenneth: recorded for AutoSoftReset.
   reset_data: mjx.Data
   reset_obs: Observation
   # NOTE: above `info` has more key/value pairs than reset_info, including key/value pairs
   # inserted byt the outter wrapper like AutoResetWrapper/EpisodeWrapper...
-  reset_info: Dict[str, jax.Array]
+  reset_mjxenv_info: Dict[str, jax.Array]
 
   def tree_replace(
       self, params: Dict[str, Optional[jax.typing.ArrayLike]]
@@ -230,6 +234,7 @@ class MjxEnv(abc.ABC):
   @property
   def n_substeps(self) -> int:
     """Number of sim steps per control step."""
+    # ctrl_dt=0.02, sim_dt=0.002,
     return int(round(self.ctrl_dt / self.sim_dt))
 
   @property

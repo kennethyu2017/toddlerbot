@@ -63,6 +63,7 @@ def _robot_config() -> config_dict.ConfigDict:
         # body
         bodies=config_dict.create(
             virtual_floating_base='virtual_floating_base',
+            pelvis=['kd_d_101_l_hip_static', 'kd_d_101_r_hip_static']
         ),
         # joint
         joints=config_dict.create(
@@ -176,16 +177,18 @@ def _push_config() -> config_dict.ConfigDict:
     return config_dict.create(
         enable=True,
         # in second.
-        interval_range=[5.0, 10.0],
-
+        interval_range= [3.0, 7.0],  #  [5.0, 10.0],
         magnitude_range=[0.1, 2.0],
     )
 
 def _cmd_config() -> config_dict.ConfigDict:
     return config_dict.create(
+          resample_enable=True,
           # every 500 steps, resample cmd in step().
-          resample_length=500,
+          resample_length=250, #500,
           # cmd range
+          #   TODO : check pelvis local frame against world frame...
+
           lin_vel_x=[-1.0, 1.0],
           lin_vel_y=[-0.5, 0.5],
           ang_vel_yaw=[-1.0, 1.0],

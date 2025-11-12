@@ -16,12 +16,16 @@ from kbot.locomotion.kbot_both_leg.joystick_env import Joystick
 
 
 NUM_EPISODE = 1
+
+# in base-link frame.
+# TODO : check pelvis frame with global frame...
+
 ROLL_OUT_CMD=dict(
-    x_vel = -0.4,
-    y_vel = 0.0,
-    yaw_vel = 0.1 * jnp.pi  #  0.87 * jp.pi,
+    x_vel =  0.0,   # -0.4,
+    y_vel = -0.3,   # 0.0,
+    yaw_vel = 0,    # 0.1 * jnp.pi  #  0.87 * jp.pi,
 )
-INCREASE_CMD=True
+INCREASE_CMD=False # True
 # EVAL_EPISODE_LEN = 1_400
 
 def eval_env(task_name:str)->MjxEnv:
@@ -52,13 +56,17 @@ def rollout(*, env:MjxEnv,
 			rng:jax.Array,
 			record_step_state: bool)->Dict[str, Any]:
     env_cfg = env._config
-    phase_dt = 2 * jnp.pi * env.dt * 1.5
+    # gait_freq : 1.5
+    phase_dt = 2 * jnp.pi * env.ctrl_dt * 1.5
+    # start phase. [0,pi] is same as after env reset.
     phase = jnp.array([0, jnp.pi])
     command = jnp.array([ROLL_OUT_CMD['x_vel'],
                         ROLL_OUT_CMD['y_vel'],
                         ROLL_OUT_CMD['yaw_vel'] ])
 
     print(f"Initial command : {command}")
+    # disable re-sampling command in env.step()
+    env._config.command.resample_enable=False
 
     # NOTE: put the data to be saved onto host-CPU to make the `pickle`
     # loading faster during plot stage.
@@ -85,12 +93,18 @@ def rollout(*, env:MjxEnv,
         # in global frame.
         # np.array will move jp.array from device to host cpu implicitly.
         # same effect as device_get.
-        cmd_arrow_global_xyz = np.array(state.data.xpos[env._torso_body_id])
+        # cmd_arrow_global_xyz = np.array(state.data.xpos[env._torso_body_id])
+
+        # kenneth: on left pelvis.
+        # cmd is in base_link frame, i.e., in pelvis frame, transform to global frame.
+        left_pelvis_body_id = env._pelvis_body_id[0]
+        cmd_arrow_global_xyz = np.array(state.data.xpos[left_pelvis_body_id])
         # arrow placed 0. over torsor
         cmd_arrow_global_xyz += np.array([0., 0., 0.])
 
         # xmat [14,3,3]: transform matrix, 3-by-3 per body.
-        x_axis = jax.device_get(state.data.xmat[env._torso_body_id, 0])
+        # x_axis = jax.device_get(state.data.xmat[env._torso_body_id, 0])
+        x_axis = jax.device_get(state.data.xmat[left_pelvis_body_id, 0])
         cmd_arrow_global_yaw = -np.arctan2(x_axis[1], x_axis[0])
 
         ro_data['modify_scene_fns'].append(
@@ -110,25 +124,35 @@ def rollout(*, env:MjxEnv,
         rng, key = jax.random.split(rng)
 
         state = jit_reset(key)
+        # TODO: even we override the phase in state.info, the state.obs contains phase
+        #  after reset() is different against the override value.
         state.info["phase_dt"] = phase_dt
         state.info["phase"] = phase
+
+        # TODO: even override the info['command'], the state.obs contains command
+        #   after reset() is different against the override value.
         # overwrite info['command'] set in reset().
         # state.info["command"] = command
 
         ep_step_times = [datetime.now(),]
 
-        for i in range(env_cfg.episode_length):
+        for i in range(env_cfg.model.episode_length):
             # Increase the forward velocity by 0.25 m/s every 200 steps.
             if INCREASE_CMD and i % 200 == 0:
                 command = command.at[0].add(0.25)
                 print(f"Setting command to {command}")
 
+            # TODO: overwrite info['command'] set in step() through sample_command(),
+            # but state.obs command is different ...
+            state.info["command"] = command
+
             act_key, rng = jax.random.split(rng)
             #TODO: act_rng is no use when deterministic==True.
             ctrl, _ = jit_infer_fn(state.obs, act_key)
             state = jit_step(state, ctrl)
-            # overwrite info['command'] set in step() through sample_command().
-            state.info["command"] = command   # as obs member.
+            # #TODO: overwrite info['command'] set in step() through sample_command(),
+            # # but state.obs command is different ...
+            # state.info["command"] = command
             ep_step_times.append(datetime.now())
             # TODO: NOTE: only state.data is trustable, state.info is
             # keeping modified during training/eval invoke of step().
@@ -149,7 +173,7 @@ def render_to_video(*,
 					ro_data:Dict[str,Any],
 					video_file_path: epath.Path)->None:
     render_every = 1
-    fps = 1.0 / env.dt / render_every
+    fps = 1.0 / env.ctrl_dt / render_every
     print(f"render video fps: {fps}")
     traj = ro_data['states'][::render_every]   # only use state.data.
     mod_fns = ro_data['modify_scene_fns'][::render_every]

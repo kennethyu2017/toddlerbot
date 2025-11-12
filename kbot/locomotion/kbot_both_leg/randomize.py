@@ -44,23 +44,22 @@ def domain_randomize(model: mjx.Model, rng: jax.Array, env:MjxEnv)->Tuple[mjx.Mo
         )
         body_mass = model.body_mass.at[:].set(model.body_mass * dmass)
 
-        # # Add mass to torso: +U(-1.0, 1.0).
+        # # Add mass to torso: +U(-1.0, 1.0). g1 torso_link 7kg.
         # rng, key = jax.random.split(rng)
         # dmass = jax.random.uniform(key, minval=-1.0, maxval=1.0)
         # body_mass = body_mass.at[TORSO_BODY_ID].set(
         #     body_mass[TORSO_BODY_ID] + dmass
         # )
 
-        TODO: add mass to floating body cause qacc to be nan...
-
-        # kenneth: Add mass to pelvis: +U(-1.0, 1.0).
+        # kenneth: Add mass to l and r pelvis: +U(-.3, .3):  g1 torso_link 7kg, k-bot left_pelvis or right_pelvis is 2kg.
         rng, key = jax.random.split(rng)
-        dmass = jax.random.uniform(key, minval=-1.0, maxval=1.0)
-        # TODO: we use virtual_floating_base as integrated pelvis temply.
-        pelvis_body_id = env._virtual_floating_base_body_id
-        body_mass = body_mass.at[pelvis_body_id].set(
-            body_mass[pelvis_body_id] + dmass
-        )
+        # dmass = jax.random.uniform(key, minval=-.3, maxval=.3)
+        for _id in  env._pelvis_body_id:
+            # TODO: let left right different dmass.
+            dmass = jax.random.uniform(key, minval=-.3, maxval=.3)
+            body_mass = body_mass.at[_id].set(
+                body_mass[_id] + dmass
+            )
 
         # Jitter qpos0: +U(-0.05, 0.05).
         rng, key = jax.random.split(rng)
