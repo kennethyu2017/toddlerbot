@@ -1,7 +1,7 @@
 
 """ follow the Joystick task for Unitree G1, project mujoco_playground."""
 
-from typing import Any, Dict, Optional, Union, Tuple
+from typing import Any, Dict, Optional, Union, Tuple, List
 
 import jax
 import jax.numpy as jp
@@ -11,10 +11,13 @@ from mujoco import mjx
 import numpy as np
 import numpy.typing as npt
 
-from mujoco_playground._src import gait
 from kbot.base_env.base_env_mjx import MjxEnv, State, Observation
 from kbot.locomotion.kbot_both_leg.env_cfg import default_config
-from kbot.locomotion.kbot_both_leg.joystick_reset import JoystickResetHelper
+from kbot.locomotion.kbot_both_leg.joystick.joystick_reset import JoystickResetHelper
+
+# from kbot.locomotion.kbot_both_leg.joystick.joystick_rwd import JoystickReward
+# !!!!!!  temply for debug !!!!!!
+from kbot.locomotion.kbot_both_leg.joystick.try_g1_joystick_rwd import JoystickReward
 
 class Joystick(MjxEnv):
   """Track a joystick command."""
@@ -34,27 +37,39 @@ class Joystick(MjxEnv):
     )
     self._post_init()
 
+    self._rwd_handler = JoystickReward(
+        joint_adr=self._joint_adr,
+        sensor_adr=self._sensor_adr,
+        site_id=self._site_id,
+        rwd_cfg=self._config.reward,
+    )
+
+
   def _load_keyframe(self):
       keyframe = self._mj_model.keyframe(self._config.robot.keyframes.default_pose_keyframe)
       print(f'load keyframe: {keyframe}')
       assert keyframe.qpos.shape == (self._mj_model.nq,)
+      # NOTE: init_q including the freejoint.
       self._init_q = jp.array(keyframe.qpos)
-      self._default_pose = jp.array(
-          keyframe.qpos[7:]
-      )
-      print(f'set default pose to: {self._default_pose}')
+      print(f'set init_q to: {self._init_q}')
+
+      # self._default_pose = jp.array(
+      #     keyframe.qpos[7:]
+      # )
+      # print(f'set default pose to: {self._default_pose}')
 
   # exclude the freejoint
-  def _gen_soft_jnt_limit(self):
+  def _gen_soft_jnt_range(self)->List[jax.Array]:
       # Note: jnt_range[0] is freejoint.
-      self._lowers, self._uppers = self._mj_model.jnt_range[1:].T
-      assert np.all(self._lowers < self._uppers)
-      c = (self._lowers + self._uppers) / 2
-      r = self._uppers - self._lowers
-      self._soft_jnt_lowers = c - 0.5 * r * self._config.model.soft_joint_pos_limit_factor
-      self._soft_jnt_uppers = c + 0.5 * r * self._config.model.soft_joint_pos_limit_factor
+      _lowers, _uppers = self._mj_model.jnt_range[1:].T
+      assert np.all(_lowers < _uppers)
+      c = (_lowers + _uppers) / 2
+      r = _uppers -  _lowers
+      soft_lowers = c - 0.5 * r * self._config.model.soft_joint_pos_limit_factor
+      soft_uppers = c + 0.5 * r * self._config.model.soft_joint_pos_limit_factor
+      return [soft_lowers, soft_uppers]
 
-  def _find_jnt(self):
+  def _find_jnt(self)->config_dict.FrozenConfigDict:
 
       # function not in jax.jit , can use normally if else...
       def _get_jnt_adr(names)->npt.NDArray[np.int32]:
@@ -80,29 +95,41 @@ class Joystick(MjxEnv):
 
       free_jnt_adr = _get_jnt_adr(self._config.robot.joints.free_joint)
       assert np.all(free_jnt_adr == list(range(0,7)) )
-      print(f'{free_jnt_adr=:}')
+      # print(f'{free_jnt_adr=:}')
 
-      # only need roll and yaw for cost_deviation till now.
-      self._hip_r_y_jnt_adr = _get_jnt_adr([*self._config.robot.joints.hip_roll_joints,
-                                            *self._config.robot.joints.hip_yaw_joints])
-      print(f'{self._hip_r_y_jnt_adr=:}')
+      # print(f'{self._hip_r_y_jnt_adr=:}')
+      # print(f'{self._knee_p_jnt_adr=:}')
 
-      self._knee_p_jnt_adr = _get_jnt_adr(self._config.robot.joints.knee_pitch_joints)
-      print(f'{self._knee_p_jnt_adr=:}')
-
-
-  def _find_site(self):
-      # fmt: on
-      self._pelvis_imu_site_id = self._mj_model.site(self._config.robot.sites.pelvis_imu_site).id
-      self._feet_site_id = np.array(
-          [self._mj_model.site(name).id for name in self._config.robot.sites.feet_sites]
+      return config_dict.FrozenConfigDict(
+          config_dict.create(
+              # only need roll and yaw for cost_deviation till now.
+              hip_r_y_jnt_adr=_get_jnt_adr([*self._config.robot.joints.hip_roll_joints,
+                                        *self._config.robot.joints.hip_yaw_joints]),
+              knee_p_jnt_adr=_get_jnt_adr(self._config.robot.joints.knee_pitch_joints),
+          )
       )
 
 
-  def _find_geom(self):
-      self._floor_geom_id = self._mj_model.geom("floor").id
-      self._feet_collision_geom_id = np.array(
-          [self._mj_model.geom(name).id for name in self._config.robot.geoms.feet_collision_geoms]
+  def _find_site(self)->config_dict.FrozenConfigDict:
+      return config_dict.FrozenConfigDict(
+          config_dict.create(
+              # fmt: on
+              pelvis_imu_site_id = self._mj_model.site(self._config.robot.sites.pelvis_imu_site).id,
+              feet_site_id = np.array(
+                  [self._mj_model.site(name).id for name in self._config.robot.sites.feet_sites]
+              )
+          )
+      )
+
+
+  def _find_geom(self)->config_dict.FrozenConfigDict:
+      return config_dict.FrozenConfigDict(
+          config_dict.create(
+              floor_geom_id = self._mj_model.geom("floor").id,
+              feet_collision_geom_id = np.array(
+                  [self._mj_model.geom(name).id for name in self._config.robot.geoms.feet_collision_geoms]
+              )
+          )
       )
       # self._left_hand_geom_id = self._mj_model.geom("left_hand_collision").id
       # self._right_hand_geom_id = self._mj_model.geom("right_hand_collision").id
@@ -114,7 +141,7 @@ class Joystick(MjxEnv):
       # self._right_thigh_geom_id = self._mj_model.geom("right_thigh").id
 
 
-  def _find_sensor(self):
+  def _find_sensor(self)->config_dict.FrozenConfigDict:
 
       def _get_sensor_adr(names)->npt.NDArray[np.int32]:
           adr_list=[]
@@ -136,66 +163,71 @@ class Joystick(MjxEnv):
           # assert np.all([len(_a) == len(adr_list[0]) for _a in adr_list])
           return np.array(adr_list)
 
-      self._pelvis_upvector_sensor_adr = _get_sensor_adr(self._config.robot.sensors.upvector_pelvis)
-      print(f'{self._pelvis_upvector_sensor_adr=:}')
+      return config_dict.FrozenConfigDict(
+          config_dict.create(
+              pelvis_upvector_sensor_adr = _get_sensor_adr(self._config.robot.sensors.upvector_pelvis),
+              # IMU
+              pelvis_accelerometer_sensor_adr = _get_sensor_adr(self._config.robot.sensors.accelerometer_pelvis),
+              pelvis_local_linvel_sensor_adr = _get_sensor_adr(self._config.robot.sensors.local_linvel_pelvis),
+              pelvis_gyro_sensor_adr = _get_sensor_adr(self._config.robot.sensors.gyro_pelvis),
 
-      # IMU
-      self._pelvis_accelerometer_sensor_adr = _get_sensor_adr(self._config.robot.sensors.accelerometer_pelvis)
-      print(f'{self._pelvis_accelerometer_sensor_adr=:}')
-
-      self._pelvis_local_linvel_sensor_adr = _get_sensor_adr(self._config.robot.sensors.local_linvel_pelvis)
-      print(f'{self._pelvis_local_linvel_sensor_adr=:}')
-
-      self._pelvis_gyro_sensor_adr = _get_sensor_adr(self._config.robot.sensors.gyro_pelvis)
-      print(f'{self._pelvis_gyro_sensor_adr=:}')
-
-      self._pelvis_global_linvel_sensor_adr = _get_sensor_adr(self._config.robot.sensors.global_linvel_pelvis)
-      print(f'{self._pelvis_global_linvel_sensor_adr=:}')
-
-      self._pelvis_global_angvel_sensor_adr = _get_sensor_adr(self._config.robot.sensors.global_angvel_pelvis)
-      print(f'{self._pelvis_global_angvel_sensor_adr=:}')
-
-      # self._foot_linvel_sensor_adr = jp.array(foot_linvel_sensor_adr)
-      self._feet_linvel_sensor_adr = _get_sensor_adr(self._config.robot.sensors.global_linvel_feet_ankle)
-      print(f'{self._feet_linvel_sensor_adr=:}')
-
-      self._floor_feet_found_sensor_adr = _get_sensor_adr(self._config.robot.sensors.floor_feet_found)
-      print(f'{self._floor_feet_found_sensor_adr=:}')
-
-      self._left_leg_right_leg_found_sensor_adr = _get_sensor_adr(self._config.robot.sensors.left_leg_right_leg_found)
-      print(f'{self._left_leg_right_leg_found_sensor_adr=:}')
-
-      self._feet_force_sensor_adr = _get_sensor_adr(self._config.robot.sensors.feet_force)
-      print(f'{self._feet_force_sensor_adr=:}')
-
-
-  def _find_body(self)->None:
-      self._virtual_floating_base_body_id = self._mj_model.body(self._config.robot.bodies.virtual_floating_base).id
-
-      # left, right.
-      self._pelvis_body_id = np.array(
-          [self._mj_model.body(name).id for name in self._config.robot.bodies.pelvis]
+              pelvis_global_linvel_sensor_adr = _get_sensor_adr(self._config.robot.sensors.global_linvel_pelvis),
+              pelvis_global_angvel_sensor_adr = _get_sensor_adr(self._config.robot.sensors.global_angvel_pelvis),
+              feet_linvel_sensor_adr = _get_sensor_adr(self._config.robot.sensors.global_linvel_feet_ankle),
+              floor_feet_found_sensor_adr = _get_sensor_adr(self._config.robot.sensors.floor_feet_found),
+              left_leg_right_leg_found_sensor_adr = _get_sensor_adr(self._config.robot.sensors.left_leg_right_leg_found),
+              feet_force_sensor_adr = _get_sensor_adr(self._config.robot.sensors.feet_force),
+          )
       )
+
+
+  def _find_body(self)->config_dict.FrozenConfigDict:
+      return config_dict.FrozenConfigDict(
+          config_dict.create(
+              virtual_floating_base_body_id = self._mj_model.body(self._config.robot.bodies.virtual_floating_base).id,
+              # left, right.
+              pelvis_body_id = np.array(
+                  [self._mj_model.body(name).id for name in self._config.robot.bodies.pelvis]
+              )))
 
   def _post_init(self) -> None:
     # todo: temply comment. kenneth.
     self._load_keyframe()
-    self._gen_soft_jnt_limit()
-    self._find_jnt()
 
-    # fmt: off
-    self._weights = jp.array([
-        0.01, 1.0, 1.0, 0.01, 1.0, 1.0,  # left leg.
-        0.01, 1.0, 1.0, 0.01, 1.0, 1.0,  # right leg.
-        1.0, 1.0, 1.0,  # waist.
-        1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,  # left arm.
-        1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,  # right arm.
+    print(f'find robot model --->')
+
+    self._soft_joint_range = self._gen_soft_jnt_range()
+    print(f'soft joint range: {self._soft_joint_range}')
+    assert np.all(self._soft_joint_range[0] < self._soft_joint_range[1])
+
+    # qpos adr.
+    self._joint_adr = self._find_jnt()
+    print(f'joint adr: {self._joint_adr.to_json_best_effort()}')
+
+    # fmt: off.
+    # used for cost pose.
+    # allow hip pitch , knee pitch.
+    # TODO: check again.
+    self._cost_pose_weight = jp.array([
+        0.01, 0.01, # shoulder.
+        0.01, 1.0, 1.0, 0.01, 1.0, #1.0,  # left leg.
+        0.01, 1.0, 1.0, 0.01, 1.0, #1.0,  # right leg.
+        # 1.0, 1.0, 1.0,  # waist.
+        # 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,  # left arm.
+        # 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,  # right arm.
     ])
 
-    self._find_body()
-    self._find_site()
-    self._find_geom()
-    self._find_sensor()
+    self._body_id = self._find_body()
+    print(f'body id: {self._body_id.to_json_best_effort()}')
+
+    self._site_id = self._find_site()
+    print(f'site id: {self._site_id.to_json_best_effort()}')
+
+    self._geom_id = self._find_geom()
+    print(f'geom_id: {self._geom_id.to_json_best_effort()}')
+
+    self._sensor_adr = self._find_sensor()
+    print(f'sensor adr: {self._sensor_adr.to_json_best_effort()}')
 
     # self._cmd_a = jp.array(self._config.command.a)
     # self._cmd_b = jp.array(self._config.command.b)
@@ -210,8 +242,7 @@ class Joystick(MjxEnv):
                                                    mjx_model=self._mjx_model,
                                                    init_qpos=self._init_q,
                                                    init_qvel=jp.zeros(self.mjx_model.nv),
-                                                   soft_lowers=self._soft_jnt_lowers,
-                                                   soft_uppers=self._soft_jnt_uppers,
+                                                   soft_joint_range=self._soft_joint_range,
                                                    rng=key_data)
 
       # cmd = self.sample_command(key_cmd)
@@ -239,7 +270,7 @@ class Joystick(MjxEnv):
           # 	data.sensordata[self._mj_model.sensor_adr[sensorid]] > 0
           # 	for sensorid in self._feet_floor_found_sensor
           # ])
-          floor_feet_contact = data.sensordata[self._floor_feet_found_sensor_adr] > 0
+          floor_feet_contact = data.sensordata[self._sensor_adr.floor_feet_found_sensor_adr] > 0
           assert floor_feet_contact.shape == (2,)
           return self._get_obs(
               rng=key_obs,
@@ -353,7 +384,7 @@ class Joystick(MjxEnv):
 
       # kenneth: contact sensor mode: reduce="mindist" num="1" data="found", so read value is number of contacts(points).
       # can be 0 (no contcat), 1, 2, 3, 4..
-      floor_feet_contact = state.data.sensordata[self._floor_feet_found_sensor_adr] > 0
+      floor_feet_contact = state.data.sensordata[self._sensor_adr.floor_feet_found_sensor_adr] > 0
 
       # TODO: feet_air_time accumulate the air-time from prev un-contact step un-till curr step of individual foot.
       # add ctrl_dt if not consecutive contact, and will clear feet_air_time if curr step no foot contact with floor, before exit from step().
@@ -389,7 +420,7 @@ class Joystick(MjxEnv):
   # kenneth: collect swing peak only when foot in the air.
   def _update_swing_peak(self, state:State, floor_feet_contact: jax.Array)->Tuple[State, jax.Array]:
       # xpos in world coordinate.
-      p_f = state.data.site_xpos[self._feet_site_id]
+      p_f = state.data.site_xpos[self._site_id.feet_site_id]
       p_fz = p_f[..., -1]
       state.mjxenv_info["swing_peak"] = jp.maximum(state.mjxenv_info["swing_peak"], p_fz)
       swing_peak_in_air = state.mjxenv_info["swing_peak"]
@@ -403,7 +434,9 @@ class Joystick(MjxEnv):
       # TODO: clip motor targets according to soft_lower/upper ? or normalize the motor_target into [lower, upper] ?
       # NOTE: action is relative to default_pose which is from keyframe `knees_bent`.
       # i.e. normalize default_pose as 0. mean of action is output of tanh, should be in [-1, 1].
-      motor_targets = self._default_pose + action * self._config.model.action_scale  # *0.5
+      # motor_targets = self._default_pose + action * self._config.model.action_scale  # *0.5
+      motor_targets = self._init_q[7:] + action * self._config.model.action_scale  # *0.5
+
       new_data = self.jax_step(
           # ctrl_dt=0.02, sim_dt=0.002, so n_substeps is 10.
           self.mjx_model, state.data, motor_targets, self.n_substeps
@@ -424,7 +457,7 @@ class Joystick(MjxEnv):
   def _update_phase(state:State)->Tuple[State, jax.Array, jax.Array]:
       phase_tp1 = state.mjxenv_info["phase"] + state.mjxenv_info["phase_dt"]
 
-      # kenneth: obs will use updated phase, reward use last phase.
+      # kenneth: obs will use updated phase to calc cos/sin, reward use last phase.
       last_phase = state.mjxenv_info["phase"]
 
       # kenneth: map phase from [ 0, 2pi] -> [-pi, pi].
@@ -634,18 +667,21 @@ class Joystick(MjxEnv):
      # recording so much stuff in state.info[].
      # kenneth: rwd will compare some info of last step with result(in state.data) of curr step.
      # TODO: if done is caused by nan, we stop calc rewards...
-     rewards = self._get_rewards(
-        data=state.data,
-        curr_act=action,
-        last_act=last_act,
-        last_last_act=last_last_act,
-        done=state.done,
-        first_contact=first_contact,
-        floor_feet_contact=floor_feet_contact,
-        feet_air_time=feet_air_time,
-        swing_peak_in_air=swing_peak_in_air,
-        last_cmd=last_cmd,
-        last_phase=last_phase,
+     rewards = self._rwd_handler.get_rewards(
+         data=state.data,
+         curr_act=action,
+         last_act=last_act,
+         last_last_act=last_last_act,
+         done=state.done,
+         first_contact=first_contact,
+         floor_feet_contact=floor_feet_contact,
+         feet_air_time=feet_air_time,
+         swing_peak_in_air=swing_peak_in_air,
+         last_cmd=last_cmd,
+         last_phase=last_phase,
+         soft_joint_range=self._soft_joint_range,
+         init_q=self._init_q,
+         cost_pose_weight=self._cost_pose_weight,
      )
      # TODO: kenneth: handle rewards get nan:
      rewards = {
@@ -719,9 +755,10 @@ class Joystick(MjxEnv):
 
   def _update_termination(self, state: State) -> State:
     # z axis should be along world coordinate.
-    fall_termination = state.data.sensordata[self._pelvis_upvector_sensor_adr][-1] < 0.0
+    # TODO: should not allow some large tilt angle.
+    fall_termination = state.data.sensordata[self._sensor_adr.pelvis_upvector_sensor_adr][-1] < 0.0
 
-    contact_termination = jp.any(state.data.sensordata[ self._left_leg_right_leg_found_sensor_adr] > 0)
+    contact_termination = jp.any(state.data.sensordata[ self._sensor_adr.left_leg_right_leg_found_sensor_adr] > 0)
 
     done = (
             fall_termination
@@ -771,7 +808,7 @@ class Joystick(MjxEnv):
       rng, key_gyro, key_gravity, key_qpos, key_qvel, key_linvel = jax.random.split(rng, 6)
 
       # gyro = self.get_gyro(data, "pelvis")
-      gyro = data.sensordata[self._pelvis_gyro_sensor_adr]
+      gyro = data.sensordata[self._sensor_adr.pelvis_gyro_sensor_adr]
       noisy_gyro = (
               gyro
               + (2 * jax.random.uniform(key_gyro, shape=gyro.shape) - 1)
@@ -779,7 +816,8 @@ class Joystick(MjxEnv):
               * self._config.model.noise.scales.gyro
       )
 
-      gravity = data.site_xmat[self._pelvis_imu_site_id].T @ jp.array([0, 0, -1])
+      # convert gravity unit vector from global to imu_site local frame.
+      gravity = data.site_xmat[self._site_id.pelvis_imu_site_id].T @ jp.array([0, 0, -1])
       # info["rng"], noise_rng = jax.random.split(info["rng"])
       noisy_gravity = (
               gravity
@@ -808,12 +846,10 @@ class Joystick(MjxEnv):
 
       # cos = jp.cos(info["phase"])
       # sin = jp.sin(info["phase"])
-      cos = jp.cos(phase)
-      sin = jp.sin(phase)
-      phase_cos_sin = jp.concatenate([cos, sin])
+      phase_cos_sin = jp.concatenate([jp.cos(phase), jp.sin(phase)])
 
       # linvel = self.get_local_linvel(data, "pelvis")
-      linvel = data.sensordata[self._pelvis_local_linvel_sensor_adr]
+      linvel = data.sensordata[self._sensor_adr.pelvis_local_linvel_sensor_adr]
       # info["rng"], noise_rng = jax.random.split(info["rng"])
       noisy_linvel = (
               linvel
@@ -834,7 +870,7 @@ class Joystick(MjxEnv):
           noisy_gravity,  # 3
           # # # info["command"], # 3
           # cmd,               # 3
-          noisy_joint_angles - self._default_pose,  # 29
+          noisy_joint_angles - self._init_q[7:], #self._default_pose,  # 29
           noisy_joint_vel,  # 29
           # kenneth: we should record curr_act and last_act in obs for next step.
           # info["last_act"],  # 29
@@ -846,10 +882,10 @@ class Joystick(MjxEnv):
       # accelerometer = self.get_accelerometer(data, "pelvis")
       # global_angvel = self.get_global_angvel(data, "pelvis")
 
-      accelerometer = data.sensordata[self._pelvis_accelerometer_sensor_adr]
-      global_angvel = data.sensordata[self._pelvis_global_angvel_sensor_adr]
+      accelerometer = data.sensordata[self._sensor_adr.pelvis_accelerometer_sensor_adr]
+      global_angvel = data.sensordata[self._sensor_adr.pelvis_global_angvel_sensor_adr]
 
-      feet_vel = data.sensordata[self._feet_linvel_sensor_adr].ravel()
+      feet_vel = data.sensordata[self._sensor_adr.feet_linvel_sensor_adr].ravel()
       root_height = data.qpos[2]
 
       # shape: (112,)
@@ -860,7 +896,7 @@ class Joystick(MjxEnv):
           gravity,  # 3
           linvel,  # 3
           global_angvel,  # 3
-          joint_angles - self._default_pose,
+          joint_angles - self._init_q[7:],  # self._default_pose,
           joint_vel,
           root_height,  # 1
           data.actuator_force,  # 29
@@ -920,349 +956,6 @@ class Joystick(MjxEnv):
 
     return state
 
-  def _get_rewards(
-      self, *,
-      data: mjx.Data,
-      curr_act: jax.Array,
-      last_act: jax.Array,
-      last_last_act: jax.Array,
-      done: jax.Array,
-      first_contact: jax.Array,
-      floor_feet_contact: jax.Array,
-      feet_air_time: jax.Array,
-      swing_peak_in_air: jax.Array,
-      last_cmd: jax.Array,
-      last_phase: jax.Array
-  ) -> Dict[str, jax.Array]:
-    # del metrics  # Unused.
-    return {
-        # Tracking rewards.
-        "tracking_lin_vel": self._reward_tracking_lin_vel(
-            # info["command"], self.get_local_linvel(data, "pelvis")
-            last_cmd,
-            # self.get_local_linvel(data, "pelvis")
-            data.sensordata[self._pelvis_local_linvel_sensor_adr]
-        ),
-        "tracking_ang_vel": self._reward_tracking_ang_vel(
-            # info["command"], self.get_gyro(data, "pelvis")
-            last_cmd,
-            # self.get_gyro(data, "pelvis")
-            data.sensordata[self._pelvis_gyro_sensor_adr]
-        ),
-        # Base-related rewards.
-        "lin_vel_z": self._cost_lin_vel_z(
-            # self.get_global_linvel(data, "pelvis"),
-            # self.get_global_linvel(data, "torso"),
-            data.sensordata[self._pelvis_global_linvel_sensor_adr],
-        ),
-        "ang_vel_xy": self._cost_ang_vel_xy(
-            # self.get_global_angvel(data, "torso")
-            data.sensordata[self._pelvis_global_angvel_sensor_adr],
-        ),
-
-        "orientation": self._cost_orientation(
-            # self.get_gravity(data, "torso")
-            data.sensordata[self._pelvis_upvector_sensor_adr],
-        ),
-
-        # "base_height": self._cost_base_height(data.qpos[2]),
-        "base_height": self._cost_base_height(data),
-        # Energy related rewards.
-        "torques": self._cost_torques(data.actuator_force),
-        "action_rate": self._cost_action_rate(
-            # action, info["last_act"], info["last_last_act"]
-            curr_act, last_act, last_last_act
-        ),
-        "energy": self._cost_energy(data.qvel[6:], data.actuator_force),
-        "dof_acc": self._cost_dof_acc(data.qacc[6:]),
-        # Feet related rewards.
-        "feet_slip": self._cost_feet_slip(data, floor_feet_contact),
-        "feet_clearance": self._cost_feet_clearance(data),
-        "feet_height": self._cost_feet_height(
-            # info["swing_peak"], first_contact, info
-            swing_peak_in_air, first_contact
-        ),
-        "feet_air_time": self._reward_feet_air_time(
-            # info["feet_air_time"], first_contact, info["command"]
-            # kenneth: use the air time output from _handle_contact, cause we will clear
-            # info["feet_air_time"] in handle_contact.
-            # feet_air_time, first_contact, info["command"]
-            feet_air_time, first_contact, last_cmd
-        ),
-        "feet_phase": self._reward_feet_phase(
-            # data,
-            # info["phase"],
-            # self._config.reward.max_foot_height,
-            # info["command"],
-            data, last_phase, self._config.reward.max_foot_height, last_cmd
-        ),
-        # Other rewards.
-        "alive": self._reward_alive(),
-        "termination": self._cost_termination(done),
-        # "stand_still": self._cost_stand_still(info["command"], data.qpos[7:]),
-        # "stand_still": self._cost_stand_still(last_cmd, data.qpos[7:]),
-        "stand_still": self._cost_stand_still(data, last_cmd),
-        "hand_collision": self._cost_hand_collision(data),
-        "contact_force": self._cost_contact_force(data),
-        # Pose related rewards.
-        "joint_deviation_hip": self._cost_joint_deviation_hip(
-            # data.qpos[7:], info["command"]
-            data, last_cmd
-        ),
-        # "joint_deviation_knee": self._cost_joint_deviation_knee(data.qpos[7:]),
-        "joint_deviation_knee": self._cost_joint_deviation_knee(data),
-        # "dof_pos_limits": self._cost_joint_pos_limits(data.qpos[7:]),
-        "dof_pos_limits": self._cost_joint_pos_limits(data),
-        # "pose": self._cost_pose(data.qpos[7:]),
-        "pose": self._cost_pose(data),
-    }
-
-  def _cost_contact_force(self, data: mjx.Data) -> jax.Array:
-    # l_contact_force = mjx_env.get_sensor_data(
-    #     self.mj_model, data, "left_foot_force"
-    # )
-
-    # both feet, ndim=3 contact frc.
-    feet_contact_frc = data.sensordata[self._feet_force_sensor_adr]
-
-    # r_contact_force = mjx_env.get_sensor_data(
-    #     self.mj_model, data, "right_foot_force"
-    # )
-
-    l_z_frc, r_z_frc = feet_contact_frc[jp.array([2, 5])]
-
-    # only penalty on contac_force > 500, i.e. jump and fall onto floor.
-    cost = jp.clip(
-        # jp.abs(l_contact_force[2])
-        jp.abs(l_z_frc)
-        - self._config.reward.max_contact_force,
-        min=0.0,
-    )
-    cost += jp.clip(
-        # jp.abs(r_contact_force[2])
-        jp.abs(r_z_frc)
-        - self._config.reward.max_contact_force,
-        min=0.0,
-    )
-    return cost
-
-  def _cost_hand_collision(self, data: mjx.Data) -> jax.Array:
-    # c = (
-    #     data.sensordata[
-    #         self._mj_model.sensor_adr[self._left_hand_left_thigh_found_sensor]
-    #     ]
-    #     > 0
-    # )
-    # c |= (
-    #     data.sensordata[
-    #         self._mj_model.sensor_adr[self._right_hand_right_thigh_found_sensor]
-    #     ]
-    #     > 0
-    # )
-    # return jp.any(c)
-    return jp.array(.0)
-
-  # Tracking rewards.
-
-  # penalty on hip roll/yaw.
-  def _cost_joint_deviation_hip(
-      self, data:mjx.Data, cmd: jax.Array
-  ) -> jax.Array:
-    # hip roll (l,r), hip yaw (l,r) :
-    # error = qpos[self._hip_indices] - self._default_pose[self._hip_indices]
-    error = data.qpos[self._hip_r_y_jnt_adr] - self._init_q[self._hip_r_y_jnt_adr]
-
-    # Allow roll deviation when lateral velocity is high.
-    weight = jp.where(
-        cmd[1] > 0.1,
-        # left - r y, right - r y,
-        # jp.array([0.0, 1.0, 0.0, 1.0]),
-
-        # hip roll (l,r), hip yaw (l,r) :
-        jp.array([0.0, 0.0, 1.0, 1.0]),
-        jp.array([1.0, 1.0, 1.0, 1.0]),
-    )
-    cost = jp.sum(jp.abs(error) * weight)
-    return cost
-
-  def _cost_joint_deviation_knee(self, data:mjx.Data) -> jax.Array:
-    # error = qpos[self._knee_p_jnt_adr] - self._default_pose[self._knee_p_jnt_adr]
-    error = data.qpos[self._knee_p_jnt_adr] - self._init_q[self._knee_p_jnt_adr]
-    return jp.sum(jp.abs(error))
-
-  def _cost_pose(self, data:mjx.Data) -> jax.Array:
-    # return jp.sum(jp.square(qpos - self._default_pose))
-    return jp.sum(jp.square(data.qpos[7:] - self._default_pose))
-
-  # exclude the freejnt
-  def _cost_joint_pos_limits(self, data:mjx.Data) -> jax.Array:
-    out_of_limits = -jp.clip(data.qpos[7:] - self._soft_jnt_lowers, None, 0.0)
-    out_of_limits += jp.clip(data.qpos[7:] - self._soft_jnt_uppers, 0.0, None)
-    return jp.sum(out_of_limits)
-
-  def _reward_tracking_lin_vel(
-      self,
-      commands: jax.Array,
-      local_vel: jax.Array,
-  ) -> jax.Array:
-    lin_vel_error = jp.sum(jp.square(commands[:2] - local_vel[:2]))
-    return jp.exp(-lin_vel_error / self._config.reward.tracking_sigma)
-
-  def _reward_tracking_ang_vel(
-      self,
-      commands: jax.Array,
-      ang_vel: jax.Array,
-  ) -> jax.Array:
-    ang_vel_error = jp.square(commands[2] - ang_vel[2])
-    return jp.exp(-ang_vel_error / self._config.reward.tracking_sigma)
-
-  # Base-related rewards.
-
-  def _cost_lin_vel_z(
-      self,
-      # global_linvel_torso: jax.Array,
-      global_linvel_pelvis: jax.Array,
-  ) -> jax.Array:
-    # torso_cost = jp.square(global_linvel_torso[2])
-    pelvis_cost = jp.square(global_linvel_pelvis[2])
-    # return torso_cost + pelvis_cost
-    return pelvis_cost
-
-
-  def _cost_ang_vel_xy(self,
-                       # global_angvel_torso: jax.Array
-                       global_angvel_pelvis: jax.Array
-                       ) -> jax.Array:
-    # return jp.sum(jp.square(global_angvel_torso[:2]))
-    return jp.sum(jp.square(global_angvel_pelvis[:2]))
-
-  def _cost_orientation(self,
-                        # torso_zaxis: jax.Array
-                        pelvis_zaxis: jax.Array
-                        ) -> jax.Array:
-    # TODO: g1 use jp.array([0.073, 0.0, 1.0]), read from sensordata: framezaxis "upvector_torso"
-    # after load keyframe 'knees_bent'.
-    # return jp.sum(jp.square(torso_zaxis - jp.array([0.073, 0.0, 1.0])))
-
-    # framezaxis returns the 3D unit vector corresponding to the Z-axis of
-    # the spatial frame of the object, in global coordinates, so
-    # we can subtract the two unit-vector to get the orientation error.
-    # jp.array([0., 0., 1.0]) is read from sensordata: framezaxis "upvector_torso"
-    # after load keyframe 'knees_bent', the default pose.
-    return jp.sum(jp.square(pelvis_zaxis - jp.array([0., 0., 1.0])))
-
-
-  def _cost_base_height(self, data:mjx.Data) -> jax.Array:
-    return jp.square(
-        data.qpos[2] - self._config.reward.base_height_target
-    )
-
-  # Energy related rewards.
-
-  def _cost_torques(self, torques: jax.Array) -> jax.Array:
-    return jp.sum(jp.abs(torques))
-
-  def _cost_energy(
-      self, qvel: jax.Array, qfrc_actuator: jax.Array
-  ) -> jax.Array:
-    return jp.sum(jp.abs(qvel) * jp.abs(qfrc_actuator))
-
-  def _cost_action_rate(
-      self, act: jax.Array, last_act: jax.Array, last_last_act: jax.Array
-  ) -> jax.Array:
-    del last_last_act  # Unused.
-    return jp.sum(jp.square(act - last_act))
-
-  def _cost_dof_acc(self, qacc: jax.Array) -> jax.Array:
-    return jp.sum(jp.square(qacc))
-
-  # Other rewards.
-
-  def _cost_stand_still(
-      self, data:mjx.Data, commands: jax.Array
-  ) -> jax.Array:
-    cmd_norm = jp.linalg.norm(commands)
-    cost = jp.sum(jp.abs(data.qpos[7:] - self._default_pose))
-    cost *= cmd_norm < 0.01
-    return cost
-
-  def _cost_termination(self, done: jax.Array) -> jax.Array:
-    return done
-
-  def _reward_alive(self) -> jax.Array:
-    return jp.array(1.0)
-
-  # Feet related rewards.
-
-  def _cost_feet_slip(
-      self, data: mjx.Data, floor_feet_contact: jax.Array
-  ) -> jax.Array:
-    # body_vel = self.get_global_linvel(data, "pelvis")[:2]
-    body_vel = data.sensordata[self._pelvis_global_linvel_sensor_adr][:2]
-    reward = jp.sum(jp.linalg.norm(body_vel, axis=-1) * floor_feet_contact)
-    return reward
-
-  def _cost_feet_clearance(
-      self, data: mjx.Data
-  ) -> jax.Array:
-    feet_vel = data.sensordata[self._feet_linvel_sensor_adr]
-    vel_xy = feet_vel[..., :2]
-    vel_norm = jp.sqrt(jp.linalg.norm(vel_xy, axis=-1))
-    foot_pos = data.site_xpos[self._feet_site_id]
-    foot_z = foot_pos[..., -1]
-    delta = jp.abs(foot_z - self._config.reward.max_foot_height)
-    return jp.sum(delta * vel_norm)
-
-  def _cost_feet_height(
-      self,
-      swing_peak: jax.Array,
-      first_contact: jax.Array,
-  ) -> jax.Array:
-    error = swing_peak / self._config.reward.max_foot_height - 1.0
-    return jp.sum(jp.square(error) * first_contact)
-
-  def _reward_feet_air_time(
-      self,
-      air_time: jax.Array,
-      first_contact: jax.Array,
-      commands: jax.Array,
-      threshold_min: float = 0.2,
-      threshold_max: float = 0.5,
-  ) -> jax.Array:
-    del commands  # Unused.
-    air_time = (air_time - threshold_min) * first_contact
-    air_time = jp.clip(air_time, max=threshold_max - threshold_min)
-    reward = jp.sum(air_time)
-    return reward
-
-  def _reward_feet_phase(
-      self,
-      data: mjx.Data,
-      phase: jax.Array,
-      foot_height: jax.Array,
-      command: jax.Array,
-  ) -> jax.Array:
-    # Reward for tracking the desired foot height.
-    foot_pos = data.site_xpos[self._feet_site_id]
-    foot_z = foot_pos[..., -1]
-    rz = gait.get_rz(phase, swing_height=foot_height)
-    error = jp.sum(jp.square(foot_z - rz))
-    reward = jp.exp(-error / 0.01)
-
-    # body_linvel = self.get_global_linvel(data, "pelvis")[:2]
-    # body_angvel = self.get_global_angvel(data, "pelvis")[2]
-
-    body_linvel = data.sensordata[self._pelvis_global_linvel_sensor_adr][:2]
-    # around global z-axis
-    body_angvel = data.sensordata[self._pelvis_global_angvel_sensor_adr][2]
-
-    linvel_mask = jp.logical_or(
-        jp.linalg.norm(body_linvel) > 0.1,
-        jp.abs(body_angvel) > 0.1,
-    )
-    mask = jp.logical_or(linvel_mask, jp.linalg.norm(command) > 0.01)
-    reward *= mask
-    return reward
 
   def sample_command(self, rng: jax.Array) -> jax.Array:
     rng1, rng2, rng3, rng4 = jax.random.split(rng, 4)

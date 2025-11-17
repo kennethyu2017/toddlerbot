@@ -1,5 +1,5 @@
 <mujoco model="kbot_both_leg_scene">
-  <include file="kbot_both_leg_feet_collision_only_mjx.xml"/>
+  <include file="/home/yuheng/PycharmProjects/toddlerbot_modified_by_ken/kbot/locomotion/kbot_both_leg/xmls/try_add_shoulder_kbot_both_leg_feet_collision_only_mjx.xml"/>
 
 <!-- will affect the visual/scale below -->
 <!--    meansize will scale the rendered: coordinate frame display, contact point, contact force, ... -->
@@ -44,36 +44,42 @@
           contype="1" conaffinity="1" condim="3" group="0" />
   </worldbody>
 
-  <include file="sensors.xml"/>
+  <include file="/home/yuheng/PycharmProjects/toddlerbot_modified_by_ken/kbot/locomotion/kbot_both_leg/xmls/sensors.xml"/>
 
   <keyframe>
-      <key name="home"
+      <key name="knees_bent"
             qpos="0 0 0.776
                   1 0 0 0
+                  0 0
                   0.30756 0 0 0.662725 0.358
                   0.30756 0 0 0.662725 0.358"
 
-            ctrl="0.30756 0 0 0.662725 0.358
+            ctrl="0 0
+                  0.30756 0 0 0.662725 0.358
                   0.30756 0 0 0.662725 0.358"
       />
 
 
-      <key name="knees_bent"
+      <key name="knees_more_bent"
             qpos="0 0 0.747
                   1 0 0 0
+                  0 0
                   0.24 0 0 0.862725 0.620
                   0.24 0 0 0.862725 0.620"
 
-            ctrl="0.24 0 0 0.862725 0.620
+            ctrl="0 0
+                  0.24 0 0 0.862725 0.620
                   0.24 0 0 0.862725 0.620"
       />
       <key name="stand_straight"
             qpos="0 0 0.796
                   1 0 0 0
+                  0 0
                   0 0 0 0 0
                   0 0 0 0 0"
 
-            ctrl="0 0 0 0 0
+            ctrl="0 0
+                  0 0 0 0 0
                   0 0 0 0 0"
       />
 

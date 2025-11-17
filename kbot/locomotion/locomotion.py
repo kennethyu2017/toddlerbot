@@ -15,14 +15,12 @@ from brax.training.agents.ppo import train as ppo
 import jax
 import numpy as np
 import atexit
-import mujoco.mjx as mjx
 
 from tensorboardX import SummaryWriter
 
 # from orbax import checkpoint as ocp
 # from vis_utils import display_swing_peak, display_lin_and_angle_vel
 from kbot.base_env.base_env_mjx import MjxEnv,State
-from kbot.base_env.env_wrapper import wrap_for_locomotion_training
 from kbot.locomotion.env_registry import get_env_registry
 
 # Tell XLA to use Triton GEMM, this improves steps/sec by ~30% on some GPUs
@@ -43,16 +41,19 @@ np.set_printoptions(precision=3, suppress=True, linewidth=100)
 
 def _default_training_config() -> config_dict.ConfigDict:
     return config_dict.create(
-        req_train=False,
+        req_train=True,
+
         req_eval=True,
-
         render_rollout=True,
-        save_rollout_data=False,
 
+        save_rollout_data=False,
         display_swing_peak=False,
+
         display_vel=False,
 
-        env_name='kbot_both_leg_flat_terrain',
+        env_name='TryG1JoystickFlatTerrain',
+        # env_name='kbot_both_leg_flat_terrain',
+        # env_name='G1JoystickFlatTerrain',
 
         # TODO: temply debug.
         # env_name='toy_kbot_both_leg_flat_terrain',
@@ -60,11 +61,34 @@ def _default_training_config() -> config_dict.ConfigDict:
         main_seed=423,
         train_seed = 982,
         model_dir = 'models',
+
         ckpt_root_dir = 'checkpoints',
+        # ckpt_root_dir=None,
+
         video_dir = 'videos',
         rollout_data_dir = 'rollout_data',
-        restore_ckpt_dir = None , # None means not restore.
-        # restore_ckpt_dir=epath.Path('./checkpoints/locomotion_BerkeleyHumanoidJoystickFlatTerrain_date_2025_09_19_14_46_50').resolve()
+        summary_root_dir = 'runs_summary',
+
+        # restore_ckpt = None, # None means not restore.
+        restore_ckpt='locomotion_TryG1JoystickFlatTerrain_date_2025_11_17_18_40_19',
+
+        # for easy try.
+        ppo_params_override = config_dict.create(
+            num_timesteps=200_000_000 // 5,
+            num_evals = 20 // 2,
+            # for validation(eval) during training epoch.
+            num_eval_envs = 32,
+            # for training
+            num_envs= 8192,
+
+            # network_factory_kwargs=config_dict.create(
+            #     policy_hidden_layer_sizes=(512//2, 256//2, 128//2),
+            #     value_hidden_layer_sizes=(512//2, 256//2, 128//2),
+            #     # must be same as in Observation from MjxEnv.
+            #     policy_obs_key="state",
+            #     value_obs_key="privileged_state",
+            # )
+        ),
     )
 
 
@@ -98,6 +122,16 @@ def _gen_model_file_path(env_name:str, model_dir: epath.Path)->epath.Path:
                                                         env_name,
                                                         time.strftime("%Y_%m_%d_%H_%M_%S"))
     return model_file.resolve()
+
+
+# for tensorboardX.
+def _gen_summary_dir(env_name:str, summary_root_dir: epath.Path)->epath.Path:
+    summary_dir = (summary_root_dir
+                   / '{}_{}'.format('locomotion',env_name)
+                   / 'date_{}'.format(time.strftime("%Y_%m_%d_%H_%M_%S")))
+
+    summary_dir.mkdir(parents=not summary_dir.parent.exists(), exist_ok=False)
+    return summary_dir.resolve()
 
 
 def _gen_ckpt_dir(env_name:str, ckpt_root_dir: epath.Path)->epath.Path:
@@ -139,7 +173,7 @@ def evaluate(*,
              video_dir: str,
              )->None:
     eval_env = eval_env_fn()
-    print(f"eval env: {env_name}, env_cfg: {eval_env._config}")
+    print(f"eval env: {env_name}")  #, env_cfg: {eval_env._config}")
 
 
     # TODO: single instance of eavl_env, no need to use JIT and GPU. use mujoco CPU will be faster.
@@ -220,46 +254,50 @@ def train_policy(*,
                  ppo_params:config_dict.ConfigDict,
                  network_factory:Callable,
                  train_env_fn:Callable,
-                 randomization_fn: Callable[[mjx.Model, jax.Array, MjxEnv], Tuple[mjx.Model, Any]],
+                 # randomization_fn: Callable[[mjx.Model, jax.Array, MjxEnv], Tuple[mjx.Model, Any]],
+                 get_randomization_fn: Callable,
+                 get_wrap_env_fn: Callable,
                  ckpt_root_dir:str,
-                 restore_ckpt_dir:str = None,
+                 restore_ckpt:str = None,
                  model_dir: str,
+                 summary_writer:SummaryWriter,
                  train_seed:int,
                  )->None:
-    print(f'{ppo_params=:}')
+    # print(f'{ppo_params=:}')
 
     # TODO: load env_cfg from config.yaml if required.
     train_env = train_env_fn()
-    print(f"train env: {env_name} \n"
-          f"env_cfg --->\n{train_env._config}")
+    print(f"train env: {env_name} \n" )
+          # f"env_cfg --->\n{train_env._config}")
 
-    # we always make new ckpt dir, even restore ckpt.
-    ckpt_dir = _gen_ckpt_dir(
-        env_name,
-        epath.Path(ckpt_root_dir)
-    )
-    print(f"ckpt_dir: {ckpt_dir}")
+    ckpt_dir = None
+    if ckpt_root_dir is not None:
+        # we always make new ckpt dir, even restore ckpt.
+        ckpt_dir = _gen_ckpt_dir(
+            env_name,
+            epath.Path(ckpt_root_dir)
+        )
+        print(f"ckpt_dir: {ckpt_dir}")
 
-    with open(ckpt_dir / "env_config.yaml", "wt") as _f:
-        # yaml.safe_dump(train_env._config.to_dict(), stream=_f, indent=4)
-        train_env._config.to_yaml(stream=_f, indent=4)
-        print(f'save train env config to {_f.name}')
+        with open(ckpt_dir / "env_config.yaml", "wt") as _f:
+            # yaml.safe_dump(train_env._config.to_dict(), stream=_f, indent=4)
+            train_env._config.to_yaml(stream=_f, indent=4)
+            print(f'save train env config to {_f.name}')
+
+    else:
+        print("=== ckpt_root_dir is None, no ckpt will be saved.===")
 
     latest_ckpt = None
-    if restore_ckpt_dir is not None:
-        latest_ckpt = _latest_ckpt_path(restore_ckpt_dir)
+    if restore_ckpt is not None:
+        latest_ckpt = _latest_ckpt_path( epath.Path(ckpt_root_dir) / restore_ckpt ).resolve()
         print(f"=== Restore ckpt from path: {latest_ckpt} ===")
 
     times = [datetime.now()]
-    # Initialize the SummaryWriter
-    # will save both to local tensorboardX logdir and comet remote storage.
-    # so we can make use of local tensorboard webserver also.
-    writer = SummaryWriter(comet_config={"disabled": True})
-    # can handle double close in writer.close().
-    atexit.register(lambda: writer.close())
-
     # NOTE: progress_fn not called inside jit-boundary.
-    progress_fn = partial(_train_progress_fn, writer=writer, times=times)
+    progress_fn = partial(_train_progress_fn, writer=summary_writer, times=times)
+
+    randomization_fn = partial(get_randomization_fn(), env=train_env)
+    wrap_env_fn = get_wrap_env_fn()
 
     train_fn = functools.partial(
         ppo.train,
@@ -268,14 +306,16 @@ def train_policy(*,
         **ppo_params.to_dict(),
         environment=train_env,
         network_factory=network_factory,
-        randomization_fn=partial(randomization_fn, env=train_env),
-        episode_length=train_env._config.model.episode_length,
-
+        randomization_fn=randomization_fn,
+        episode_length= train_env._config.model.episode_length if 'model' in train_env._config    # kbot env cfg.
+                        else train_env._config.episode_length ,  # mujoco playground env cfg.
         # progress_fn not called inside jit-boundary.
         progress_fn=progress_fn,
 
         # ppo.train use ocp.PyTreeCheckpointer() inside.
+        # if save_checkpoint_path is None, no ckpt will be saved.
         save_checkpoint_path=ckpt_dir,
+
         restore_checkpoint_path=latest_ckpt,  # restore from the checkpoint!
         seed=train_seed,
         run_evals=True,  # will call progress_fn to plot.
@@ -288,7 +328,7 @@ def train_policy(*,
         # eval_env=valid_env,
         # wrapping domain randomization, vmap, auto-reset, etc.
         # wrap_env_fn=wrapper.wrap_for_brax_training,
-        wrap_env_fn=wrap_for_locomotion_training,
+        wrap_env_fn=wrap_env_fn,
     )
 
     make_inference_fn, params, metrics = train_fn()
@@ -297,13 +337,13 @@ def train_policy(*,
         print(f"time to jit: {times[1] - times[0]}\n"
               f"time to train: {times[-1] - times[1]}")
 
-    writer.close()
+    # SummaryWriter allow double close.
+    summary_writer.close()
     model_file = _gen_model_file_path(env_name,
                                       epath.Path(model_dir))
     model.save_params(model_file.as_posix(), params)
     print(f"=== Save trained model to : {model_file} ===")
     time.sleep(1.0)
-
 
 
 
@@ -317,7 +357,7 @@ def build_eval_policy_fn(*,
     ppo_params.num_timesteps = 0
     ppo_params.num_envs = 1
 
-    print(f'{ppo_params=:}')
+    # print(f'{ppo_params=:}')
 
     dummy_env:MjxEnv = eval_env_fn()
 
@@ -353,6 +393,33 @@ def build_eval_policy_fn(*,
     policy_fn = make_policy_fn(params, deterministic=True)
     return policy_fn
 
+def gen_summary_writer(env_name:str,
+                       summary_root_dir:str)->SummaryWriter:
+    summary_dir = _gen_summary_dir(
+        env_name=env_name,
+        summary_root_dir= epath.Path(summary_root_dir)
+    )
+    print(f"=== tensorboardX summary write to dir: {summary_dir} ===")
+
+    #TODO: maybe write training config into summary.
+    # with open(ckpt_dir / "training_config.yaml", "wt") as _f:
+    #     yaml.safe_dump(train_env._config.to_dict(), stream=_f, indent=4)
+        # train.to_yaml(stream=_f, indent=4)
+        # print(f'save train env config to {_f.name}')
+
+    # Initialize the SummaryWriter
+    # will save both to local tensorboardX logdir and comet remote storage.
+    # so we can make use of local tensorboard webserver also.
+    writer = SummaryWriter(
+        logdir=summary_dir.as_posix(),
+        comet_config={"disabled": True}
+    )
+    # writer.add_text("training_config", _default_training_config().to_json_best_effort())
+    # can handle double close in writer.close().
+    atexit.register(lambda: writer.close())
+    return writer
+
+
 
 def _main(argv):
     training_cfg =  _default_training_config()
@@ -363,7 +430,10 @@ def _main(argv):
     env_registry = get_env_registry(training_cfg.env_name)
 
     ppo_params = env_registry.ppo_param_fn()
-    # ppo_training_params = dict(ppo_params)
+
+    # for easy debug & try.
+    if 'ppo_params_override' in training_cfg:
+        ppo_params.update(training_cfg.ppo_params_override)
 
     network_factory = ppo_networks.make_ppo_networks
     if "network_factory_kwargs" in ppo_params:
@@ -377,6 +447,9 @@ def _main(argv):
     else:
         raise ValueError("network_factory_kwargs is not defined, do not use the default args of ppo_networks.make_ppo_networks")
 
+    summary_writer = gen_summary_writer(training_cfg.env_name, training_cfg.summary_root_dir)
+    summary_writer.add_text("training_config", training_cfg.to_json_best_effort(indent=2))
+
     if training_cfg.req_train:
         print('=== start train ===')
         train_policy(env_name=training_cfg.env_name,
@@ -385,10 +458,12 @@ def _main(argv):
                      # ckpt_dir=restore_ckpt_dir if RESTORE_CKPT else None,
                      train_env_fn=env_registry.train_env_fn,
                      train_seed=training_cfg.train_seed,
-                     randomization_fn=env_registry.randomization_fn,
-                     restore_ckpt_dir=training_cfg.restore_ckpt_dir,
+                     get_randomization_fn=env_registry.get_domain_randomizer,
+                     get_wrap_env_fn=env_registry.get_env_wrapper,
+                     restore_ckpt=training_cfg.restore_ckpt,
                      ckpt_root_dir=training_cfg.ckpt_root_dir,
                      model_dir=training_cfg.model_dir,
+                     summary_writer=summary_writer,
                      )
 
     # else:

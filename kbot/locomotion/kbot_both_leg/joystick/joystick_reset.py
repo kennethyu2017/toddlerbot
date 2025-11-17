@@ -1,4 +1,4 @@
-from typing import Dict, Tuple, Sequence
+from typing import Dict, Tuple, Sequence, List
 import jax
 import jax.numpy as jp
 from jax.typing import ArrayLike
@@ -13,8 +13,8 @@ class JoystickResetHelper:
 	@staticmethod
 	def _rand_qpos(qpos: jax.Array,
 				   rng: jax.Array,
-				   soft_lowers:ArrayLike,
-				   soft_uppers:ArrayLike)->jax.Array:
+				   soft_range: List[jax.Array],
+				   )->jax.Array:
 		rng, key_free_xy, key_free_yaw, key_actuator_qpos = jax.random.split(rng, 4)
 
 		# randomize free joint pos:
@@ -37,6 +37,7 @@ class JoystickResetHelper:
 		# )
 		# new_jnt_qpos = qpos[7:] * jax.random.uniform(key, (self._mj_model.nq - 7,), minval=0.5, maxval=1.5)
 		new_jnt_qpos = qpos[7:] * jax.random.uniform(key_actuator_qpos, qpos[7:].shape, minval=0.5, maxval=1.5)
+		soft_lowers, soft_uppers = soft_range
 		new_jnt_qpos = jp.clip(new_jnt_qpos, min=soft_lowers, max=soft_uppers)
 		qpos = qpos.at[7:].set(new_jnt_qpos)
 		return qpos
@@ -83,14 +84,13 @@ class JoystickResetHelper:
 				  mjx_model: mjx.Model,
 				  init_qpos:ArrayLike,
 				  init_qvel:ArrayLike,
-				  soft_lowers:ArrayLike,
-				  soft_uppers:ArrayLike,
+				  soft_joint_range: List[ArrayLike],
 				  rng:jax.Array)-> mjx.Data:
 		qpos, qvel = init_qpos, init_qvel
 		rng, key_qpos, key_qvel = jax.random.split(rng, 3)
 
 		print(f'reset() ---> init qpos before randomization: {qpos=:} init qvel: {qvel=:}')
-		qpos= JoystickResetHelper._rand_qpos(qpos, key_qpos, soft_lowers, soft_uppers)
+		qpos= JoystickResetHelper._rand_qpos(qpos, key_qpos, soft_joint_range)
 		# print(f'qpos after randomization: {qpos=:}')
 
 		qvel = JoystickResetHelper._rand_qvel(qvel, key_qvel)

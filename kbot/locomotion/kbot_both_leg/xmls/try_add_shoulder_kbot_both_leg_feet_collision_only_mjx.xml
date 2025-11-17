@@ -1,6 +1,6 @@
 <mujoco model="kbot_both_leg">
 <!--  NOTE: for mjcf, the angle default is degree. -->
-  <compiler angle="radian" meshdir="assets/"/>
+  <compiler angle="radian" meshdir="/home/yuheng/PycharmProjects/toddlerbot_modified_by_ken/kbot/locomotion/kbot_both_leg/xmls/assets"/>
 
   <!--for mjx -->
 <!--    option/jacobian set to dense for GPU, sparse for TPU. -->
@@ -24,8 +24,7 @@
       <geom condim="1" contype="0" conaffinity="0"/>
 
       <!--joints-->
-<!--      <joint frictionloss=".1" damping="2"/>-->
-      <joint frictionloss=".1" damping="1."/>-->
+      <joint frictionloss=".1" damping="2."/>
 <!--      <position inheritrange="1" kp="75"/>-->
 <!--   inheritrange will Automatically set the actuator’s ctrlrange to match the transmission target’s range, i.e. the joint range. -->
       <position inheritrange="1" />
@@ -61,6 +60,9 @@
         </default>
         <default class="hip_yaw_RS03">
           <joint axis="0 0 1" range="-1.53589 1.53589" />
+        </default>
+        <default class="shoulder_pitch_RS03">
+          <joint axis="0 1 0" range="-2.2 2.2" />
         </default>
 
       </default>
@@ -140,15 +142,29 @@
 <!--            size="0.07 0.3" rgba=".1 .03 .7 .3" contype="0" conaffinity="0" condim="1"/>-->
 <!--      <geom name="virtual_floating_base_geom" group="2" type="capsule"  density="1000."-->
 <!--            size=".07" fromto="0 0 0 0 0 .2" rgba=".1 .03 .7 .3" contype="0" conaffinity="0" condim="1"/>-->
-      <geom name="virtual_floating_base_geom" group="2" type="box"  density="700."
-            pos="0 0 .20"
-          size=".06 .24 .17"  rgba=".1 .03 .7 .3" contype="0" conaffinity="0" condim="1"/>
+      <geom name="virtual_floating_base_geom" group="2" type="box"  density="1200."
+            pos="0 0 .15"
+          size=".04 .20 .15"  rgba=".1 .03 .7 .3" contype="0" conaffinity="0" condim="1"/>
 
 <!--      <site name="imu_in_pelvis" size=".01" />-->
 <!--      <site name="imu_in_pelvis" pos=".02 0 -.22" size=".01" />-->
       <site name="imu_in_pelvis" pos="0.03 0 -.07" size=".01" />
       <camera name="track" pos="1.734 -1.135 .17" xyaxes=".552 .834 -.000 -.170 .112 .979" mode="trackcom"/>
       <freejoint name="floating_base_joint"/>
+
+      <body name="left_shoulder_link" pos="0 .27 .27">
+          <joint name="left_shoulder_pitch_RS03" class="shoulder_pitch_RS03" />
+          <geom name="left_shoulder_link" group="2" type="capsule"  density="1200."
+                fromto="0 0 0 0 0 -.40"
+                size=".05 "  rgba=".1 .03 .7 .3" contype="0" conaffinity="0" condim="1"/>
+      </body>
+      <body name="right_shoulder_link" pos="0 -.27 .27">
+          <joint name="right_shoulder_pitch_RS03" class="shoulder_pitch_RS03" />
+          <geom name="right_shoulder_link" group="2" type="capsule"  density="1200."
+                fromto="0 0 0 0 0 -.40"
+                size=".05 "  rgba=".1 .03 .7 .3" contype="0" conaffinity="0" condim="1"/>
+      </body>
+
       <body name="kd_d_101_l_hip_static" quat="0.707107 0 0 0.707107" >
 <!--        <site name="imu_in_pelvis" pos=".0330531 0 0" size=".01" euler="0 0 -1.5707963"/>-->
         <inertial pos=".0300979 .000647175 -.0590774" quat=".450737 .892352 -.0012332 -.0232922" mass="2.06588" diaginertia=".0048612 .00296214 .00292147"/>
@@ -307,6 +323,9 @@ Lubricated surfaces: Generally below 0.1.
   </contact>
 
   <actuator>
+    <position class="shoulder_pitch_RS03" name="left_shoulder_pitch_RS03"  joint="left_shoulder_pitch_RS03" />
+    <position class="shoulder_pitch_RS03" name="right_shoulder_pitch_RS03"  joint="right_shoulder_pitch_RS03" />
+
     <position class="hip_pitch_RS04" name="left_hip_pitch_RS04"  joint="left_hip_pitch_RS04" />
     <position class="hip_roll_RS03" name="left_hip_roll_RS03"  joint="left_hip_roll_RS03" />
     <position class="hip_yaw_RS03" name="left_hip_yaw_RS03"  joint="left_hip_yaw_RS03" />

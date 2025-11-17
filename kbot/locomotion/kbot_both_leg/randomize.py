@@ -4,7 +4,7 @@ from typing import Tuple, Any
 import jax
 from mujoco import mjx
 from kbot.base_env.base_env_mjx import MjxEnv
-from kbot.locomotion.kbot_both_leg.joystick_env import Joystick
+from kbot.locomotion.kbot_both_leg.joystick.joystick_env import Joystick
 
 # TO update FLOOR_GEOM_ID = 0
 # TO update TORSO_BODY_ID = 16  'torso_link'
@@ -54,7 +54,7 @@ def domain_randomize(model: mjx.Model, rng: jax.Array, env:MjxEnv)->Tuple[mjx.Mo
         # kenneth: Add mass to l and r pelvis: +U(-.3, .3):  g1 torso_link 7kg, k-bot left_pelvis or right_pelvis is 2kg.
         rng, key = jax.random.split(rng)
         # dmass = jax.random.uniform(key, minval=-.3, maxval=.3)
-        for _id in  env._pelvis_body_id:
+        for _id in  env._body_id.pelvis_body_id:
             # TODO: let left right different dmass.
             dmass = jax.random.uniform(key, minval=-.3, maxval=.3)
             body_mass = body_mass.at[_id].set(

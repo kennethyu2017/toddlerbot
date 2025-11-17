@@ -5,8 +5,9 @@ from ml_collections import config_dict
 
 def _task_to_xml(task_name: str) -> str:
     xml_dict = {
-      "flat_terrain": 'scene_feetonly_flat_terrain_mjx.xml',
-      "rough_terrain": 'scene_feetonly_rought_terrain_mjx.xml',
+      # "flat_terrain": 'scene_feetonly_flat_terrain_mjx.xml',
+      "flat_terrain":  'try_add_shoulder_scene_feetonly_flat_terrain_mjx.xml',
+      "rough_terrain": 'scene_feetonly_rough_terrain_mjx.xml',
     }
     if task_name not in xml_dict:
         raise ValueError(f'not a valid task name: {task_name}, must be in {xml_dict.keys()}' )
@@ -113,7 +114,9 @@ def _robot_config() -> config_dict.ConfigDict:
         ),
         # keyframe
         keyframes=config_dict.create(
-            default_pose_keyframe='knees_bent',
+            default_pose_keyframe='home',
+            # default_pose_keyframe='knees_bent',
+            # default_pose_keyframe='stand_straight',
         ),
         # restricted_joint_range = (
         #     # Left leg.
@@ -133,45 +136,143 @@ def _robot_config() -> config_dict.ConfigDict:
         # )
     )
 
+# def _rwd_config() -> config_dict.ConfigDict:
+#     return config_dict.create(
+#         scales=config_dict.create(
+#             # Tracking related rewards.
+#             tracking_lin_vel=1.0,
+#             tracking_ang_vel=0.75,
+#             # Base related rewards.
+#             lin_vel_z=0.0,
+#             ang_vel_xy=-0.15,
+#             orientation=-2.0,
+#             base_height=0.0,
+#             # Energy related rewards.
+#             torques=0.0,
+#             action_rate=0.0,
+#             energy=0.0,
+#             dof_acc=0.0,
+#             # Feet related rewards.
+#             feet_clearance=0.0,
+#             feet_air_time=2.0,
+#             feet_slip=-0.25,
+#             feet_height=0.0,
+#             feet_phase=1.0,
+#             # Other rewards.
+#             alive=0.0,
+#             stand_still=-1.0,
+#             termination=-100.0,
+#             hand_collision=-0.1,
+#             contact_force=-0.01,
+#             # Pose related rewards.
+#             joint_deviation_knee=-0.1,
+#             joint_deviation_hip=-0.25,
+#             dof_pos_limits=-1.0,
+#             pose=-0.1,
+#         ),
+#         tracking_sigma=0.25,
+#
+#         # measured from kbot foot ankle frame pos.
+#         max_foot_height=0.17, #0.15,
+#
+#         # should be close to keyframe knees_bent.
+#         base_height_target=0.776, #     0.5,
+#         max_contact_force=500.0,
+#     )
+
+# def _rwd_config() -> config_dict.ConfigDict:
+#     return config_dict.create(
+#         scales=config_dict.create(
+#             # Tracking related rewards.
+#             tracking_lin_vel=1.0,
+#             tracking_ang_vel=0.75,
+#             # Base related rewards.
+#             lin_vel_z=0.0,
+#             ang_vel_xy= -0.15,
+#             orientation= -2.0,
+#             base_height=0.0,
+#             # Energy related rewards.
+#             torques=0.0,
+#             action_rate=0.0,
+#             energy=0.0,
+#             dof_acc=0.0,
+#             # Feet related rewards.
+#             feet_clearance=0.0,
+#             feet_air_time=2.0,
+#             feet_slip= -0.25,
+#             feet_height=0.0,
+#             feet_phase=1.0,
+#             # Other rewards.
+#             alive=0.0,
+#             stand_still= -1.0,
+#             termination= -100.0,
+#             hand_collision= -0.1,
+#             contact_force= -0.01,
+#             # Pose related rewards.
+#             # kenneth: kbot does not have waist, during waling , we allow more freedom on hips.
+#             joint_deviation_knee= -0.1,
+#             joint_deviation_hip= -0.25,
+#             dof_pos_limits= -1.0,
+#             pose= -0.1,
+#
+#         ),
+#         # less value mean better tracking.
+#         tracking_sigma=0.25,
+#
+#         # measured from kbot foot ankle frame pos.
+#         max_foot_height=0.17, #0.15,
+#
+#         # should be close to keyframe knees_bent.
+#         base_height_target=0.79, # 0.5,
+#         # for kbot-both-leg with virtual floating base.
+#         max_contact_force=500.0,
+#     )
+
+# berkeley humanoid rwd cfg:
 def _rwd_config() -> config_dict.ConfigDict:
-    return config_dict.create(
+    return  config_dict.create(
         scales=config_dict.create(
-            # Tracking related rewards.
-            tracking_lin_vel=1.0,
-            tracking_ang_vel=0.75,
-            # Base related rewards.
-            lin_vel_z=0.0,
-            ang_vel_xy=-0.15,
-            orientation=-2.0,
-            base_height=0.0,
-            # Energy related rewards.
-            torques=0.0,
-            action_rate=0.0,
-            energy=0.0,
-            dof_acc=0.0,
-            # Feet related rewards.
-            feet_clearance=0.0,
-            feet_air_time=2.0,
-            feet_slip=-0.25,
-            feet_height=0.0,
-            feet_phase=1.0,
-            # Other rewards.
-            alive=0.0,
-            stand_still=-1.0,
-            termination=-100.0,
-            hand_collision=-0.1,
-            contact_force=-0.01,
-            # Pose related rewards.
-            joint_deviation_knee=-0.1,
-            joint_deviation_hip=-0.25,
-            dof_pos_limits=-1.0,
-            pose=-0.1,
-        ),
-        tracking_sigma=0.25,
-        max_foot_height=0.15,
-        base_height_target=0.5,
-        max_contact_force=500.0,
-    )
+              # Tracking related rewards.
+              tracking_lin_vel=1.0,
+              tracking_ang_vel=0.5,
+              # Base related rewards.
+              lin_vel_z=0.0,
+              ang_vel_xy=-0.15,
+              orientation=-0.05,  # -1.0,
+              base_height=0.0,
+              # Energy related rewards.
+              torques=-2.5e-5,
+              action_rate=-0.01,
+              energy=0.0,
+              dof_acc=0.0,
+              # Feet related rewards.
+              feet_clearance=0.0,
+              feet_air_time=2.0,
+              feet_slip=-0.25,
+              feet_height=0.0,
+              feet_phase=1.0,
+              # Other rewards.
+              stand_still=0.0,
+              alive=0.0,
+              # not -100 as g1.
+              termination= -100.0,
+              hand_collision= -0.1,
+              contact_force= -0.1, #0.0,
+              # Pose related rewards.
+              joint_deviation_knee= -0.1,
+              joint_deviation_hip= -0.25,
+              dof_pos_limits= -1.0,
+              pose= -1.0,
+          ),
+          tracking_sigma=0.25, #0.5,
+          max_foot_height=0.17, # 0.1,
+          base_height_target=0.5,
+          # for kbot-both-leg with virtual floating base.
+          max_contact_force=500.0,
+      )
+
+
+
 
 def _push_config() -> config_dict.ConfigDict:
     return config_dict.create(
@@ -184,11 +285,12 @@ def _push_config() -> config_dict.ConfigDict:
 def _cmd_config() -> config_dict.ConfigDict:
     return config_dict.create(
           resample_enable=True,
-          # every 500 steps, resample cmd in step().
-          resample_length=250, #500,
+
+          # every 500 aggregated steps across episodes, resample cmd in step().
+          resample_length= 500,
+
           # cmd range
           #   TODO : check pelvis local frame against world frame...
-
           lin_vel_x=[-1.0, 1.0],
           lin_vel_y=[-0.5, 0.5],
           ang_vel_yaw=[-1.0, 1.0],
@@ -198,6 +300,9 @@ def _cmd_config() -> config_dict.ConfigDict:
           # Probability of not zeroing out new command.
           b=[0.9, 0.25, 0.5],
       )
+
+
+
 
 def default_config(task_name:str) -> config_dict.ConfigDict:
   return config_dict.create(
@@ -210,10 +315,33 @@ def default_config(task_name:str) -> config_dict.ConfigDict:
 
 
 if __name__ == '__main__':
+    # cfg =  default_config('flat_terrain')
+    # print(cfg.to_json(indent=2))
+    # False.
+    # print('command.resample_enable' in cfg)
 
-    cfg =  default_config('flat_terrain')
-    print(f'{cfg.robot.joints=:}\n')
-    cfg.update_from_flattened_dict(
-        {'robot.joints.free_joint':'__updated_free_joint__',}
+
+    # print(f'{cfg.robot.joints=:}\n')
+    # cfg.update_from_flattened_dict(
+    #     {'robot.joints.free_joint':'__updated_free_joint__',}
+    # )
+    # print(f'updated {cfg.robot.joints=:}\n')
+    # import numpy as np
+    import jax
+    import jax.numpy as jp
+    import json
+    cfg = config_dict.create(
+        arr1=jp.array([1.0, 2.0, 3.0]),
+        arr2=jp.linspace(1.0, 10.0, 10),
     )
-    print(f'updated {cfg.robot.joints=:}\n')
+    print(cfg.to_json_best_effort(indent=2))
+    # error: ArrayImpl is not JSON serializable
+    # print(json.dumps( cfg.to_dict() ))
+
+    arr1=jax.numpy.array([1,2,3])
+    # print(arr1.tolist())
+    js_str = json.dumps(jax.tree.map(lambda x: x.tolist(), cfg.to_dict()), indent=2 )
+    print(js_str)
+
+
+

@@ -11,7 +11,7 @@ def brax_ppo_config(
   # env_config = locomotion.get_default_config(env_name)
 
   rl_config = config_dict.create(
-      num_timesteps=100_000_000,
+      num_timesteps= 100_000_000,
 
       # total validation(eval) during entire training.so we got running progress_fn 10 times.
       num_evals=10,
@@ -46,7 +46,7 @@ def brax_ppo_config(
     rl_config.num_timesteps = 200_000_000
 
     # total validation(eval) during entire training.so we got running progress_fn 20 times.
-    rl_config.num_evals = 40 #20
+    rl_config.num_evals = 20
     # for validation(eval) during training epoch.
     rl_config.num_eval_envs = 64
 
@@ -101,8 +101,21 @@ if __name__ == "__main__":
     # print(f'{ppo_params=:}')
     print(f'{ppo_params.to_dict()=:}')
 
-    toy_params = toy_brax_ppo_config('kbot_both_leg_rough_terrain')
-    print(f'{toy_params.to_dict()=:}')
+    # toy_params = toy_brax_ppo_config('kbot_both_leg_rough_terrain')
+    # print(f'{toy_params.to_dict()=:}')
+
+    training_cfg = config_dict.create(
+        dummy_dir=None,
+
+        ppo_params_override=config_dict.create(
+            num_timesteps= 200 // 2,
+            num_envs= 128,
+        ),
+    )
+
+    if 'ppo_params_override' in training_cfg:
+        ppo_params.update(training_cfg.ppo_params_override)
+    print(f'updated {ppo_params.num_timesteps=:} {ppo_params.num_envs=:}')
 
     # network_factory_args_dict = {}
     # network_factory_args_dict.update(**ppo_params.network_factory_kwargs)
